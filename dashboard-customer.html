@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Customer Dashboard - FlowGuard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Questrial&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="dashboard">
+    <aside class="sidebar">
+      <div class="brand">
+        <i data-lucide="droplets" class="brand-icon"></i>
+        <div>
+          <strong>CUSTOMER</strong>
+          <small>Water Services Portal</small>
+        </div>
+      </div>
+
+      <p class="menu-title">MAIN MENU</p>
+      <nav class="nav-list" aria-label="Main menu">
+        <a class="active" href="#" data-view="overview"><i data-lucide="layout-dashboard" class="nav-icon"></i><span>My Dashboard</span></a>
+        <a href="#" data-view="complaints"><i data-lucide="message-square" class="nav-icon"></i><span>Complaints</span></a>
+        <a href="#" data-view="bills"><i data-lucide="file-text" class="nav-icon"></i><span>My Bills</span><b>2</b></a>
+        <a href="#" data-view="usage"><i data-lucide="activity" class="nav-icon"></i><span>Water Usage</span></a>
+      </nav>
+
+      <p class="menu-title support-title">HELP & SUPPORT</p>
+      <nav class="nav-list support" aria-label="Support menu">
+        <a href="#" data-view="help"><i data-lucide="circle-help" class="nav-icon"></i><span>Help Center</span></a>
+        <a href="#" data-view="settings"><i data-lucide="settings" class="nav-icon"></i><span>Account Settings</span></a>
+      </nav>
+
+      <a class="logout" href="index.html"><i data-lucide="log-out" class="nav-icon"></i><span>Log Out</span></a>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <h1>Welcome Back, Valued Customer</h1>
+        <div class="top-actions">
+          <label class="search-box">
+            <i data-lucide="search"></i>
+            <input type="search" placeholder="Search invoices or complaints">
+          </label>
+          <button class="icon-btn" type="button" aria-label="Messages"><i data-lucide="message-circle"></i></button>
+          <button class="icon-btn bell" type="button" aria-label="Notifications"><i data-lucide="bell"></i></button>
+          <div class="profile">
+            <span class="avatar"></span>
+            <strong>Customer</strong>
+          </div>
+        </div>
+      </header>
+
+      <!-- VIEW: OVERVIEW -->
+      <section class="view-section active-view" id="view-overview">
+        <section class="metrics" aria-label="Dashboard metrics">
+          <article class="metric customers">
+            <span class="metric-line"></span>
+            <div>
+              <p>Active Complaints</p>
+              <strong>1</strong>
+              <small class="up">+1 Since yesterday</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="alert-circle"></i></span>
+          </article>
+          <article class="metric revenue">
+            <span class="metric-line"></span>
+            <div>
+              <p>Current Balance</p>
+              <strong>P 1,240.50</strong>
+              <small class="down">Due in 5 days</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="wallet"></i></span>
+          </article>
+          <article class="metric profit">
+            <span class="metric-line"></span>
+            <div>
+              <p>Consumption</p>
+              <strong>15m³</strong>
+              <small class="down">- 2% vs last month</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="droplet"></i></span>
+          </article>
+          <article class="metric invoices">
+            <span class="metric-line"></span>
+            <div>
+              <p>Last Bill Status</p>
+              <strong>Paid</strong>
+              <small class="up">No arrears</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="check-circle"></i></span>
+          </article>
+        </section>
+
+        <section class="panel invoice-table">
+          <div class="panel-head">
+            <h2>Recent Activity</h2>
+          </div>
+          <table>
+            <thead>
+              <tr><th>No</th><th>Reference ID</th><th>Issue Type</th><th>Date</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>1</td><td>#C-998</td><td>Pipe Leakage</td><td>01/05/2026</td><td><span class="status pending">Pending</span></td></tr>
+              <tr><td>2</td><td>#B-1052</td><td>Monthly Bill</td><td>25/04/2026</td><td><span class="status paid">Paid</span></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: COMPLAINTS -->
+      <section class="view-section" id="view-complaints">
+        <div class="panel-head">
+          <h2>My Complaints & Inquiries</h2>
+          <button class="btn-primary" data-action="File New Complaint">
+            <i data-lucide="plus-circle" style="width: 16px; height: 16px; margin-right: 8px;"></i>
+            File New Complaint
+          </button>
+        </div>
+        <section class="panel invoice-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Reference</th>
+                <th>Description</th>
+                <th>Date Filed</th>
+                <th>Urgency</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>#C-998</strong></td>
+                <td>Main gate pipe leak near the driveway.</td>
+                <td>01/05/2026</td>
+                <td><span class="badge badge-high">High</span></td>
+                <td><span class="status pending">Investigation</span></td>
+                <td><button class="btn-view" data-action="View Details" data-id="C-998">View Details</button></td>
+              </tr>
+              <tr>
+                <td><strong>#C-850</strong></td>
+                <td>Water meter showing unusual reading.</td>
+                <td>20/04/2026</td>
+                <td><span class="badge badge-medium">Medium</span></td>
+                <td><span class="status paid">Resolved</span></td>
+                <td><button class="btn-view" data-action="View Details" data-id="C-850">View Details</button></td>
+              </tr>
+              <tr>
+                <td><strong>#C-842</strong></td>
+                <td>Low water pressure during peak hours.</td>
+                <td>15/04/2026</td>
+                <td><span class="badge badge-low">Low</span></td>
+                <td><span class="status paid">Resolved</span></td>
+                <td><button class="btn-view" data-action="View Details" data-id="C-842">View Details</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: BILLS -->
+      <section class="view-section" id="view-bills">
+        <div class="panel-head">
+          <h2>Billing History</h2>
+          <button class="btn-download" data-action="Download All">
+            <i data-lucide="download-cloud"></i>
+            Download All Invoices
+          </button>
+        </div>
+        <section class="panel invoice-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Invoice #</th>
+                <th>Period</th>
+                <th>Amount</th>
+                <th>Due Date</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>#INV-2026-05</strong></td>
+                <td>May 2026</td>
+                <td>P 1,240.50</td>
+                <td>10/05/2026</td>
+                <td><span class="status pending">Unpaid</span></td>
+                <td>
+                  <div style="display: flex; gap: 8px;">
+                    <button class="btn-view" data-action="View Bill" data-id="2026-05">View</button>
+                    <button class="btn-download" data-action="Download Bill" data-id="2026-05"><i data-lucide="download"></i></button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>#INV-2026-04</strong></td>
+                <td>Apr 2026</td>
+                <td>P 1,120.00</td>
+                <td>10/04/2026</td>
+                <td><span class="status paid">Paid</span></td>
+                <td>
+                  <div style="display: flex; gap: 8px;">
+                    <button class="btn-view" data-action="View Bill" data-id="2026-04">View</button>
+                    <button class="btn-download" data-action="Download Bill" data-id="2026-04"><i data-lucide="download"></i></button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>#INV-2026-03</strong></td>
+                <td>Mar 2026</td>
+                <td>P 1,350.25</td>
+                <td>10/03/2026</td>
+                <td><span class="status paid">Paid</span></td>
+                <td>
+                  <div style="display: flex; gap: 8px;">
+                    <button class="btn-view" data-action="View Bill" data-id="2026-03">View</button>
+                    <button class="btn-download" data-action="Download Bill" data-id="2026-03"><i data-lucide="download"></i></button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: USAGE -->
+      <section class="view-section" id="view-usage">
+        <div class="panel-head">
+          <h2>Water Consumption Analytics</h2>
+        </div>
+        <article class="panel sales-panel">
+          <div class="chart-wrap">
+            <!-- Simulated Chart -->
+            <svg viewBox="0 0 640 260">
+              <g class="grid-lines">
+                <path d="M50 216H610M50 168H610M50 120H610M50 72H610M50 24H610"/>
+              </g>
+              <path class="chart-line" d="M50 180L150 140L250 160L350 120L450 100L550 110L600 90" stroke-width="4" fill="none" stroke="var(--blue)"/>
+              <g class="months">
+                <text x="50" y="246">Dec</text><text x="150" y="246">Jan</text><text x="250" y="246">Feb</text><text x="350" y="246">Mar</text><text x="450" y="246">Apr</text><text x="550" y="246">May</text>
+              </g>
+            </svg>
+          </div>
+          <div style="margin-top: 20px; color: var(--muted); font-size: 14px;">
+            Your water usage has decreased by 5% compared to the previous 6 months. Keep it up!
+          </div>
+        </article>
+      </section>
+
+      <!-- VIEW: HELP CENTER -->
+      <section class="view-section" id="view-help">
+        <div class="panel-head">
+          <h2>Help & Support Center</h2>
+        </div>
+        <div class="settings-grid">
+          <div class="faq-list">
+            <div class="faq-item">
+              <button class="faq-question">How do I pay my bill online? <i data-lucide="chevron-down"></i></button>
+              <div class="faq-answer">You can pay your bill by going to the 'My Bills' section, selecting an unpaid invoice, and clicking the 'Pay Now' button. We support major credit cards and e-wallets.</div>
+            </div>
+            <div class="faq-item">
+              <button class="faq-question">What should I do if I have a leak? <i data-lucide="chevron-down"></i></button>
+              <div class="faq-answer">Immediately turn off your main water valve and file a 'New Complaint' under the Complaints section. Our zone specialist will be notified for an investigation.</div>
+            </div>
+            <div class="faq-item">
+              <button class="faq-question">How is my water usage calculated? <i data-lucide="chevron-down"></i></button>
+              <div class="faq-answer">Your usage is calculated by subtracting your previous meter reading from your current meter reading. This is reflected in cubic meters (m³).</div>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>Contact Support</h3>
+            <p style="font-size: 14px; color: var(--muted); margin-bottom: 20px;">Can't find what you're looking for? Message us directly.</p>
+            <div class="form-group">
+              <label>Subject</label>
+              <input type="text" placeholder="e.g., Billing Inquiry">
+            </div>
+            <div class="form-group">
+              <label>Message</label>
+              <textarea placeholder="Describe your concern..."></textarea>
+            </div>
+            <button class="btn-primary" data-action="Submit Help">Send Message</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW: SETTINGS -->
+      <section class="view-section" id="view-settings">
+        <div class="panel-head">
+          <h2>Account Settings</h2>
+        </div>
+        <div class="settings-grid">
+          <nav class="settings-nav">
+            <button class="active" data-tab="profile">Profile Information</button>
+            <button data-tab="security">Password & Security</button>
+            <button data-tab="notifications">Notification Preferences</button>
+            <button data-tab="payments">Payment Methods</button>
+          </nav>
+          
+          <div class="settings-content">
+            <!-- TAB: Profile -->
+            <div class="panel tab-content is-active" id="tab-profile">
+              <div class="profile-header">
+                <div class="profile-avatar-large">
+                  <span class="avatar-edit"><i data-lucide="camera"></i></span>
+                </div>
+                <div>
+                  <h3 style="margin: 0;">Valued Customer</h3>
+                  <p style="margin: 5px 0 0; color: var(--muted); font-size: 13px;">Customer ID: #FG-889021</p>
+                </div>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div class="form-group">
+                  <label>Full Name</label>
+                  <input type="text" placeholder="Full Name" value="Valued Customer">
+                </div>
+                <div class="form-group">
+                  <label>Email Address</label>
+                  <input type="email" placeholder="Email" value="customer@example.com">
+                </div>
+                <div class="form-group">
+                  <label>Phone Number</label>
+                  <input type="tel" placeholder="+63 900 000 0000" value="+63 912 345 6789">
+                </div>
+                <div class="form-group">
+                  <label>Service Address</label>
+                  <input type="text" placeholder="123 Water St, Manila" value="123 Water St, Manila">
+                </div>
+              </div>
+              <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #edf0f6; display: flex; justify-content: flex-end;">
+                <button class="btn-primary" data-action="Save Settings">Save Changes</button>
+              </div>
+            </div>
+
+            <!-- TAB: Security -->
+            <div class="panel tab-content" id="tab-security" style="display: none;">
+              <h3>Password & Security</h3>
+              <p style="font-size: 14px; color: var(--muted); margin-bottom: 24px;">Manage your password and protect your account.</p>
+              
+              <div style="max-width: 400px;">
+                <div class="form-group">
+                  <label>Current Password</label>
+                  <input type="password" placeholder="••••••••">
+                </div>
+                <div class="form-group">
+                  <label>New Password</label>
+                  <input type="password" placeholder="Min. 8 characters">
+                </div>
+                <div class="form-group">
+                  <label>Confirm New Password</label>
+                  <input type="password" placeholder="Confirm password">
+                </div>
+              </div>
+              
+              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #edf0f6;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                  <div>
+                    <strong style="display: block; font-size: 14px;">Two-Factor Authentication</strong>
+                    <small style="color: var(--muted);">Add an extra layer of security to your account.</small>
+                  </div>
+                  <button class="btn-secondary">Enable 2FA</button>
+                </div>
+                <div style="display: flex; justify-content: flex-end;">
+                  <button class="btn-primary" data-action="Save Settings">Update Password</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB: Notifications -->
+            <div class="panel tab-content" id="tab-notifications" style="display: none;">
+              <h3>Notification Preferences</h3>
+              <p style="font-size: 14px; color: var(--muted); margin-bottom: 24px;">Choose how you want to be notified about bills and service alerts.</p>
+              
+              <div style="display: grid; gap: 20px;">
+                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                  <input type="checkbox" checked style="width: 18px; height: 18px;">
+                  <div>
+                    <span style="display: block; font-size: 14px; font-weight: 500;">Email Notifications</span>
+                    <small style="color: var(--muted);">Receive bills and receipts via email.</small>
+                  </div>
+                </label>
+                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                  <input type="checkbox" checked style="width: 18px; height: 18px;">
+                  <div>
+                    <span style="display: block; font-size: 14px; font-weight: 500;">SMS Alerts</span>
+                    <small style="color: var(--muted);">Get critical service advisory and payment reminders.</small>
+                  </div>
+                </label>
+                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                  <input type="checkbox" style="width: 18px; height: 18px;">
+                  <div>
+                    <span style="display: block; font-size: 14px; font-weight: 500;">Promotional Updates</span>
+                    <small style="color: var(--muted);">New services and community updates.</small>
+                  </div>
+                </label>
+              </div>
+              
+              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #edf0f6; display: flex; justify-content: flex-end;">
+                <button class="btn-primary" data-action="Save Settings">Save Preferences</button>
+              </div>
+            </div>
+
+            <!-- TAB: Payments -->
+            <div class="panel tab-content" id="tab-payments" style="display: none;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                <div>
+                  <h3 style="margin: 0;">Payment Methods</h3>
+                  <p style="margin: 5px 0 0; font-size: 14px; color: var(--muted);">Manage your saved cards and payment wallets.</p>
+                </div>
+                <button class="btn-primary" style="padding: 8px 16px;">Add New</button>
+              </div>
+
+              <div style="display: grid; gap: 15px;">
+                <div style="display: flex; align-items: center; gap: 15px; padding: 15px; border: 1px solid #edf0f6; border-radius: 8px;">
+                  <div style="width: 40px; height: 26px; background: #1a1a1a; border-radius: 4px; display: grid; place-items: center; color: #fff; font-size: 10px; font-weight: bold;">VISA</div>
+                  <div style="flex: 1;">
+                    <span style="display: block; font-size: 14px; font-weight: 500;">Visa Ending in 4242</span>
+                    <small style="color: var(--muted);">Expires 12/26</small>
+                  </div>
+                  <span style="font-size: 12px; color: var(--blue); font-weight: 500; margin-right: 10px;">Primary</span>
+                  <button class="btn-secondary" style="padding: 6px 12px;">Remove</button>
+                </div>
+                <div style="display: flex; align-items: center; gap: 15px; padding: 15px; border: 1px solid #edf0f6; border-radius: 8px;">
+                  <div style="width: 40px; height: 26px; background: #0070ba; border-radius: 4px; display: grid; place-items: center; color: #fff; font-size: 10px; font-weight: bold;">GCASH</div>
+                  <div style="flex: 1;">
+                    <span style="display: block; font-size: 14px; font-weight: 500;">0912 **** 6789</span>
+                    <small style="color: var(--muted);">Linked Wallet</small>
+                  </div>
+                  <button class="btn-secondary" style="padding: 6px 12px;">Remove</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="dashboard-logic.js"></script>
+</body>
+</html>

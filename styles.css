@@ -1,0 +1,568 @@
+:root {
+  color-scheme: light;
+  --bg: #f4f8fd;
+  --panel: rgba(255, 255, 255, 0.56);
+  --panel-fill: rgba(255, 255, 255, 0.72);
+  --panel-fill-hover: rgba(245, 251, 255, 0.9);
+  --line-bright: rgba(196, 228, 255, 0.78);
+  --border-soft: rgba(166, 198, 228, 0.72);
+  --text-main: #102f4f;
+  --text-muted: rgba(44, 78, 111, 0.95);
+  --text-faint: rgba(66, 101, 136, 0.95);
+  --primary: #2f9df2;
+  --card-width: min(100%, 30.5rem);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  background:
+    radial-gradient(1100px 620px at 16% 10%, rgba(52, 130, 255, 0.16), transparent 62%),
+    radial-gradient(820px 520px at 88% 86%, rgba(88, 182, 255, 0.11), transparent 65%),
+    linear-gradient(145deg, #f9fcff 0%, #edf4fb 48%, #ddeaf7 100%);
+}
+
+body {
+  margin: 0;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
+  font-family: "Questrial", sans-serif;
+  color: var(--text-main);
+  background:
+    radial-gradient(1100px 620px at 16% 10%, rgba(52, 130, 255, 0.16), transparent 62%),
+    radial-gradient(820px 520px at 88% 86%, rgba(88, 182, 255, 0.11), transparent 65%),
+    linear-gradient(145deg, #f9fcff 0%, #edf4fb 48%, #ddeaf7 100%);
+  overflow: hidden;
+}
+
+body::before {
+  content: none;
+}
+
+body::after {
+  content: none;
+}
+
+.page-shell {
+  position: relative;
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1.25rem;
+  isolation: isolate;
+}
+
+.page-shell::before {
+  content: none;
+}
+
+.login-card {
+  position: relative;
+  width: var(--card-width);
+  padding: 0.75rem 1.85rem 1.95rem;
+  border-radius: 2.3rem;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.84) 0%, rgba(243, 250, 255, 0.7) 40%, rgba(224, 239, 252, 0.54) 100%),
+    var(--panel);
+  border: 1px solid var(--border-soft);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -8px 20px rgba(181, 209, 235, 0.24),
+    0 14px 32px rgba(94, 140, 184, 0.2);
+  overflow: hidden;
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+}
+
+.login-card::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  pointer-events: none;
+}
+
+.card-grid,
+.card-line,
+.card-flare,
+.interactive-glow {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.login-card.is-submitting {
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.login-card.is-submitting .primary-submit {
+  background: #1e3a8a;
+  position: relative;
+  color: transparent;
+}
+
+.login-card.is-submitting .primary-submit::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1.2rem;
+  height: 1.2rem;
+  margin: -0.6rem 0 0 -0.6rem;
+  border: 2px solid #fff;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.card-grid {
+  inset: 0;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.28) 0.45px, transparent 0.56px);
+  background-size: 8px 8px;
+  opacity: 0.08;
+  mix-blend-mode: screen;
+}
+
+.card-line {
+  top: 0;
+  left: 3.5rem;
+  right: 3.5rem;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line-bright), transparent);
+  opacity: 0.74;
+}
+
+.card-flare {
+  top: -1rem;
+  left: 50%;
+  width: 7rem;
+  height: 7rem;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, rgba(170, 246, 255, 0.92) 0%, rgba(170, 246, 255, 0.3) 24%, transparent 66%);
+  filter: blur(10px);
+  opacity: 0.78;
+}
+
+.interactive-glow {
+  inset: -30%;
+  background: radial-gradient(circle at var(--glow-x, 50%) var(--glow-y, 14%), rgba(111, 230, 255, 0.17) 0%, transparent 28%);
+}
+
+.card-header {
+  position: relative;
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.brand-mark {
+  width: min(100%, 14rem);
+  aspect-ratio: 1930 / 1106;
+  margin: 0 auto 0.05rem;
+  display: block;
+  filter: none;
+}
+
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.card-header p {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  line-height: 1.2;
+  font-family: "Poppins", sans-serif;
+}
+
+.login-form {
+  position: relative;
+  display: grid;
+  gap: 0.92rem;
+}
+
+.input-shell,
+.social-button {
+  display: flex;
+  align-items: center;
+  border-radius: 1.4rem;
+  background: var(--panel-fill);
+  border: 1px solid rgba(180, 208, 233, 0.68);
+  box-shadow: none;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.input-shell {
+  gap: 1rem;
+  min-height: 4.1rem;
+  padding: 0.62rem 0.68rem 0.62rem 1.05rem;
+}
+
+.input-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.input-label {
+  display: block;
+  margin-bottom: 0.2rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-faint);
+  font-family: "Poppins", sans-serif;
+}
+
+.input-copy input {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font: 400 1.06rem/1.2 "Questrial", sans-serif;
+  color: #163a5d;
+}
+
+.input-copy input::placeholder,
+.input-copy select:invalid {
+  color: rgba(118, 145, 172, 0.95);
+}
+
+/* Hide Edge/IE native password reveal icon so only the custom eye icon appears */
+.input-copy input[type="password"]::-ms-reveal,
+.input-copy input[type="password"]::-ms-clear {
+  display: none;
+}
+
+.input-copy select {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  appearance: none;
+  font: 400 1.06rem/1.2 "Questrial", sans-serif;
+  color: #163a5d;
+  cursor: pointer;
+}
+
+.toggle-password {
+  border: 1px solid rgba(172, 202, 230, 0.72);
+  background: rgba(246, 251, 255, 0.92);
+  color: #315678;
+  border-radius: 0.7rem;
+  width: 2.2rem;
+  height: 2.2rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.toggle-password:hover,
+.toggle-password:focus-visible {
+  background: rgba(236, 247, 255, 0.98);
+  border-color: rgba(143, 184, 220, 0.95);
+  outline: none;
+}
+
+.toggle-password img {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+}
+
+.toggle-password.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.role-shell {
+  position: relative;
+  padding-right: 2.4rem;
+}
+
+.role-shell::after {
+  content: "";
+  position: absolute;
+  right: 1.05rem;
+  top: 50%;
+  width: 0.56rem;
+  height: 0.56rem;
+  margin-top: 0.1rem;
+  border-right: 2px solid rgba(66, 107, 146, 0.95);
+  border-bottom: 2px solid rgba(66, 107, 146, 0.95);
+  transform: translateY(-50%) rotate(45deg);
+  pointer-events: none;
+}
+
+.input-shell:focus-within {
+  border-color: #9abce0;
+}
+
+.input-copy select:focus-visible {
+  outline: none;
+}
+
+.input-copy select option {
+  font-family: "Questrial", sans-serif;
+  font-size: 1rem;
+  color: #0e2b49;
+  background: #eaf4ff;
+}
+
+.remember-option {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: max-content;
+  padding-left: 0.25rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.remember-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.checkbox-indicator {
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 0.35rem;
+  border: 1px solid rgba(191, 221, 250, 0.75);
+  background: rgba(227, 242, 255, 0.32);
+  box-shadow: none;
+  transition: background 180ms ease, border-color 180ms ease;
+}
+
+.remember-input:checked + .checkbox-indicator {
+  background: #7bc6ff;
+  border-color: #7bc6ff;
+}
+
+.remember-input:checked + .checkbox-indicator::after {
+  content: "";
+  display: block;
+  width: 0.32rem;
+  height: 0.56rem;
+  margin: 0.15rem 0 0 0.32rem;
+  border: solid #0a2a49;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.remember-input:focus-visible + .checkbox-indicator {
+  outline: 2px solid #b9ddff;
+  outline-offset: 2px;
+}
+
+.remember-text {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-family: "Poppins", sans-serif;
+}
+
+.social-stack {
+  display: grid;
+  gap: 0.92rem;
+}
+
+.social-button {
+  width: 100%;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.72rem 0.72rem 0.72rem 0.95rem;
+  color: inherit;
+  cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.social-button:hover,
+.social-button:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(143, 216, 255, 0.12);
+  background: var(--panel-fill-hover);
+  outline: none;
+}
+
+.social-button:active {
+  transform: scale(0.995);
+}
+
+.social-leading,
+.social-action {
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.social-leading {
+  width: 2.55rem;
+  height: 2.55rem;
+  border-radius: 0.95rem;
+  background: rgba(214, 232, 250, 0.66);
+  border: 1px solid #d1dded;
+}
+
+.social-leading img {
+  display: block;
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.social-text {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font-size: 1rem;
+  font-weight: 500;
+  color: rgba(33, 66, 102, 0.88);
+}
+
+.social-action {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.95rem;
+  background: rgba(204, 227, 250, 0.78);
+  border: 1px solid rgba(121, 168, 218, 0.26);
+  box-shadow: none;
+}
+
+.social-action img {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  opacity: 0.98;
+}
+
+.card-footer {
+  margin: 1.55rem 0 0;
+  text-align: center;
+  font-size: 0.98rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-family: "Poppins", sans-serif;
+}
+
+.card-footer a {
+  color: #2f52ba;
+  text-underline-offset: 0.22em;
+  text-decoration-color: rgba(130, 223, 255, 0.4);
+}
+
+.card-footer a:hover,
+.card-footer a:focus-visible {
+  color: #2f52ba;
+  outline: none;
+}
+
+.primary-submit {
+  margin-top: 0.4rem;
+  width: 100%;
+  border: 1px solid #2f52ba;
+  background: #2f52ba;
+  color: #f5fbff;
+  border-radius: 0.9rem;
+  font: 600 1rem/1 "Poppins", sans-serif;
+  padding: 0.9rem 1rem;
+  cursor: pointer;
+}
+
+.primary-submit:hover,
+.primary-submit:focus-visible {
+  background: #2949a9;
+  border-color: #2949a9;
+  outline: none;
+}
+
+@media (max-width: 540px) {
+  body {
+    overflow: auto;
+  }
+
+  .page-shell {
+    padding: 1rem;
+  }
+
+  .login-card {
+    padding: 0.7rem 1.2rem 1.55rem;
+    border-radius: 1.9rem;
+  }
+
+  .card-line {
+    left: 2.25rem;
+    right: 2.25rem;
+  }
+
+  .card-header {
+    margin-bottom: 0.9rem;
+  }
+
+  .brand-mark {
+    width: min(100%, 11rem);
+    margin-bottom: 0.05rem;
+  }
+
+  .card-header p {
+    font-size: 1rem;
+  }
+
+  .input-shell {
+    min-height: 3.9rem;
+    padding: 0.58rem 0.62rem 0.58rem 0.95rem;
+  }
+
+  .input-copy input {
+    font-size: 1rem;
+  }
+
+  .input-copy select {
+    font-size: 1rem;
+  }
+
+  .social-button {
+    padding: 0.7rem 0.7rem 0.7rem 0.9rem;
+  }
+
+  .social-text {
+    font-size: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

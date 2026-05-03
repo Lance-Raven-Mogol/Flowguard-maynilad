@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Technician Dashboard - FlowGuard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Questrial&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="dashboard">
+    <aside class="sidebar">
+      <div class="brand">
+        <i data-lucide="wrench" class="brand-icon"></i>
+        <div>
+          <strong>TECHNICAL</strong>
+          <small>Field Operations</small>
+        </div>
+      </div>
+
+      <p class="menu-title">WORK MENU</p>
+      <nav class="nav-list" aria-label="Main menu">
+        <a class="active" href="#" data-view="overview"><i data-lucide="layout-dashboard" class="nav-icon"></i><span>My Tasks</span></a>
+        <a href="#" data-view="joborders"><i data-lucide="clipboard-list" class="nav-icon"></i><span>Job Orders</span><b>3</b></a>
+        <a href="#" data-view="materials"><i data-lucide="hammer" class="nav-icon"></i><span>Material Requests</span></a>
+        <a href="#" data-view="schedule"><i data-lucide="calendar-check" class="nav-icon"></i><span>My Schedule</span></a>
+      </nav>
+
+      <p class="menu-title support-title">HELP & SUPPORT</p>
+      <nav class="nav-list support" aria-label="Support menu">
+        <a href="#" data-view="support"><i data-lucide="help-circle" class="nav-icon"></i><span>Field Support</span></a>
+        <a href="#" data-view="settings"><i data-lucide="settings" class="nav-icon"></i><span>Settings</span></a>
+      </nav>
+
+      <a class="logout" href="index.html"><i data-lucide="log-out" class="nav-icon"></i><span>Log Out</span></a>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <h1>Welcome Back, Tech Santiago</h1>
+        <div class="top-actions">
+          <label class="search-box">
+            <i data-lucide="search"></i>
+            <input type="search" placeholder="Search job order ID">
+          </label>
+          <button class="icon-btn" type="button" aria-label="Messages"><i data-lucide="message-circle"></i></button>
+          <button class="icon-btn bell" type="button" aria-label="Notifications"><i data-lucide="bell"></i></button>
+          <div class="profile">
+            <span class="avatar"></span>
+            <strong>Tech Santiago</strong>
+          </div>
+        </div>
+      </header>
+
+      <!-- VIEW: OVERVIEW -->
+      <section class="view-section active-view" id="view-overview">
+        <section class="metrics" aria-label="Dashboard metrics">
+          <article class="metric customers">
+            <span class="metric-line"></span>
+            <div>
+              <p>Assigned Jobs</p>
+              <strong>3</strong>
+              <small>For today</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="briefcase"></i></span>
+          </article>
+          <article class="metric revenue">
+            <span class="metric-line"></span>
+            <div>
+              <p>Ready to Start</p>
+              <strong>1</strong>
+              <small class="up">Materials issued</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="play"></i></span>
+          </article>
+          <article class="metric profit">
+            <span class="metric-line"></span>
+            <div>
+              <p>Ongoing Jobs</p>
+              <strong>2</strong>
+              <small>In-field</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="loader"></i></span>
+          </article>
+          <article class="metric invoices">
+            <span class="metric-line"></span>
+            <div>
+              <p>Completed Jobs</p>
+              <strong>28</strong>
+              <small class="up">This month</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="check-circle-2"></i></span>
+          </article>
+        </section>
+
+        <section class="panel invoice-table">
+          <div class="panel-head"><h2>Today's High Priority Tasks</h2></div>
+          <table>
+            <thead>
+              <tr><th>Job ID</th><th>Location</th><th>Task</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>#JO-552</td><td>Block 5 Lot 2</td><td>Repair Leak (Main Pipe)</td><td><span class="status pending">In Progress</span></td></tr>
+              <tr><td>#JO-555</td><td>Street 12</td><td>Supply Interruption Fix</td><td><span class="status overdue">Urgent</span></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: JOBORDERS -->
+      <section class="view-section" id="view-joborders">
+        <div class="panel-head">
+          <h2>My Assigned Job Orders</h2>
+        </div>
+        <section class="panel invoice-table">
+          <table id="job-orders-table">
+            <thead>
+              <tr><th>Job ID</th><th>Location</th><th>Task Description</th><th>Status</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>#JO-552</td><td>123 Main St</td><td>Repair Leak (Main Pipe)</td><td><span class="status pending">In Progress</span></td><td><div class="action-group"><button class="btn-action btn-blue" data-action="Update Progress"><i data-lucide="edit-3"></i> Update</button></div></td></tr>
+              <tr><td>#JO-555</td><td>Street 12, West</td><td>Supply Interruption Fix</td><td><span class="status overdue">Waiting Materials</span></td><td><div class="action-group"><button class="btn-action" data-action="Check Materials"><i data-lucide="package"></i> Check</button></div></td></tr>
+              <tr><td>#JO-550</td><td>45 High Rd</td><td>Meter Installation</td><td><span class="status paid">Completed</span></td><td><div class="action-group"><button class="btn-action" data-action="View Details"><i data-lucide="eye"></i> Details</button></div></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: MATERIALS -->
+      <section class="view-section" id="view-materials">
+        <div class="panel-head">
+          <h2>My Material Requests (MRF)</h2>
+          <button class="btn-primary" data-action="New Request" style="background: var(--blue); color: #fff; padding: 8px 16px; border-radius: 4px; border: 0; display: flex; align-items: center; gap: 8px;"><i data-lucide="plus-circle"></i> New Request</button>
+        </div>
+        <section class="panel invoice-table">
+          <table id="tech-mrf-table">
+            <thead>
+              <tr><th>MRF ID</th><th>Job ID</th><th>Items</th><th>Date</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>#MRF-102</td><td>#JO-552</td><td>3x PVC Pipe 2", 1x Coupling</td><td>02/05/2026</td><td><span class="status pending">Awaiting Issue</span></td></tr>
+              <tr><td>#MRF-095</td><td>#JO-540</td><td>1x Water Meter G-4</td><td>28/04/2026</td><td><span class="status paid">Received</span></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: SCHEDULE -->
+      <section class="view-section" id="view-schedule">
+        <div class="panel-head">
+          <h2>My Work Schedule</h2>
+        </div>
+        <section class="panel">
+          <div style="display: grid; gap: 15px;">
+            <div style="padding: 15px; border-left: 4px solid var(--blue);">
+              <strong>08:30 AM - Tool Check & Briefing</strong>
+              <p style="margin: 5px 0 0; font-size: 13px; color: var(--muted);">Main Office - Team Hall</p>
+            </div>
+            <div style="padding: 15px; border-left: 4px solid var(--pink);">
+              <strong>10:00 AM - Repair Job #JO-552</strong>
+              <p style="margin: 5px 0 0; font-size: 13px; color: var(--muted);">Block 5 Lot 2, Phase 1</p>
+            </div>
+            <div style="padding: 15px; border-left: 4px solid var(--cyan);">
+              <strong>02:00 PM - Inspection Job #JO-555</strong>
+              <p style="margin: 5px 0 0; font-size: 13px; color: var(--muted);">Street 12, West Side Area</p>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- VIEW: SUPPORT -->
+      <section class="view-section" id="view-support">
+        <div class="panel-head">
+          <h2>Technical Field Support</h2>
+        </div>
+        <div class="analytics-grid">
+          <section class="panel">
+            <h3 style="margin: 0 0 15px; font-size: 15px;">Contact HQ Support</h3>
+            <div class="form-group">
+              <label>Issue Type</label>
+              <select>
+                <option>Request Heavy Equipment</option>
+                <option>Report Vehicle Breakdown</option>
+                <option>Additional Manpower Needed</option>
+                <option>System/App Issue</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Details</label>
+              <textarea placeholder="Describe the assistance you need..."></textarea>
+            </div>
+            <button class="btn-primary" data-action="Submit Help" style="width: 100%;">Send Request to HQ</button>
+          </section>
+          <section class="panel">
+            <h3 style="margin: 0 0 15px; font-size: 15px;">Frequently Asked Questions</h3>
+            <div class="faq-list">
+              <article class="panel faq-item">
+                <div class="faq-question">
+                  <span>How do I report damaged tools?</span>
+                  <i data-lucide="chevron-down"></i>
+                </div>
+                <div class="faq-answer">
+                  <p>Log it under the "Material Requests" section and select "Tool Replacement". You must surrender the damaged tool to the Inventory Officer before receiving a new one.</p>
+                </div>
+              </article>
+              <article class="panel faq-item">
+                <div class="faq-question">
+                  <span>What if a job takes longer than scheduled?</span>
+                  <i data-lucide="chevron-down"></i>
+                </div>
+                <div class="faq-answer">
+                  <p>Use the "Update Progress" button on your job order and select "Delayed/Paused". Include a brief reason (e.g., hard ground, bad weather) so the dispatch team can adjust timelines.</p>
+                </div>
+              </article>
+              <article class="panel faq-item">
+                <div class="faq-question">
+                  <span>Safety Protocol for Main Line Repairs</span>
+                  <i data-lucide="chevron-down"></i>
+                </div>
+                <div class="faq-answer">
+                  <p>Ensure the area is cordoned off. Do not proceed with excavation until the zone specialist confirms the water flow has been successfully isolated at the nearest main valve.</p>
+                </div>
+              </article>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- VIEW: SETTINGS -->
+      <section class="view-section" id="view-settings">
+        <div class="panel-head">
+          <h2>Account Settings</h2>
+        </div>
+        <div class="settings-grid">
+          <aside class="panel settings-nav">
+            <button class="active" data-tab="profile">Profile</button>
+            <button data-tab="notif">Notifications</button>
+            <button data-tab="security">Security</button>
+          </aside>
+          <div class="panel settings-content">
+            <div class="tab-content" id="tab-profile">
+              <h3>Technician Profile</h3>
+              <div class="form-group">
+                <label>Full Name</label>
+                <input type="text" value="Tech Santiago">
+              </div>
+              <div class="form-group">
+                <label>Specialization</label>
+                <input type="text" value="Main Line Repair & Welding" readonly>
+              </div>
+              <div class="form-group">
+                <label>Contact Number</label>
+                <input type="text" value="+63 912 345 6789">
+              </div>
+              <button class="btn-primary" data-action="Save Settings">Save Changes</button>
+            </div>
+            <div class="tab-content" id="tab-notif" style="display:none;">
+              <h3 style="margin-bottom: 20px;">Notification Preferences</h3>
+              <div class="switch-group">
+                <div class="switch-label">
+                  <strong>New Job Orders</strong>
+                  <span>Get notified when a new job is assigned to you</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="switch-group">
+                <div class="switch-label">
+                  <strong>Schedule Changes</strong>
+                  <span>Alerts for re-scheduled or cancelled jobs</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <button class="btn-primary" data-action="Save Settings" style="width: 100%; margin-top: 10px;">Save Preferences</button>
+            </div>
+            <div class="tab-content" id="tab-security" style="display:none;">
+              <h3>Security & Password</h3>
+              <div class="form-group">
+                <label>Current Password</label>
+                <input type="password" placeholder="••••••••">
+              </div>
+              <div class="form-group">
+                <label>New Password</label>
+                <input type="password" placeholder="Enter new password">
+              </div>
+              <button class="btn-primary" data-action="Save Settings">Update Password</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="dashboard-logic.js"></script>
+</body>
+</html>

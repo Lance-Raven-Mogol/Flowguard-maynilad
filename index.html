@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Glass Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Questrial&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="page-shell">
+    <section class="login-card" aria-label="Sign in">
+      <span class="card-grid" aria-hidden="true"></span>
+      <span class="card-line" aria-hidden="true"></span>
+      <span class="card-flare" aria-hidden="true"></span>
+      <span class="interactive-glow" aria-hidden="true"></span>
+
+      <header class="card-header">
+        <div class="brand-mark">
+          <img src="assets/logo.png" alt="FlowGuard logo" width="544" height="242">
+        </div>
+        <p>Please enter your details to sign in.</p>
+      </header>
+
+      <form class="login-form" novalidate data-redirect="dashboard.html">
+        <div class="input-shell">
+          <label class="input-copy" for="email">
+            <span class="input-label">Email</span>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              placeholder="Enter your email"
+              autocomplete="email"
+              spellcheck="false"
+              aria-describedby="remember-copy"
+            >
+          </label>
+        </div>
+
+        <div class="input-shell">
+          <label class="input-copy" for="password">
+            <span class="input-label">Password</span>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              placeholder="Enter your password"
+              autocomplete="current-password"
+            >
+          </label>
+          <button class="toggle-password" type="button" data-toggle-password="password" aria-label="Show password">
+            <img src="assets/eye.svg" alt="" width="18" height="18">
+          </button>
+        </div>
+
+        <div class="input-shell role-shell">
+          <label class="input-copy" for="role">
+            <span class="input-label">Role</span>
+            <select id="role" name="role" required>
+              <option value="" selected disabled>Select role</option>
+              <option value="customer">Customer</option>
+              <option value="zone-specialist">Zone Specialist</option>
+              <option value="general-manager">General Manager</option>
+              <option value="inventory-officer">Inventory Officer</option>
+              <option value="technical-team">Technical Team</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="remember-option" id="remember-copy">
+          <input class="remember-input" type="checkbox" name="remember">
+          <span class="checkbox-indicator" aria-hidden="true"></span>
+          <span class="remember-text">Remember me</span>
+        </label>
+
+        <button class="primary-submit" type="submit">Sign in</button>
+      </form>
+
+      <p class="card-footer">
+        Don&apos;t have an account?
+        <a href="signup.html">Create Account</a>
+      </p>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FlowGuard Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Questrial&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="dashboard">
+    <aside class="sidebar">
+      <div class="brand">
+        <i data-lucide="chart-no-axes-combined" class="brand-icon"></i>
+        <div>
+          <strong>DESKBOARD</strong>
+          <small>Sales Management Dashboard</small>
+        </div>
+      </div>
+
+      <p class="menu-title">MAIN MENU</p>
+      <nav class="nav-list" aria-label="Main menu">
+        <a class="active" href="#"><i data-lucide="layout-dashboard" class="nav-icon"></i>Dashboard</a>
+        <a href="#"><i data-lucide="package" class="nav-icon"></i>Products</a>
+        <a href="#"><i data-lucide="store" class="nav-icon"></i>Store</a>
+        <a href="#"><i data-lucide="message-square" class="nav-icon"></i>Messages</a>
+        <a href="#"><i data-lucide="chart-column" class="nav-icon"></i>Statistics</a>
+        <a href="#"><i data-lucide="file-text" class="nav-icon"></i>Invoices <b>1</b></a>
+        <a href="#"><i data-lucide="calendar-days" class="nav-icon"></i>To Do list</a>
+        <a href="#"><i data-lucide="circle-dollar-sign" class="nav-icon"></i>Finances</a>
+      </nav>
+
+      <p class="menu-title support-title">HELP & SUPPORT</p>
+      <nav class="nav-list support" aria-label="Support menu">
+        <a href="#"><i data-lucide="circle-help" class="nav-icon"></i>Help & Center</a>
+        <a href="#"><i data-lucide="settings" class="nav-icon"></i>Settings</a>
+      </nav>
+
+      <a class="logout" href="index.html"><i data-lucide="log-out" class="nav-icon"></i>Log Out</a>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <h1>Welcome Back, Ali Husni</h1>
+        <div class="top-actions">
+          <label class="search-box">
+            <i data-lucide="search"></i>
+            <input type="search" placeholder="Search Anything">
+          </label>
+          <button class="icon-btn" type="button" aria-label="Messages"><i data-lucide="message-circle"></i></button>
+          <button class="icon-btn bell" type="button" aria-label="Notifications"><i data-lucide="bell"></i></button>
+          <div class="profile">
+            <span class="avatar"></span>
+            <strong>Ali Husni</strong>
+          </div>
+        </div>
+      </header>
+
+      <section class="metrics" aria-label="Dashboard metrics">
+        <article class="metric customers">
+          <span class="metric-line"></span>
+          <div>
+            <p>Customers</p>
+            <strong>1.456</strong>
+            <small class="up">+ 6,5% Since last week</small>
+          </div>
+          <span class="metric-icon"><i data-lucide="users-round"></i></span>
+        </article>
+
+        <article class="metric revenue">
+          <span class="metric-line"></span>
+          <div>
+            <p>Revenue</p>
+            <strong>$3.345</strong>
+            <small class="down">- 0,10% Since last week</small>
+          </div>
+          <span class="metric-icon"><i data-lucide="wallet-cards"></i></span>
+        </article>
+
+        <article class="metric profit">
+          <span class="metric-line"></span>
+          <div>
+            <p>Profit</p>
+            <strong>60%</strong>
+            <small class="down">- 0,2% Since last week</small>
+          </div>
+          <span class="metric-icon"><i data-lucide="box"></i></span>
+        </article>
+
+        <article class="metric invoices">
+          <span class="metric-line"></span>
+          <div>
+            <p>Invoices</p>
+            <strong>1.135</strong>
+            <small class="up">+ 11,5% Since last week</small>
+          </div>
+          <span class="metric-icon"><i data-lucide="receipt-text"></i></span>
+        </article>
+      </section>
+
+      <section class="analytics-grid">
+        <article class="panel invoice-panel">
+          <div class="panel-head">
+            <h2>Invoice Statistics</h2>
+            <button type="button" aria-label="More options">...</button>
+          </div>
+          <div class="invoice-content">
+            <div class="donut">
+              <span>1.135</span>
+              <small>Invoices</small>
+            </div>
+            <dl class="legend">
+              <div><dt>Total Paid</dt><dd><span class="dot dark"></span>234</dd></div>
+              <div><dt>Total Overdue</dt><dd><span class="dot blue"></span>514</dd></div>
+              <div><dt>Total Unpaid</dt><dd><span class="dot pale"></span>345</dd></div>
+            </dl>
+          </div>
+        </article>
+
+        <article class="panel sales-panel">
+          <div class="panel-head">
+            <h2>Sales Analytics</h2>
+            <button type="button" aria-label="More options">...</button>
+          </div>
+          <div class="chart-wrap">
+            <svg viewBox="0 0 640 260" role="img" aria-label="Sales analytics line chart">
+              <g class="grid-lines">
+                <path d="M50 24V216M100 24V216M150 24V216M200 24V216M250 24V216M300 24V216M350 24V216M400 24V216M450 24V216M500 24V216M550 24V216M600 24V216"/>
+                <path d="M50 216H610M50 168H610M50 120H610M50 72H610M50 24H610"/>
+              </g>
+              <path class="chart-fill" d="M50 150L100 98L150 144L200 125L250 102L300 38L350 124L400 86L450 122L500 106L550 106L600 156V216H50Z"/>
+              <path class="chart-line" d="M50 150L100 98L150 144L200 125L250 102L300 38L350 124L400 86L450 122L500 106L550 106L600 156"/>
+              <g class="points">
+                <circle cx="100" cy="98" r="6"/><circle cx="150" cy="144" r="6"/><circle cx="200" cy="125" r="6"/><circle cx="250" cy="102" r="6"/><circle cx="300" cy="38" r="6"/><circle cx="350" cy="124" r="6"/><circle cx="400" cy="86" r="6"/><circle cx="450" cy="122" r="6"/><circle cx="500" cy="106" r="6"/><circle cx="550" cy="106" r="6"/><circle cx="600" cy="156" r="6"/>
+              </g>
+              <g class="months">
+                <text x="100" y="246">Jan</text><text x="150" y="246">Feb</text><text x="200" y="246">Mar</text><text x="250" y="246">Apr</text><text x="300" y="246">Mei</text><text x="350" y="246">Jun</text><text x="400" y="246">Jul</text><text x="450" y="246">Aug</text><text x="500" y="246">Sep</text><text x="550" y="246">Oct</text><text x="600" y="246">Nov</text>
+              </g>
+            </svg>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel invoice-table">
+        <div class="panel-head">
+          <h2>Recent Invoices</h2>
+          <div class="table-tools">
+            <button type="button">Filter</button>
+            <button type="button" aria-label="More options">...</button>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>No</th>
+              <th>Id Customers</th>
+              <th>Customers name</th>
+              <th>Items Name</th>
+              <th>Order Date</th>
+              <th>Status</th>
+              <th>Price</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td><td>#065499</td><td>Eren Yaeger</td><td>1 x Black Backpack</td><td>21/07/2022 08:21</td><td><span class="status paid">Paid</span></td><td>$101</td>
+            </tr>
+            <tr>
+              <td>2</td><td>#065499</td><td>Levi Ackerman</td><td>1 x Distro Backpack</td><td>21/07/2022 08:21</td><td><span class="status pending">Pending</span></td><td>$144</td>
+            </tr>
+            <tr>
+              <td>3</td><td>#065499</td><td>Rainer Brown</td><td>1 x New Backpack</td><td>21/07/2022 08:21</td><td><span class="status paid">Paid</span></td><td>$121</td>
+            </tr>
+            <tr>
+              <td>4</td><td>#065499</td><td>Historia Reiss</td><td>2 x Black Backpack</td><td>21/07/2022 08:21</td><td><span class="status overdue">Overdue</span></td><td>$300</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+  </div>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="dashboard-logic.js"></script>
+</body>
+</html>

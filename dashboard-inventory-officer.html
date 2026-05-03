@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventory Dashboard - FlowGuard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Questrial&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="dashboard">
+    <aside class="sidebar">
+      <div class="brand">
+        <i data-lucide="package" class="brand-icon"></i>
+        <div>
+          <strong>INVENTORY</strong>
+          <small>Stock & Supply Chain</small>
+        </div>
+      </div>
+
+      <p class="menu-title">STOCK MENU</p>
+      <nav class="nav-list" aria-label="Main menu">
+        <a class="active" href="#" data-view="overview"><i data-lucide="layout-dashboard" class="nav-icon"></i><span>Stock Overview</span></a>
+        <a href="#" data-view="materials"><i data-lucide="box" class="nav-icon"></i><span>Material List</span></a>
+        <a href="#" data-view="mrf"><i data-lucide="file-input" class="nav-icon"></i><span>MRF Requests</span><b>4</b></a>
+        <a href="#" data-view="shipments"><i data-lucide="truck" class="nav-icon"></i><span>Incoming Shipments</span></a>
+        <a href="#" data-view="audit"><i data-lucide="history" class="nav-icon"></i><span>Audit Logs</span></a>
+      </nav>
+
+      <p class="menu-title support-title">HELP & SUPPORT</p>
+      <nav class="nav-list support" aria-label="Support menu">
+        <a href="#" data-view="sop"><i data-lucide="info" class="nav-icon"></i><span>Inventory SOP</span></a>
+        <a href="#" data-view="settings"><i data-lucide="settings" class="nav-icon"></i><span>Settings</span></a>
+      </nav>
+
+      <a class="logout" href="index.html"><i data-lucide="log-out" class="nav-icon"></i><span>Log Out</span></a>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <h1>Welcome Back, Officer Cruz</h1>
+        <div class="top-actions">
+          <label class="search-box">
+            <i data-lucide="search"></i>
+            <input type="search" placeholder="Search item or MRF ID">
+          </label>
+          <button class="icon-btn" type="button" aria-label="Messages"><i data-lucide="message-circle"></i></button>
+          <button class="icon-btn bell" type="button" aria-label="Notifications"><i data-lucide="bell"></i></button>
+          <div class="profile">
+            <span class="avatar"></span>
+            <strong>Officer Cruz</strong>
+          </div>
+        </div>
+      </header>
+
+      <!-- VIEW: OVERVIEW -->
+      <section class="view-section active-view" id="view-overview">
+        <section class="metrics" aria-label="Dashboard metrics">
+          <article class="metric profit" style="cursor: pointer;" onclick="document.querySelector('[data-view=\'materials\']').click()">
+            <span class="metric-line"></span>
+            <div>
+              <p>Low Stock Items</p>
+              <strong>12</strong>
+              <small class="down">Action Required</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="alert-octagon"></i></span>
+          </article>
+          <article class="metric customers" style="cursor: pointer;" onclick="document.querySelector('[data-view=\'mrf\']').click()">
+            <span class="metric-line"></span>
+            <div>
+              <p>Pending MRFs</p>
+              <strong>4</strong>
+              <small class="up">2 Awaiting Approval</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="file-text"></i></span>
+          </article>
+          <article class="metric revenue">
+            <span class="metric-line"></span>
+            <div>
+              <p>Items Issued</p>
+              <strong>145</strong>
+              <small class="up">This week</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="package-check"></i></span>
+          </article>
+          <article class="metric invoices">
+            <span class="metric-line"></span>
+            <div>
+              <p>Total Stock Value</p>
+              <strong>P 850k</strong>
+              <small>Current valuation</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="banknote"></i></span>
+          </article>
+        </section>
+
+        <section class="panel invoice-table">
+          <div class="panel-head"><h2>Recent MRF Activity</h2></div>
+          <table id="recent-mrf-table">
+            <thead>
+              <tr><th>MRF ID</th><th>Requested By</th><th>Department</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>#MRF-102</td><td>Tech Santiago</td><td>Technical</td><td><span class="status pending">Pending</span></td></tr>
+              <tr><td>#MRF-101</td><td>Tech Ramos</td><td>Technical</td><td><span class="status paid">Issued</span></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: MATERIALS -->
+      <section class="view-section" id="view-materials">
+        <div class="panel-head">
+          <h2>Material List & Stock Levels</h2>
+          <button class="btn-primary" data-action="Add New Item" style="background: var(--blue); color: #fff; padding: 8px 16px; border-radius: 4px; border: 0; display: flex; align-items: center; gap: 8px;"><i data-lucide="plus-circle"></i> Add New Item</button>
+        </div>
+        <section class="panel invoice-table">
+          <table id="materials-table">
+            <thead>
+              <tr><th>SKU</th><th>Item Name</th><th>Category</th><th>Current Stock</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>PI-001</td><td>PVC Pipe 2" (Standard)</td><td>Pipes</td><td>120 units</td><td><span class="status paid">In Stock</span></td><td><div class="action-group"><button class="btn-action" data-action="Edit Item"><i data-lucide="edit"></i></button><button class="btn-action" data-action="Order"><i data-lucide="shopping-cart"></i></button></div></td></tr>
+              <tr><td>WM-005</td><td>Water Meter G-4</td><td>Meters</td><td>5 units</td><td><span class="status overdue">Low Stock</span></td><td><div class="action-group"><button class="btn-action" data-action="Edit Item"><i data-lucide="edit"></i></button><button class="btn-action" data-action="Order"><i data-lucide="shopping-cart"></i></button></div></td></tr>
+              <tr><td>FT-022</td><td>Brass Coupling 2"</td><td>Fittings</td><td>45 units</td><td><span class="status paid">In Stock</span></td><td><div class="action-group"><button class="btn-action" data-action="Edit Item"><i data-lucide="edit"></i></button><button class="btn-action" data-action="Order"><i data-lucide="shopping-cart"></i></button></div></td></tr>
+              <tr><td>SL-010</td><td>Industrial Sealant</td><td>Consumables</td><td>2 units</td><td><span class="status overdue">Out of Stock</span></td><td><div class="action-group"><button class="btn-action" data-action="Edit Item"><i data-lucide="edit"></i></button><button class="btn-action" data-action="Order"><i data-lucide="shopping-cart"></i></button></div></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: MRF -->
+      <section class="view-section" id="view-mrf">
+        <div class="panel-head">
+          <h2>Material Request Forms (MRF)</h2>
+        </div>
+        <section class="panel invoice-table">
+          <table id="mrf-table">
+            <thead>
+              <tr><th>MRF ID</th><th>Technician</th><th>Items Requested</th><th>Date</th><th>Status</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>#MRF-102</td><td>Tech Santiago</td><td>3x PVC Pipe 2", 1x Coupling</td><td>02/05/2026</td><td><span class="status pending">Pending Issue</span></td><td><button class="btn-action" data-action="Approve & Issue">Approve & Issue</button></td></tr>
+              <tr><td>#MRF-103</td><td>Tech Reyes</td><td>2x Water Meter, 1x Sealant</td><td>02/05/2026</td><td><span class="status pending">Pending Issue</span></td><td><button class="btn-action" data-action="Approve & Issue">Approve & Issue</button></td></tr>
+              <tr><td>#MRF-101</td><td>Tech Ramos</td><td>1x Water Meter G-4</td><td>01/05/2026</td><td><span class="status paid">Issued</span></td><td><button class="btn-action" data-action="View Log">View Log</button></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: SHIPMENTS -->
+      <section class="view-section" id="view-shipments">
+        <div class="panel-head">
+          <h2>Incoming Shipments</h2>
+        </div>
+        <section class="panel invoice-table">
+          <table id="shipments-table">
+            <thead>
+              <tr><th>Tracking #</th><th>Supplier</th><th>Expected Date</th><th>Status</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>#AQ-88902</td><td>AquaSupplies Inc.</td><td>05/05/2026</td><td><span class="status pending">In Transit</span></td><td><div class="action-group"><button class="btn-action" data-action="Track"><i data-lucide="map-pin"></i> Track</button></div></td></tr>
+              <tr><td>#PM-55210</td><td>PipeMaster Co.</td><td>03/05/2026</td><td><span class="status paid">Arrived</span></td><td><div class="action-group"><button class="btn-action" data-action="Verify"><i data-lucide="check-square"></i> Check & Accept</button></div></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: AUDIT -->
+      <section class="view-section" id="view-audit">
+        <div class="panel-head">
+          <h2>Inventory Audit Logs</h2>
+          <button class="btn-action" data-action="Export PDF" style="background: #fff; border: 1px solid #dce2eb; padding: 6px 12px; border-radius: 4px;"><i data-lucide="download" style="width: 14px;"></i> Export PDF</button>
+        </div>
+        <section class="panel invoice-table">
+          <table id="audit-table">
+            <thead>
+              <tr><th>Timestamp</th><th>Action</th><th>User</th><th>Item</th><th>Change</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>03/05/2026 10:20</td><td>Stock Issued</td><td>Officer Cruz</td><td>PVC Pipe 2"</td><td><span style="color: #ef4444;">-3 units</span></td></tr>
+              <tr><td>02/05/2026 15:45</td><td>Stock Updated</td><td>Officer Cruz</td><td>Water Meter G-4</td><td><span style="color: #10b981;">+50 units</span></td></tr>
+              <tr><td>01/05/2026 09:12</td><td>System Audit</td><td>Auto-System</td><td>Multiple</td><td><span class="status paid">Log cycle complete</span></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: SOP -->
+      <section class="view-section" id="view-sop">
+        <div class="panel-head">
+          <h2>Standard Operating Procedures (SOP)</h2>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px;">
+          <section class="panel">
+            <h3 style="margin: 0 0 15px; font-size: 16px; color: var(--blue); display: flex; align-items: center; gap: 10px;">
+              <i data-lucide="package-plus" style="width: 18px;"></i> Receiving Materials
+            </h3>
+            <ol style="padding-left: 20px; font-size: 13px; line-height: 1.6; color: var(--text);">
+              <li>Check delivery against Purchase Order (PO) reference.</li>
+              <li>Inspect items for physical damage or manufacturing defects.</li>
+              <li>Verify quantity received matches the delivery receipt.</li>
+              <li>Accept shipment in the system to update digital inventory.</li>
+              <li>Log any discrepancies immediately in the audit section.</li>
+            </ol>
+          </section>
+
+          <section class="panel">
+            <h3 style="margin: 0 0 15px; font-size: 16px; color: var(--cyan); display: flex; align-items: center; gap: 10px;">
+              <i data-lucide="file-output" style="width: 18px;"></i> Issuing Stock (MRF)
+            </h3>
+            <ol style="padding-left: 20px; font-size: 13px; line-height: 1.6; color: var(--text);">
+              <li>Validate the MRF ID and requesting technician's identity.</li>
+              <li>Ensure items requested are available and approved by GM.</li>
+              <li>Pick items from warehouse and record serial numbers if applicable.</li>
+              <li>Mark MRF as "Issued" in the dashboard.</li>
+              <li>Hand over materials and ensure technician signs the physical log.</li>
+            </ol>
+          </section>
+
+          <section class="panel" style="grid-column: span 1;">
+             <h3 style="margin: 0 0 15px; font-size: 16px; color: #f59e0b; display: flex; align-items: center; gap: 10px;">
+              <i data-lucide="alert-triangle" style="width: 18px;"></i> Low Stock Alerts
+            </h3>
+            <p style="font-size: 13px; line-height: 1.6; color: var(--muted);">
+              When an item hits the "Critical Low" threshold (e.g., < 10 units for Pipes), the system will flag it as <strong>Action Required</strong>.
+              <br><br>
+              <strong>Procedure:</strong> Notify the General Manager or initiate an Order Replenishment directly via the Materials list.
+            </p>
+          </section>
+        </div>
+      </section>
+
+      <!-- VIEW: SETTINGS -->
+      <section class="view-section" id="view-settings">
+        <div class="panel-head"><h2>Account & System Settings</h2></div>
+        <div class="settings-grid">
+          <aside class="settings-nav">
+            <button class="active" data-tab="profile">Profile Information</button>
+            <button data-tab="notifications">Notifications</button>
+            <button data-tab="security">Security & Privacy</button>
+          </aside>
+          <div class="settings-content">
+            <!-- TAB: PROFILE -->
+            <div class="tab-content" id="tab-profile">
+              <div class="profile-header">
+                <div class="profile-avatar-large">
+                  <button class="avatar-edit"><i data-lucide="camera"></i></button>
+                </div>
+                <div>
+                  <h3 style="margin: 0;">Officer Cruz</h3>
+                  <p style="margin: 4px 0 0; color: var(--muted); font-size: 13px;">Senior Inventory Officer | Marinduque HQ</p>
+                </div>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div class="form-group"><label>Full Name</label><input type="text" value="Ricardo Cruz"></div>
+                <div class="form-group"><label>Email Address</label><input type="email" value="r.cruz@flowguard.ph"></div>
+                <div class="form-group"><label>Employee ID</label><input type="text" value="EMP-2024-0082" readonly style="background: #f8f9fc;"></div>
+                <div class="form-group"><label>Phone Number</label><input type="text" value="+63 912 345 6789"></div>
+              </div>
+              <button class="btn-primary" data-action="Save Settings" style="margin-top: 10px;">Save Profile Changes</button>
+            </div>
+
+            <!-- TAB: NOTIFICATIONS -->
+            <div class="tab-content" id="tab-notifications" style="display: none;">
+              <h3 style="font-size: 16px; margin-bottom: 20px;">Notification Preferences</h3>
+              <div class="switch-group">
+                <div class="switch-label"><strong>Low Stock Alerts</strong><span>Notify when items reach critical threshold</span></div>
+                <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+              </div>
+              <div class="switch-group">
+                <div class="switch-label"><strong>New MRF Requests</strong><span>Alert me when a technician submits a request</span></div>
+                <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+              </div>
+              <div class="switch-group">
+                <div class="switch-label"><strong>Shipment Arrivals</strong><span>Notifications for incoming vendor deliveries</span></div>
+                <label class="switch"><input type="checkbox"><span class="slider"></span></label>
+              </div>
+            </div>
+
+            <!-- TAB: SECURITY -->
+            <div class="tab-content" id="tab-security" style="display: none;">
+              <h3 style="font-size: 16px; margin-bottom: 20px;">Security Settings</h3>
+              <div class="form-group"><label>Current Password</label><input type="password" placeholder="••••••••"></div>
+              <div class="form-group"><label>New Password</label><input type="password" placeholder="Enter new password"></div>
+              <div class="form-group"><label>Confirm Password</label><input type="password" placeholder="Confirm new password"></div>
+              <button class="btn-primary" data-action="Update Password">Update Password</button>
+              
+              <hr style="margin: 30px 0; border: 0; border-top: 1px solid #edf0f6;">
+              <div style="background: #fff5f5; padding: 15px; border-radius: 8px; border: 1px solid #ffecec;">
+                <strong style="color: #c85b70; font-size: 14px; display: block; margin-bottom: 5px;">Dangerous Area</strong>
+                <p style="font-size: 12px; color: #a06060; margin: 0 0 12px;">Logging out of all sessions will require re-authentication on all devices.</p>
+                <button style="background: #c85b70; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 12px; cursor: pointer;">Sign Out of All Sessions</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="dashboard-logic.js"></script>
+</body>
+</html>

@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Specialist Dashboard - FlowGuard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Questrial&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="dashboard">
+    <aside class="sidebar">
+      <div class="brand">
+        <i data-lucide="map-pin" class="brand-icon"></i>
+        <div>
+          <strong>SPECIALIST</strong>
+          <small>Zone Investigations</small>
+        </div>
+      </div>
+
+      <p class="menu-title">MAIN MENU</p>
+      <nav class="nav-list" aria-label="Main menu">
+        <a class="active" href="#" data-view="overview"><i data-lucide="layout-dashboard" class="nav-icon"></i><span>Overview</span></a>
+        <a href="#" data-view="investigations"><i data-lucide="search" class="nav-icon"></i><span>Investigations</span><b>5</b></a>
+        <a href="#" data-view="reports"><i data-lucide="clipboard-list" class="nav-icon"></i><span>Field Reports</span></a>
+        <a href="#" data-view="schedule"><i data-lucide="calendar" class="nav-icon"></i><span>My Schedule</span></a>
+      </nav>
+
+      <p class="menu-title support-title">HELP & SUPPORT</p>
+      <nav class="nav-list support" aria-label="Support menu">
+        <a href="#" data-view="guidelines"><i data-lucide="book-open" class="nav-icon"></i><span>Zone Guidelines</span></a>
+        <a href="#" data-view="settings"><i data-lucide="settings" class="nav-icon"></i><span>Settings</span></a>
+      </nav>
+
+      <a class="logout" href="index.html"><i data-lucide="log-out" class="nav-icon"></i><span>Log Out</span></a>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <h1>Welcome Back, Specialist Ramos</h1>
+        <div class="top-actions">
+          <label class="search-box">
+            <i data-lucide="search"></i>
+            <input type="search" placeholder="Search zone or case ID">
+          </label>
+          <button class="icon-btn" type="button" aria-label="Messages"><i data-lucide="message-circle"></i></button>
+          <button class="icon-btn bell" type="button" aria-label="Notifications"><i data-lucide="bell"></i></button>
+          <div class="profile">
+            <span class="avatar"></span>
+            <strong>Spec. Ramos</strong>
+          </div>
+        </div>
+      </header>
+
+      <!-- VIEW: OVERVIEW -->
+      <section class="view-section active-view" id="view-overview">
+        <section class="metrics" aria-label="Dashboard metrics">
+          <article class="metric customers">
+            <span class="metric-line"></span>
+            <div>
+              <p>New Complaints</p>
+              <strong>5</strong>
+              <small class="up">3 Urgent cases</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="alert-triangle"></i></span>
+          </article>
+          <article class="metric revenue">
+            <span class="metric-line"></span>
+            <div>
+              <p>Completed Reports</p>
+              <strong>12</strong>
+              <small class="up">+4 this week</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="clipboard-check"></i></span>
+          </article>
+          <article class="metric profit">
+            <span class="metric-line"></span>
+            <div>
+              <p>Assigned Area</p>
+              <strong>Boac</strong>
+              <small>Capital District</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="map"></i></span>
+          </article>
+          <article class="metric invoices">
+            <span class="metric-line"></span>
+            <div>
+              <p>Avg Response</p>
+              <strong>4.2 hrs</strong>
+              <small class="down">-15% time</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="clock"></i></span>
+          </article>
+        </section>
+
+        <section class="panel invoice-table">
+          <div class="panel-head">
+            <h2>High Priority Cases</h2>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Case ID</th><th>Location</th><th>Issue</th><th>Due</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>#C-998</td><td>Block 5 Lot 2</td><td>Main Pipe Leak</td><td>Today</td><td><span class="status overdue">Critical</span></td></tr>
+              <tr><td>#C-995</td><td>Street 12</td><td>No Water</td><td>In 2hrs</td><td><span class="status pending">Urgent</span></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: INVESTIGATIONS -->
+      <section class="view-section" id="view-investigations">
+        <div class="panel-head">
+          <h2>Pending Zone Investigations</h2>
+          <div style="display: flex; gap: 10px;">
+            <button class="btn-action" data-action="Filter" style="background: #fff; border: 1px solid #dce2eb; color: var(--text); padding: 8px 16px; border-radius: 4px; font-size: 13px; display: flex; align-items: center; gap: 8px;">
+                <i data-lucide="filter" style="width: 14px;"></i> Filter
+            </button>
+            <button class="btn-primary" data-action="Start New Inspection" style="background: var(--blue); color: #fff; padding: 8px 16px; border-radius: 4px; border: 0; font-size: 13px; font-weight: 500;">Start New Inspection</button>
+          </div>
+        </div>
+        <section class="panel invoice-table">
+          <table id="investigations-table">
+            <thead>
+              <tr><th>No</th><th>ID</th><th>Location</th><th>Issue Reported</th><th>Assigned</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td><strong>#C-998</strong></td>
+                <td>Phase 1, B5 L2</td>
+                <td><span class="badge badge-high">Major Leakage</span></td>
+                <td>02/05/2026</td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action btn-blue" data-action="Process"><i data-lucide="play"></i> Process</button>
+                    <button class="btn-action" data-action="View Details"><i data-lucide="eye"></i></button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td><strong>#C-995</strong></td>
+                <td>West Side, S12</td>
+                <td><span class="badge badge-medium">Supply Interruption</span></td>
+                <td>01/05/2026</td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action btn-blue" data-action="Process"><i data-lucide="play"></i> Process</button>
+                    <button class="btn-action" data-action="View Details"><i data-lucide="eye"></i></button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td><strong>#C-990</strong></td>
+                <td>North Park Area</td>
+                <td><span class="badge badge-low">Illegal Connection?</span></td>
+                <td>30/04/2026</td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action btn-blue" data-action="Process"><i data-lucide="play"></i> Process</button>
+                    <button class="btn-action" data-action="View Details"><i data-lucide="eye"></i></button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: REPORTS -->
+      <section class="view-section" id="view-reports">
+        <div class="panel-head">
+          <h2>Detailed Field Reports</h2>
+          <div style="display: flex; gap: 10px;">
+            <button class="btn-action" data-action="Export PDF" style="background: #fff; border: 1px solid #dce2eb; color: var(--text); padding: 8px 16px; border-radius: 4px; font-size: 13px;">Export PDF</button>
+            <button class="btn-primary" data-action="Submit New Report" style="background: var(--blue); color: #fff; padding: 8px 16px; border-radius: 4px; border: 0; font-size: 13px;">Submit New Report</button>
+          </div>
+        </div>
+        <section class="panel invoice-table">
+          <table id="field-reports-table">
+            <thead>
+              <tr><th>Report ID</th><th>Date</th><th>Municipality</th><th>Inspection Category</th><th>Findings Summary</th><th>Status</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>#REP-550</strong></td>
+                <td>01/05/2026</td>
+                <td>Boac</td>
+                <td><span style="font-size: 11px; padding: 2px 6px; background: #f0f7ff; color: var(--blue); border-radius: 4px;">Leakage Report</span></td>
+                <td>Corroded 2" PVC pipe found at Phase 1. Immediate replacement recommended.</td>
+                <td><span class="status paid">Approved</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="View Details"><i data-lucide="eye"></i> Details</button>
+                    <button class="btn-action" data-action="Download"><i data-lucide="download"></i></button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>#REP-548</strong></td>
+                <td>30/04/2026</td>
+                <td>Mogpog</td>
+                <td><span style="font-size: 11px; padding: 2px 6px; background: #fff8f1; color: #f59e0b; border-radius: 4px;">Illegal Usage</span></td>
+                <td>Unregistered sub-meter connection detected at Brgy. Market. Documented photos.</td>
+                <td><span class="status pending">Under Review</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="View Details"><i data-lucide="eye"></i> Details</button>
+                    <button class="btn-action" data-action="Download"><i data-lucide="download"></i></button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>#REP-545</strong></td>
+                <td>28/04/2026</td>
+                <td>Boac</td>
+                <td><span style="font-size: 11px; padding: 2px 6px; background: #fdf2f8; color: var(--pink); border-radius: 4px;">Meter Audit</span></td>
+                <td>Water meter #M-402 recalibrated. Accuracy verified at 99.8%.</td>
+                <td><span class="status paid">Approved</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="View Details"><i data-lucide="eye"></i> Details</button>
+                    <button class="btn-action" data-action="Download"><i data-lucide="download"></i></button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>#REP-542</strong></td>
+                <td>25/04/2026</td>
+                <td>Gasan</td>
+                <td><span style="font-size: 11px; padding: 2px 6px; background: #f0fdf4; color: #16a34a; border-radius: 4px;">Routine Check</span></td>
+                <td>No major issues found. Water pressure levels stable across zone.</td>
+                <td><span class="status paid">Archived</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="View Details"><i data-lucide="eye"></i> Details</button>
+                    <button class="btn-action" data-action="Download"><i data-lucide="download"></i></button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: SCHEDULE -->
+      <section class="view-section" id="view-schedule">
+        <div class="panel-head">
+          <h2>Investigation Schedule</h2>
+        </div>
+        <section class="panel">
+          <div style="display: grid; gap: 15px;">
+            <div style="padding: 15px; border-left: 4px solid var(--pink); background: #fdfdfd;">
+              <strong>09:00 AM - Site Inspection</strong>
+              <p style="margin: 5px 0 0; font-size: 13px; color: var(--muted);">Location: Block 5 Lot 2, Phase 1</p>
+            </div>
+            <div style="padding: 15px; border-left: 4px solid var(--blue); background: #fdfdfd;">
+              <strong>01:30 PM - Meeting with Technical Lead</strong>
+              <p style="margin: 5px 0 0; font-size: 13px; color: var(--muted);">Topic: Pipe replacement requirements</p>
+            </div>
+            <div style="padding: 15px; border-left: 4px solid var(--cyan); background: #fdfdfd;">
+              <strong>03:30 PM - Report Documentation</strong>
+              <p style="margin: 5px 0 0; font-size: 13px; color: var(--muted);">Office work: Finalize reports for Boac</p>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- VIEW: GUIDELINES -->
+      <section class="view-section" id="view-guidelines">
+        <div class="panel-head">
+          <h2>Zone Investigation Guidelines</h2>
+        </div>
+        <div class="faq-list">
+          <article class="panel faq-item">
+            <div class="faq-question">
+              <span>Standard Safety Protocol for Site Inspection</span>
+              <i data-lucide="chevron-down"></i>
+            </div>
+            <div class="faq-answer">
+              <p>Always wear high-visibility vests and protective gear. Coordinate with the local barangay office before entering private properties or gated communities in Boac.</p>
+            </div>
+          </article>
+          <article class="panel faq-item">
+            <div class="faq-question">
+              <span>Reporting Illegal Connections</span>
+              <i data-lucide="chevron-down"></i>
+            </div>
+            <div class="faq-answer">
+              <p>Document the connection with at least 3 photos from different angles. Do not confront the resident; file the report immediately through the "Illegal Usage" category in the Start Inspection tool.</p>
+            </div>
+          </article>
+          <article class="panel faq-item">
+            <div class="faq-question">
+              <span>Handling Major Main Pipe Bursts</span>
+              <i data-lucide="chevron-down"></i>
+            </div>
+            <div class="faq-answer">
+              <p>Immediately request for valve isolation from the Technical Team. Mark the area with safety cones and update the status to "Critical" in the dashboard.</p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- VIEW: SETTINGS -->
+      <section class="view-section" id="view-settings">
+        <div class="panel-head">
+          <h2>Account Settings</h2>
+        </div>
+        <div class="settings-grid">
+          <aside class="panel settings-nav">
+            <button class="active" data-tab="profile">Profile</button>
+            <button data-tab="notif">Notifications</button>
+            <button data-tab="security">Security</button>
+          </aside>
+          <div class="panel settings-content">
+            <div class="tab-content" id="tab-profile">
+              <h3>Public Profile</h3>
+              <div class="form-group">
+                <label>Full Name</label>
+                <input type="text" value="Specialist Ramos">
+              </div>
+              <div class="form-group">
+                <label>Assigned Municipality</label>
+                <input type="text" value="Boac" readonly>
+              </div>
+              <div class="form-group">
+                <label>Email Address</label>
+                <input type="email" value="ramos.spec@flowguard.gov.ph">
+              </div>
+              <button class="btn-primary" data-action="Save Settings">Save Changes</button>
+            </div>
+            <div class="tab-content" id="tab-notif" style="display:none;">
+              <h3 style="margin-bottom: 20px;">Notification Preferences</h3>
+              
+              <div style="margin-bottom: 25px;">
+                <p style="font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; margin-bottom: 12px; letter-spacing: 0.5px;">System Alerts</p>
+                <div class="switch-group">
+                  <div class="switch-label">
+                    <strong>Critical Leakage Alerts</strong>
+                    <span>Receive instant alerts for major pipe bursts in Boac</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" checked>
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div class="switch-group">
+                  <div class="switch-label">
+                    <strong>New Case Assignments</strong>
+                    <span>Notify me when a new investigation is assigned to me</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" checked>
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </div>
+
+              <div style="margin-bottom: 25px;">
+                <p style="font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; margin-bottom: 12px; letter-spacing: 0.5px;">Communication</p>
+                <div class="switch-group">
+                  <div class="switch-label">
+                    <strong>Direct Messages</strong>
+                    <span>Show desktop notifications for new chat messages</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" checked>
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div class="switch-group">
+                  <div class="switch-label">
+                    <strong>Weekly Operational Summary</strong>
+                    <span>Email me a summary of my zone's weekly performance</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox">
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </div>
+
+              <button class="btn-primary" data-action="Save Settings" style="width: 100%; margin-top: 10px;">Save Preferences</button>
+            </div>
+            <div class="tab-content" id="tab-security" style="display:none;">
+              <h3>Security & Password</h3>
+              <div class="form-group">
+                <label>Current Password</label>
+                <input type="password" placeholder="••••••••">
+              </div>
+              <div class="form-group">
+                <label>New Password</label>
+                <input type="password" placeholder="Enter new password">
+              </div>
+              <button class="btn-primary" data-action="Save Settings">Update Password</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="dashboard-logic.js"></script>
+</body>
+</html>

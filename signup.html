@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FlowGuard - Create Account</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Questrial&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="page-shell">
+    <section class="login-card" aria-label="Create account">
+      <header class="card-header">
+        <div class="brand-mark">
+          <img src="assets/logo.png" alt="FlowGuard logo" width="544" height="242">
+        </div>
+        <p>Create your account.</p>
+      </header>
+
+      <form class="login-form" novalidate>
+        <div class="input-shell">
+          <label class="input-copy" for="full-name">
+            <span class="input-label">Full Name</span>
+            <input id="full-name" name="full_name" type="text" placeholder="Enter your full name" autocomplete="name">
+          </label>
+        </div>
+
+        <div class="input-shell">
+          <label class="input-copy" for="signup-email">
+            <span class="input-label">Email</span>
+            <input id="signup-email" name="email" type="email" placeholder="Enter your email" autocomplete="email">
+          </label>
+        </div>
+
+        <div class="input-shell">
+          <label class="input-copy" for="signup-password">
+            <span class="input-label">Password</span>
+            <input id="signup-password" name="password" type="password" placeholder="Create your password" autocomplete="new-password">
+          </label>
+          <button class="toggle-password" type="button" data-toggle-password="signup-password" aria-label="Show password">
+            <img src="assets/eye.svg" alt="" width="18" height="18">
+          </button>
+        </div>
+
+        <div class="input-shell role-shell">
+          <label class="input-copy" for="signup-role">
+            <span class="input-label">Role</span>
+            <select id="signup-role" name="role" required>
+              <option value="" selected disabled>Select role</option>
+              <option value="customer">Customer</option>
+              <option value="zone-specialist">Zone Specialist</option>
+              <option value="general-manager">General Manager</option>
+              <option value="inventory-officer">Inventory Officer</option>
+              <option value="technical-team">Technical Team</option>
+            </select>
+          </label>
+        </div>
+
+        <button class="primary-submit" type="submit">Create Account</button>
+      </form>
+
+      <p class="card-footer">
+        Already have an account?
+        <a href="index.html">Sign in</a>
+      </p>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

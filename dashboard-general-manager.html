@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manager Dashboard - FlowGuard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Questrial&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="dashboard">
+    <aside class="sidebar">
+      <div class="brand">
+        <i data-lucide="bar-chart-3" class="brand-icon"></i>
+        <div>
+          <strong>MANAGER</strong>
+          <small>Operations & Coordination</small>
+        </div>
+      </div>
+
+      <p class="menu-title">ADMIN MENU</p>
+      <nav class="nav-list" aria-label="Main menu">
+        <a class="active" href="#" data-view="overview"><i data-lucide="layout-dashboard" class="nav-icon"></i><span>Overview</span></a>
+        <a href="#" data-view="staff"><i data-lucide="users" class="nav-icon"></i><span>Staff Management</span></a>
+        <a href="#" data-view="inventory"><i data-lucide="package" class="nav-icon"></i><span>Inventory Overview</span></a>
+        <a href="#" data-view="reports"><i data-lucide="file-bar-chart" class="nav-icon"></i><span>Operational Reports</span></a>
+        <a href="#" data-view="suppliers"><i data-lucide="shopping-cart" class="nav-icon"></i><span>Suppliers & POs</span></a>
+      </nav>
+
+      <p class="menu-title support-title">SYSTEM</p>
+      <nav class="nav-list support" aria-label="Support menu">
+        <a href="#" data-view="settings"><i data-lucide="settings" class="nav-icon"></i><span>System Settings</span></a>
+      </nav>
+
+      <a class="logout" href="index.html"><i data-lucide="log-out" class="nav-icon"></i><span>Log Out</span></a>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <h1>Welcome Back, GM Reyes</h1>
+        <div class="top-actions">
+          <label class="search-box">
+            <i data-lucide="search"></i>
+            <input type="search" placeholder="Search operational data">
+          </label>
+          <button class="icon-btn" type="button" aria-label="Messages"><i data-lucide="message-circle"></i></button>
+          <button class="icon-btn bell" type="button" aria-label="Notifications"><i data-lucide="bell"></i></button>
+          <div class="profile">
+            <span class="avatar"></span>
+            <strong>GM Reyes</strong>
+          </div>
+        </div>
+      </header>
+
+      <!-- VIEW: OVERVIEW -->
+      <section class="view-section active-view" id="view-overview">
+        <section class="metrics" aria-label="Dashboard metrics">
+          <article class="metric customers">
+            <span class="metric-line"></span>
+            <div>
+              <p>Active Network Repairs</p>
+              <strong>24</strong>
+              <small class="up">8 in Boac, 16 Island-wide</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="wrench"></i></span>
+          </article>
+          <article class="metric revenue">
+            <span class="metric-line"></span>
+            <div>
+              <p>Monthly Revenue Target</p>
+              <strong>P 2.4M</strong>
+              <small class="up">+12.5% vs last month</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="trending-up"></i></span>
+          </article>
+          <article class="metric profit">
+            <span class="metric-line"></span>
+            <div>
+              <p>Budget Utilization</p>
+              <strong>85%</strong>
+              <small class="down">Q2 Capex limit approaching</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="pie-chart"></i></span>
+          </article>
+          <article class="metric invoices">
+            <span class="metric-line"></span>
+            <div>
+              <p>Field Staff Active</p>
+              <strong>18/20</strong>
+              <small class="up">All 6 municipalities covered</small>
+            </div>
+            <span class="metric-icon"><i data-lucide="users"></i></span>
+          </article>
+        </section>
+
+        <section class="analytics-grid">
+          <article class="panel invoice-panel">
+            <div class="panel-head"><h2>Island-wide Repair Statistics</h2></div>
+            <div class="invoice-content">
+              <div class="donut"><span>24</span><small>Active</small></div>
+              <dl class="legend">
+                <div><dt>Critical (Main Line)</dt><dd><span class="dot dark"></span>4</dd></div>
+                <div><dt>Moderate (Distribution)</dt><dd><span class="dot blue"></span>12</dd></div>
+                <div><dt>Low (Service Connect)</dt><dd><span class="dot pale"></span>8</dd></div>
+              </dl>
+            </div>
+          </article>
+          <article class="panel sales-panel">
+            <div class="panel-head"><h2>Water Production vs Non-Revenue Water</h2></div>
+            <div class="chart-wrap">
+              <svg viewBox="0 0 640 260">
+                <path class="chart-line" d="M50 150L100 98L150 144L200 125L250 102L300 38L350 124L400 86L450 122L500 106L550 106L600 156" fill="none" stroke="var(--blue)"/>
+              </svg>
+            </div>
+          </article>
+        </section>
+      </section>
+
+      <!-- VIEW: STAFF -->
+      <section class="view-section" id="view-staff">
+        <div class="panel-head">
+          <h2>Field & Office Staff Directory</h2>
+          <div style="display: flex; gap: 10px;">
+            <button style="background: #fff; border: 1px solid #dce2eb; color: var(--text); padding: 8px 16px; border-radius: 4px; font-size: 13px; display: flex; align-items: center; gap: 8px;">
+                <i data-lucide="filter" style="width: 14px;"></i> Filter
+            </button>
+            <button class="btn-primary" style="padding: 8px 16px; font-size: 13px;" data-action="Add New Staff">Add New Staff</button>
+          </div>
+        </div>
+        <section class="panel invoice-table">
+          <table>
+            <thead>
+              <tr><th>Employee Name</th><th>Role Designation</th><th>Assigned Municipality</th><th>Current Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Specialist Ramos</strong></td>
+                <td>Zone Specialist</td>
+                <td>Boac (Capital)</td>
+                <td><span class="status paid">Active in Field</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="Manage Staff"><i data-lucide="settings-2"></i> Manage</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Officer Cruz</strong></td>
+                <td>Inventory Officer</td>
+                <td>Boac (HQ)</td>
+                <td><span class="status paid">At Office</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="Manage Staff"><i data-lucide="settings-2"></i> Manage</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Tech Santiago</strong></td>
+                <td>Senior Technician</td>
+                <td>Gasan & Buenavista</td>
+                <td><span class="status paid">Active in Field</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="Manage Staff"><i data-lucide="settings-2"></i> Manage</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Tech Reyes</strong></td>
+                <td>Field Technician</td>
+                <td>Mogpog</td>
+                <td><span class="status pending">On Leave</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="Manage Staff"><i data-lucide="settings-2"></i> Manage</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Specialist Santos</strong></td>
+                <td>Zone Specialist</td>
+                <td>Santa Cruz & Torrijos</td>
+                <td><span class="status paid">Active in Field</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="Manage Staff"><i data-lucide="settings-2"></i> Manage</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: INVENTORY -->
+      <section class="view-section" id="view-inventory">
+        <div class="panel-head">
+          <h2>Central Inventory Overview</h2>
+          <div style="display: flex; gap: 10px;">
+            <button style="background: #fff; border: 1px solid #dce2eb; color: var(--text); padding: 8px 16px; border-radius: 4px; font-size: 13px; display: flex; align-items: center; gap: 8px;">
+                <i data-lucide="download" style="width: 14px;"></i> Export Stock
+            </button>
+            <button class="btn-primary" style="padding: 8px 16px; font-size: 13px;" data-action="Approve & Issue">Review Pending MRFs</button>
+          </div>
+        </div>
+        <section class="panel invoice-table">
+          <table>
+            <thead>
+              <tr><th>Asset Category</th><th>Total Stock Value</th><th>Items Below Threshold</th><th>Last Full Audit</th><th>Health Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Pipes & Fittings</strong></td>
+                <td>P 450,000</td>
+                <td>12 SKUs</td>
+                <td>01/05/2026</td>
+                <td><span class="status paid">Healthy</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action"><i data-lucide="eye"></i> Details</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Water Meters (Residential)</strong></td>
+                <td>P 280,000</td>
+                <td><strong style="color: #c85b70;">25 SKUs</strong></td>
+                <td>01/05/2026</td>
+                <td><span class="status overdue">Critical Low</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action btn-blue" data-action="Order"><i data-lucide="shopping-cart"></i> Order</button>
+                    <button class="btn-action" data-action="Details"><i data-lucide="eye"></i></button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Tools & Heavy Equipment</strong></td>
+                <td>P 1.2M</td>
+                <td>2 SKUs</td>
+                <td>25/04/2026</td>
+                <td><span class="status paid">Healthy</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action"><i data-lucide="eye"></i> Details</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: REPORTS -->
+      <section class="view-section" id="view-reports">
+        <div class="panel-head">
+          <h2>Management & Operational Reports</h2>
+          <button class="btn-primary" style="padding: 8px 16px; font-size: 13px;" data-action="Generate Report"><i data-lucide="plus" style="width:14px; display:inline-block; vertical-align:middle; margin-right:4px;"></i> Generate Custom Report</button>
+        </div>
+        <section class="panel invoice-table">
+          <table>
+            <thead>
+              <tr><th>Document Title</th><th>Category</th><th>Generation Date</th><th>Author / Source</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>April 2026 Executive Summary</strong></td>
+                <td><span style="font-size: 11px; padding: 2px 6px; background: #f0f7ff; color: var(--blue); border-radius: 4px;">Executive</span></td>
+                <td>01/05/2026</td>
+                <td>Automated System</td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action"><i data-lucide="eye"></i> Review</button>
+                    <button class="btn-action" data-action="Download"><i data-lucide="download"></i></button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Q1 Capex Budget Utilization</strong></td>
+                <td><span style="font-size: 11px; padding: 2px 6px; background: #f0fdf4; color: #16a34a; border-radius: 4px;">Financial</span></td>
+                <td>15/04/2026</td>
+                <td>Finance Dept.</td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action"><i data-lucide="eye"></i> Review</button>
+                    <button class="btn-action" data-action="Download"><i data-lucide="download"></i></button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Boac District NRW Analysis</strong></td>
+                <td><span style="font-size: 11px; padding: 2px 6px; background: #fff8f1; color: #f59e0b; border-radius: 4px;">Technical</span></td>
+                <td>10/04/2026</td>
+                <td>Spec. Ramos</td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action"><i data-lucide="eye"></i> Review</button>
+                    <button class="btn-action" data-action="Download"><i data-lucide="download"></i></button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: SUPPLIERS -->
+      <section class="view-section" id="view-suppliers">
+        <div class="panel-head">
+          <h2>Active Purchase Orders</h2>
+          <button class="btn-primary" style="padding: 8px 16px; font-size: 13px;" data-action="New PO"><i data-lucide="plus" style="width:14px; display:inline-block; vertical-align:middle; margin-right:4px;"></i> Create New PO</button>
+        </div>
+        <section class="panel invoice-table" style="margin-bottom: 30px;">
+          <table id="active-pos-table">
+            <thead>
+              <tr><th>PO Reference</th><th>Vendor / Supplier</th><th>Total Valuation</th><th>Logistics Status</th><th>ETA</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>#PO-2026-102</strong></td>
+                <td>AquaSupplies PH</td>
+                <td>P 320,000</td>
+                <td><span class="status pending">In Transit to Marinduque</span></td>
+                <td>08/05/2026</td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="Invoice"><i data-lucide="file-text"></i> Invoice</button>
+                    <button class="btn-action" data-action="Track"><i data-lucide="truck"></i> Track</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>#PO-2026-098</strong></td>
+                <td>PipeMaster Co.</td>
+                <td>P 145,000</td>
+                <td><span class="status paid">Received at HQ (Boac)</span></td>
+                <td>--</td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="Invoice"><i data-lucide="file-text"></i> Invoice</button>
+                    <button class="btn-action" data-action="Verify"><i data-lucide="check-circle"></i> Verify</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <div class="panel-head">
+          <h2>Preferred Vendor Directory</h2>
+          <button style="background: #fff; border: 1px solid #dce2eb; color: var(--text); padding: 8px 16px; border-radius: 4px; font-size: 13px; display: flex; align-items: center; gap: 8px;" data-action="Register Vendor">
+              <i data-lucide="user-plus" style="width: 14px;"></i> Register Vendor
+          </button>
+        </div>
+        <section class="panel invoice-table">
+          <table id="vendor-directory-table">
+            <thead>
+              <tr><th>Vendor Name</th><th>Asset Category</th><th>Primary Contact</th><th>Supplier Rating</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>AquaSupplies Philippines</strong></td>
+                <td>Main Lines & Pumps</td>
+                <td>Maria Santos</td>
+                <td><span style="color: #f59e0b; font-size: 14px;">★★★★★</span></td>
+                <td><span class="status paid">Contracted</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="Details">Profile</button>
+                    <button class="btn-action" data-action="Contact"><i data-lucide="mail"></i></button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>PipeMaster Manufacturing</strong></td>
+                <td>Fittings & PVC</td>
+                <td>John Doe</td>
+                <td><span style="color: #f59e0b; font-size: 14px;">★★★★☆</span></td>
+                <td><span class="status paid">Contracted</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="Details">Profile</button>
+                    <button class="btn-action" data-action="Contact"><i data-lucide="mail"></i></button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Marinduque General Hardware</strong></td>
+                <td>Tools & Safety Gear</td>
+                <td>Lucy Tan</td>
+                <td><span style="color: #f59e0b; font-size: 14px;">★★★☆☆</span></td>
+                <td><span class="status pending">Verified</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="Details">Profile</button>
+                    <button class="btn-action" data-action="Contact"><i data-lucide="mail"></i></button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </section>
+
+      <!-- VIEW: SETTINGS -->
+      <section class="view-section" id="view-settings">
+        <div class="panel-head">
+          <h2>System Settings</h2>
+        </div>
+        <div class="settings-grid">
+          <aside class="panel settings-nav">
+            <button class="active" data-tab="profile">Admin Profile</button>
+            <button data-tab="notif">Global Alerts</button>
+            <button data-tab="security">Security & Access</button>
+          </aside>
+          <div class="panel settings-content">
+            <div class="tab-content" id="tab-profile">
+              <h3>Management Profile</h3>
+              <div class="form-group">
+                <label>Full Name</label>
+                <input type="text" value="GM Reyes">
+              </div>
+              <div class="form-group">
+                <label>Role Designation</label>
+                <input type="text" value="General Manager" readonly>
+              </div>
+              <div class="form-group">
+                <label>Corporate Email</label>
+                <input type="email" value="reyes.gm@flowguard.gov.ph">
+              </div>
+              <button class="btn-primary" data-action="Save Settings">Save Changes</button>
+            </div>
+            <div class="tab-content" id="tab-notif" style="display:none;">
+              <h3 style="margin-bottom: 20px;">Global Alert Configurations</h3>
+              
+              <div style="margin-bottom: 25px;">
+                <p style="font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; margin-bottom: 12px; letter-spacing: 0.5px;">Operational Thresholds</p>
+                <div class="switch-group">
+                  <div class="switch-label">
+                    <strong>Critical Inventory Alerts</strong>
+                    <span>Notify management when essential stock falls below 10%</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" checked>
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div class="switch-group">
+                  <div class="switch-label">
+                    <strong>Major Outage Notifications</strong>
+                    <span>Receive SMS alerts for island-wide supply interruptions</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" checked>
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </div>
+
+              <button class="btn-primary" data-action="Save Settings" style="width: 100%; margin-top: 10px;">Update Alert Config</button>
+            </div>
+            <div class="tab-content" id="tab-security" style="display:none;">
+              <h3>Enterprise Security</h3>
+              <div class="form-group">
+                <label>Current Admin Password</label>
+                <input type="password" placeholder="••••••••">
+              </div>
+              <div class="form-group">
+                <label>New Admin Password</label>
+                <input type="password" placeholder="Require at least 12 characters">
+              </div>
+              <button class="btn-primary" data-action="Save Settings">Update Security Credentials</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="dashboard-logic.js"></script>
+</body>
+</html>
