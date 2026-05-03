@@ -13,7 +13,7 @@
   <div class="dashboard">
     <aside class="sidebar">
       <div class="brand">
-        <i data-lucide="bar-chart-3" class="brand-icon"></i>
+        <img src="assets/logo.png" alt="FlowGuard Logo" class="brand-logo">
         <div>
           <strong>MANAGER</strong>
           <small>Operations & Coordination</small>
@@ -34,7 +34,7 @@
         <a href="#" data-view="settings"><i data-lucide="settings" class="nav-icon"></i><span>System Settings</span></a>
       </nav>
 
-      <a class="logout" href="index.html"><i data-lucide="log-out" class="nav-icon"></i><span>Log Out</span></a>
+      <a class="logout" href="#"><i data-lucide="log-out" class="nav-icon"></i><span>Log Out</span></a>
     </aside>
 
     <main class="main-panel">
@@ -48,7 +48,7 @@
           <button class="icon-btn" type="button" aria-label="Messages"><i data-lucide="message-circle"></i></button>
           <button class="icon-btn bell" type="button" aria-label="Notifications"><i data-lucide="bell"></i></button>
           <div class="profile">
-            <span class="avatar"></span>
+            <img src="https://ui-avatars.com/api/?name=GM+Reyes&background=31415a&color=fff&size=42&rounded=true" alt="GM Avatar" class="avatar">
             <strong>GM Reyes</strong>
           </div>
         </div>
@@ -111,9 +111,137 @@
             <div class="panel-head"><h2>Water Production vs Non-Revenue Water</h2></div>
             <div class="chart-wrap">
               <svg viewBox="0 0 640 260">
-                <path class="chart-line" d="M50 150L100 98L150 144L200 125L250 102L300 38L350 124L400 86L450 122L500 106L550 106L600 156" fill="none" stroke="var(--blue)"/>
+                <g class="grid-lines">
+                  <path d="M50 24V216M100 24V216M150 24V216M200 24V216M250 24V216M300 24V216M350 24V216M400 24V216M450 24V216M500 24V216M550 24V216M600 24V216"/>
+                  <path d="M50 216H610M50 168H610M50 120H610M50 72H610M50 24H610"/>
+                </g>
+                <path class="chart-fill" d="M50 150L100 98L150 144L200 125L250 102L300 38L350 124L400 86L450 122L500 106L550 106L600 156V216H50Z"/>
+                <path class="chart-line" d="M50 150L100 98L150 144L200 125L250 102L300 38L350 124L400 86L450 122L500 106L550 106L600 156"/>
+                <g class="points">
+                  <circle cx="100" cy="98" r="6"/><circle cx="150" cy="144" r="6"/><circle cx="200" cy="125" r="6"/><circle cx="250" cy="102" r="6"/><circle cx="300" cy="38" r="6"/><circle cx="350" cy="124" r="6"/><circle cx="400" cy="86" r="6"/><circle cx="450" cy="122" r="6"/><circle cx="500" cy="106" r="6"/><circle cx="550" cy="106" r="6"/><circle cx="600" cy="156" r="6"/>
+                </g>
+                <g class="months">
+                  <text x="100" y="246">Jan</text><text x="150" y="246">Feb</text><text x="200" y="246">Mar</text><text x="250" y="246">Apr</text><text x="300" y="246">May</text><text x="350" y="246">Jun</text><text x="400" y="246">Jul</text><text x="450" y="246">Aug</text><text x="500" y="246">Sep</text><text x="550" y="246">Oct</text><text x="600" y="246">Nov</text>
+                </g>
               </svg>
             </div>
+          </article>
+        </section>
+
+        <section class="panel invoice-table" style="margin-top: 24px;">
+          <div class="panel-head">
+            <h2>Critical Alerts & Pending Actions</h2>
+            <button class="btn-action" style="background: #fff; border: 1px solid #dce2eb; padding: 6px 12px;">
+              <i data-lucide="filter" style="width: 14px;"></i> Filter
+            </button>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Priority</th><th>Alert Type</th><th>Municipality</th><th>Description</th><th>Status</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="badge badge-high">High</span></td>
+                <td>Inventory Critical</td>
+                <td>Boac HQ</td>
+                <td>Water Meters below 10% threshold</td>
+                <td><span class="status overdue">Action Required</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action btn-blue" data-action="Order"><i data-lucide="shopping-cart"></i> Order Now</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-high">High</span></td>
+                <td>Main Line Repair</td>
+                <td>Mogpog</td>
+                <td>Major pipe burst reported - requires immediate attention</td>
+                <td><span class="status pending">In Progress</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="View Details"><i data-lucide="eye"></i> Details</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-medium">Medium</span></td>
+                <td>Staff Leave</td>
+                <td>Gasan</td>
+                <td>Tech Reyes on leave - zone coverage needed</td>
+                <td><span class="status pending">Pending Assignment</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="Assign Staff"><i data-lucide="user-plus"></i> Assign</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-medium">Medium</span></td>
+                <td>Budget Alert</td>
+                <td>All Zones</td>
+                <td>Q2 Capex at 85% - review upcoming expenses</td>
+                <td><span class="status pending">Review Needed</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="Generate Report"><i data-lucide="file-text"></i> Report</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-low">Low</span></td>
+                <td>Routine Inspection</td>
+                <td>Santa Cruz</td>
+                <td>Monthly zone audit scheduled for next week</td>
+                <td><span class="status paid">Scheduled</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="View Details"><i data-lucide="calendar"></i> Schedule</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 24px;">
+          <article class="panel">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+              <div style="width: 40px; height: 40px; border-radius: 10px; background: #f0f7ff; display: grid; place-items: center;">
+                <i data-lucide="map-pin" style="width: 20px; height: 20px; color: var(--blue);"></i>
+              </div>
+              <div>
+                <h3 style="margin: 0; font-size: 14px; color: var(--muted);">Total Municipalities</h3>
+                <strong style="font-size: 24px; color: var(--text);">6</strong>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 12px; color: var(--muted);">Boac, Mogpog, Gasan, Buenavista, Torrijos, Santa Cruz</p>
+          </article>
+
+          <article class="panel">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+              <div style="width: 40px; height: 40px; border-radius: 10px; background: #f0fdf4; display: grid; place-items: center;">
+                <i data-lucide="droplets" style="width: 20px; height: 20px; color: #16a34a;"></i>
+              </div>
+              <div>
+                <h3 style="margin: 0; font-size: 14px; color: var(--muted);">Water Production</h3>
+                <strong style="font-size: 24px; color: var(--text);">12,450 m³</strong>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 12px; color: var(--muted);">Daily average across all zones</p>
+          </article>
+
+          <article class="panel">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+              <div style="width: 40px; height: 40px; border-radius: 10px; background: #fff8f1; display: grid; place-items: center;">
+                <i data-lucide="alert-triangle" style="width: 20px; height: 20px; color: #f59e0b;"></i>
+              </div>
+              <div>
+                <h3 style="margin: 0; font-size: 14px; color: var(--muted);">NRW Rate</h3>
+                <strong style="font-size: 24px; color: var(--text);">18.5%</strong>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 12px; color: var(--muted);">Non-Revenue Water - Target: <15%</p>
           </article>
         </section>
       </section>

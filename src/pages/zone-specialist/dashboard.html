@@ -13,7 +13,7 @@
   <div class="dashboard">
     <aside class="sidebar">
       <div class="brand">
-        <i data-lucide="map-pin" class="brand-icon"></i>
+        <img src="assets/logo.png" alt="FlowGuard Logo" class="brand-logo">
         <div>
           <strong>SPECIALIST</strong>
           <small>Zone Investigations</small>
@@ -34,7 +34,7 @@
         <a href="#" data-view="settings"><i data-lucide="settings" class="nav-icon"></i><span>Settings</span></a>
       </nav>
 
-      <a class="logout" href="index.html"><i data-lucide="log-out" class="nav-icon"></i><span>Log Out</span></a>
+      <a class="logout" href="#"><i data-lucide="log-out" class="nav-icon"></i><span>Log Out</span></a>
     </aside>
 
     <main class="main-panel">
@@ -48,7 +48,7 @@
           <button class="icon-btn" type="button" aria-label="Messages"><i data-lucide="message-circle"></i></button>
           <button class="icon-btn bell" type="button" aria-label="Notifications"><i data-lucide="bell"></i></button>
           <div class="profile">
-            <span class="avatar"></span>
+            <img src="https://ui-avatars.com/api/?name=Spec+Ramos&background=c85b70&color=fff&size=42&rounded=true" alt="Specialist Avatar" class="avatar">
             <strong>Spec. Ramos</strong>
           </div>
         </div>
@@ -95,19 +95,150 @@
           </article>
         </section>
 
-        <section class="panel invoice-table">
+        <section class="analytics-grid">
+          <article class="panel">
+            <div class="panel-head"><h2>Case Distribution</h2></div>
+            <div class="invoice-content">
+              <div class="donut"><span>5</span><small>Active</small></div>
+              <dl class="legend">
+                <div><dt>Critical</dt><dd><span class="dot dark"></span>2</dd></div>
+                <div><dt>Urgent</dt><dd><span class="dot blue"></span>2</dd></div>
+                <div><dt>Normal</dt><dd><span class="dot pale"></span>1</dd></div>
+              </dl>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h2>Monthly Performance</h2></div>
+            <div style="padding: 20px;">
+              <div style="display: grid; gap: 15px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f8f9fc; border-radius: 6px;">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <i data-lucide="search" style="width: 18px; height: 18px; color: var(--blue);"></i>
+                    <span style="font-size: 14px;">Investigations</span>
+                  </div>
+                  <strong style="font-size: 18px; color: var(--blue);">28</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f8f9fc; border-radius: 6px;">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <i data-lucide="file-text" style="width: 18px; height: 18px; color: #16a34a;"></i>
+                    <span style="font-size: 14px;">Reports Filed</span>
+                  </div>
+                  <strong style="font-size: 18px; color: #16a34a;">12</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f8f9fc; border-radius: 6px;">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <i data-lucide="check-circle" style="width: 18px; height: 18px; color: #f59e0b;"></i>
+                    <span style="font-size: 14px;">Cases Resolved</span>
+                  </div>
+                  <strong style="font-size: 18px; color: #f59e0b;">23</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f8f9fc; border-radius: 6px;">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <i data-lucide="clock" style="width: 18px; height: 18px; color: var(--pink);"></i>
+                    <span style="font-size: 14px;">Avg Response</span>
+                  </div>
+                  <strong style="font-size: 18px; color: var(--pink);">4.2h</strong>
+                </div>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel invoice-table" style="margin-top: 24px;">
           <div class="panel-head">
             <h2>High Priority Cases</h2>
+            <button class="btn-primary" data-action="Start New Inspection" style="padding: 6px 14px; font-size: 13px;">
+              <i data-lucide="plus" style="width: 14px; height: 14px; margin-right: 6px;"></i>
+              New Inspection
+            </button>
           </div>
           <table>
             <thead>
-              <tr><th>Case ID</th><th>Location</th><th>Issue</th><th>Due</th><th>Status</th></tr>
+              <tr><th>Case ID</th><th>Location</th><th>Issue Type</th><th>Priority</th><th>Due</th><th>Status</th><th>Action</th></tr>
             </thead>
             <tbody>
-              <tr><td>#C-998</td><td>Block 5 Lot 2</td><td>Main Pipe Leak</td><td>Today</td><td><span class="status overdue">Critical</span></td></tr>
-              <tr><td>#C-995</td><td>Street 12</td><td>No Water</td><td>In 2hrs</td><td><span class="status pending">Urgent</span></td></tr>
+              <tr>
+                <td><strong>#C-998</strong></td>
+                <td>Block 5 Lot 2</td>
+                <td>Main Pipe Leak</td>
+                <td><span class="badge badge-high">Critical</span></td>
+                <td>Today</td>
+                <td><span class="status overdue">Urgent</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action btn-blue" data-action="Process"><i data-lucide="play"></i> Process</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>#C-995</strong></td>
+                <td>Street 12</td>
+                <td>No Water Supply</td>
+                <td><span class="badge badge-high">Urgent</span></td>
+                <td>In 2hrs</td>
+                <td><span class="status pending">Assigned</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action btn-blue" data-action="Process"><i data-lucide="play"></i> Process</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>#C-990</strong></td>
+                <td>North Park Area</td>
+                <td>Illegal Connection</td>
+                <td><span class="badge badge-medium">Medium</span></td>
+                <td>Tomorrow</td>
+                <td><span class="status pending">Scheduled</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="View Details"><i data-lucide="eye"></i> Details</button>
+                  </div>
+                </td>
+              </tr>
             </tbody>
           </table>
+        </section>
+
+        <section style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 24px;">
+          <article class="panel">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+              <div style="width: 40px; height: 40px; border-radius: 10px; background: #f0f7ff; display: grid; place-items: center;">
+                <i data-lucide="map-pin" style="width: 20px; height: 20px; color: var(--blue);"></i>
+              </div>
+              <div>
+                <h3 style="margin: 0; font-size: 13px; color: var(--muted);">Zone Coverage</h3>
+                <strong style="font-size: 20px; color: var(--text);">100%</strong>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 11px; color: var(--muted);">All areas monitored</p>
+          </article>
+
+          <article class="panel">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+              <div style="width: 40px; height: 40px; border-radius: 10px; background: #f0fdf4; display: grid; place-items: center;">
+                <i data-lucide="star" style="width: 20px; height: 20px; color: #16a34a;"></i>
+              </div>
+              <div>
+                <h3 style="margin: 0; font-size: 13px; color: var(--muted);">Rating</h3>
+                <strong style="font-size: 20px; color: var(--text);">4.9/5</strong>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 11px; color: var(--muted);">Customer satisfaction</p>
+          </article>
+
+          <article class="panel">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+              <div style="width: 40px; height: 40px; border-radius: 10px; background: #fff8f1; display: grid; place-items: center;">
+                <i data-lucide="calendar" style="width: 20px; height: 20px; color: #f59e0b;"></i>
+              </div>
+              <div>
+                <h3 style="margin: 0; font-size: 13px; color: var(--muted);">Inspections</h3>
+                <strong style="font-size: 20px; color: var(--text);">3</strong>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 11px; color: var(--muted);">Scheduled today</p>
+          </article>
         </section>
       </section>
 

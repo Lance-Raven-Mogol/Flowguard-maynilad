@@ -13,7 +13,7 @@
   <div class="dashboard">
     <aside class="sidebar">
       <div class="brand">
-        <i data-lucide="package" class="brand-icon"></i>
+        <img src="assets/logo.png" alt="FlowGuard Logo" class="brand-logo">
         <div>
           <strong>INVENTORY</strong>
           <small>Stock & Supply Chain</small>
@@ -35,7 +35,7 @@
         <a href="#" data-view="settings"><i data-lucide="settings" class="nav-icon"></i><span>Settings</span></a>
       </nav>
 
-      <a class="logout" href="index.html"><i data-lucide="log-out" class="nav-icon"></i><span>Log Out</span></a>
+      <a class="logout" href="#"><i data-lucide="log-out" class="nav-icon"></i><span>Log Out</span></a>
     </aside>
 
     <main class="main-panel">
@@ -49,7 +49,7 @@
           <button class="icon-btn" type="button" aria-label="Messages"><i data-lucide="message-circle"></i></button>
           <button class="icon-btn bell" type="button" aria-label="Notifications"><i data-lucide="bell"></i></button>
           <div class="profile">
-            <span class="avatar"></span>
+            <img src="https://ui-avatars.com/api/?name=Ricardo+Cruz&background=16a34a&color=fff&size=42&rounded=true" alt="Officer Avatar" class="avatar">
             <strong>Officer Cruz</strong>
           </div>
         </div>
@@ -96,17 +96,144 @@
           </article>
         </section>
 
-        <section class="panel invoice-table">
+        <section class="analytics-grid">
+          <article class="panel">
+            <div class="panel-head"><h2>Stock Level Overview</h2></div>
+            <div class="invoice-content">
+              <div class="donut"><span>850k</span><small>Total Value</small></div>
+              <dl class="legend">
+                <div><dt>In Stock</dt><dd><span class="dot dark"></span>P 650k</dd></div>
+                <div><dt>Low Stock</dt><dd><span class="dot blue"></span>P 150k</dd></div>
+                <div><dt>Out of Stock</dt><dd><span class="dot pale"></span>P 50k</dd></div>
+              </dl>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h2>Weekly Activity</h2></div>
+            <div style="padding: 20px;">
+              <div style="display: grid; gap: 15px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f8f9fc; border-radius: 6px;">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <i data-lucide="package-check" style="width: 18px; height: 18px; color: var(--blue);"></i>
+                    <span style="font-size: 14px;">Items Issued</span>
+                  </div>
+                  <strong style="font-size: 18px; color: var(--blue);">145</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f8f9fc; border-radius: 6px;">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <i data-lucide="truck" style="width: 18px; height: 18px; color: #16a34a;"></i>
+                    <span style="font-size: 14px;">Items Received</span>
+                  </div>
+                  <strong style="font-size: 18px; color: #16a34a;">89</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f8f9fc; border-radius: 6px;">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <i data-lucide="file-text" style="width: 18px; height: 18px; color: #f59e0b;"></i>
+                    <span style="font-size: 14px;">MRFs Processed</span>
+                  </div>
+                  <strong style="font-size: 18px; color: #f59e0b;">23</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f8f9fc; border-radius: 6px;">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <i data-lucide="shopping-cart" style="width: 18px; height: 18px; color: var(--pink);"></i>
+                    <span style="font-size: 14px;">Orders Placed</span>
+                  </div>
+                  <strong style="font-size: 18px; color: var(--pink);">7</strong>
+                </div>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel invoice-table" style="margin-top: 24px;">
           <div class="panel-head"><h2>Recent MRF Activity</h2></div>
           <table id="recent-mrf-table">
             <thead>
-              <tr><th>MRF ID</th><th>Requested By</th><th>Department</th><th>Status</th></tr>
+              <tr><th>MRF ID</th><th>Requested By</th><th>Items</th><th>Department</th><th>Date</th><th>Status</th><th>Action</th></tr>
             </thead>
             <tbody>
-              <tr><td>#MRF-102</td><td>Tech Santiago</td><td>Technical</td><td><span class="status pending">Pending</span></td></tr>
-              <tr><td>#MRF-101</td><td>Tech Ramos</td><td>Technical</td><td><span class="status paid">Issued</span></td></tr>
+              <tr>
+                <td><strong>#MRF-102</strong></td>
+                <td>Tech Santiago</td>
+                <td>3x PVC Pipe, 1x Coupling</td>
+                <td>Technical</td>
+                <td>02/05/2026</td>
+                <td><span class="status pending">Pending</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action btn-blue" data-action="Approve & Issue"><i data-lucide="check"></i> Approve</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>#MRF-101</strong></td>
+                <td>Tech Ramos</td>
+                <td>1x Water Meter G-4</td>
+                <td>Technical</td>
+                <td>01/05/2026</td>
+                <td><span class="status paid">Issued</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="View Log"><i data-lucide="eye"></i> View</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>#MRF-100</strong></td>
+                <td>Spec. Ramos</td>
+                <td>2x Brass Coupling</td>
+                <td>Zone Specialist</td>
+                <td>30/04/2026</td>
+                <td><span class="status paid">Issued</span></td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn-action" data-action="View Log"><i data-lucide="eye"></i> View</button>
+                  </div>
+                </td>
+              </tr>
             </tbody>
           </table>
+        </section>
+
+        <section style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 24px;">
+          <article class="panel">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+              <div style="width: 40px; height: 40px; border-radius: 10px; background: #f0f7ff; display: grid; place-items: center;">
+                <i data-lucide="box" style="width: 20px; height: 20px; color: var(--blue);"></i>
+              </div>
+              <div>
+                <h3 style="margin: 0; font-size: 13px; color: var(--muted);">Total SKUs</h3>
+                <strong style="font-size: 20px; color: var(--text);">248</strong>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 11px; color: var(--muted);">Unique items tracked</p>
+          </article>
+
+          <article class="panel">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+              <div style="width: 40px; height: 40px; border-radius: 10px; background: #fff8f1; display: grid; place-items: center;">
+                <i data-lucide="alert-triangle" style="width: 20px; height: 20px; color: #f59e0b;"></i>
+              </div>
+              <div>
+                <h3 style="margin: 0; font-size: 13px; color: var(--muted);">Critical Items</h3>
+                <strong style="font-size: 20px; color: var(--text);">12</strong>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 11px; color: var(--muted);">Require immediate order</p>
+          </article>
+
+          <article class="panel">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+              <div style="width: 40px; height: 40px; border-radius: 10px; background: #f0fdf4; display: grid; place-items: center;">
+                <i data-lucide="truck" style="width: 20px; height: 20px; color: #16a34a;"></i>
+              </div>
+              <div>
+                <h3 style="margin: 0; font-size: 13px; color: var(--muted);">Incoming</h3>
+                <strong style="font-size: 20px; color: var(--text);">2</strong>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 11px; color: var(--muted);">Shipments in transit</p>
+          </article>
         </section>
       </section>
 
@@ -246,7 +373,8 @@
             <!-- TAB: PROFILE -->
             <div class="tab-content" id="tab-profile">
               <div class="profile-header">
-                <div class="profile-avatar-large">
+                <div class="profile-avatar-large" style="position: relative;">
+                  <img src="https://ui-avatars.com/api/?name=Ricardo+Cruz&background=16a34a&color=fff&size=80&rounded=true" alt="Officer Avatar" style="width: 80px; height: 80px; border-radius: 50%;">
                   <button class="avatar-edit"><i data-lucide="camera"></i></button>
                 </div>
                 <div>

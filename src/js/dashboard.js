@@ -1183,7 +1183,50 @@ document.addEventListener('DOMContentLoaded', () => {
     // Logout
     if (logoutBtn) {
         logoutBtn.addEventListener('click', (e) => {
-            if (!confirm('Are you sure you want to log out?')) e.preventDefault();
+            e.preventDefault();
+            
+            // Create modal
+            const modal = document.createElement('div');
+            modal.className = 'logout-modal';
+            modal.innerHTML = `
+                <div class="logout-modal-content">
+                    <div class="logout-modal-header">
+                        <div class="logout-modal-icon">
+                            <i data-lucide="log-out" style="width: 24px; height: 24px;"></i>
+                        </div>
+                        <h3 class="logout-modal-title">Confirm Logout</h3>
+                    </div>
+                    <p class="logout-modal-message">Are you sure you want to log out? You will need to sign in again to access your dashboard.</p>
+                    <div class="logout-modal-actions">
+                        <button class="logout-modal-btn logout-modal-btn-cancel">Cancel</button>
+                        <button class="logout-modal-btn logout-modal-btn-confirm">Log Out</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            setTimeout(() => modal.classList.add('active'), 10);
+            
+            if (window.lucide) window.lucide.createIcons();
+            
+            // Cancel button
+            modal.querySelector('.logout-modal-btn-cancel').addEventListener('click', () => {
+                modal.classList.remove('active');
+                setTimeout(() => modal.remove(), 300);
+            });
+            
+            // Confirm button
+            modal.querySelector('.logout-modal-btn-confirm').addEventListener('click', () => {
+                window.location.href = 'index.html';
+            });
+            
+            // Click outside to close
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.remove('active');
+                    setTimeout(() => modal.remove(), 300);
+                }
+            });
         });
     }
 

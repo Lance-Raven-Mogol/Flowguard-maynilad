@@ -13,7 +13,7 @@
   <div class="dashboard">
     <aside class="sidebar">
       <div class="brand">
-        <i data-lucide="droplets" class="brand-icon"></i>
+        <img src="assets/logo.png" alt="FlowGuard Logo" class="brand-logo">
         <div>
           <strong>CUSTOMER</strong>
           <small>Water Services Portal</small>
@@ -34,7 +34,7 @@
         <a href="#" data-view="settings"><i data-lucide="settings" class="nav-icon"></i><span>Account Settings</span></a>
       </nav>
 
-      <a class="logout" href="index.html"><i data-lucide="log-out" class="nav-icon"></i><span>Log Out</span></a>
+      <a class="logout" href="#"><i data-lucide="log-out" class="nav-icon"></i><span>Log Out</span></a>
     </aside>
 
     <main class="main-panel">
@@ -48,7 +48,7 @@
           <button class="icon-btn" type="button" aria-label="Messages"><i data-lucide="message-circle"></i></button>
           <button class="icon-btn bell" type="button" aria-label="Notifications"><i data-lucide="bell"></i></button>
           <div class="profile">
-            <span class="avatar"></span>
+            <img src="https://ui-avatars.com/api/?name=Maria+Santos&background=5b6fd8&color=fff&size=42&rounded=true" alt="Customer Avatar" class="avatar">
             <strong>Customer</strong>
           </div>
         </div>
@@ -95,19 +95,135 @@
           </article>
         </section>
 
-        <section class="panel invoice-table">
+        <section class="analytics-grid">
+          <article class="panel">
+            <div class="panel-head"><h2>Water Usage Trend</h2></div>
+            <div class="chart-wrap">
+              <svg viewBox="0 0 640 260">
+                <g class="grid-lines">
+                  <path d="M50 24V216M100 24V216M150 24V216M200 24V216M250 24V216M300 24V216M350 24V216M400 24V216M450 24V216M500 24V216M550 24V216M600 24V216"/>
+                  <path d="M50 216H610M50 168H610M50 120H610M50 72H610M50 24H610"/>
+                </g>
+                <path class="chart-fill" d="M50 180L150 140L250 160L350 120L450 100L550 110L600 90V216H50Z"/>
+                <path class="chart-line" d="M50 180L150 140L250 160L350 120L450 100L550 110L600 90"/>
+                <g class="points">
+                  <circle cx="150" cy="140" r="6"/><circle cx="250" cy="160" r="6"/><circle cx="350" cy="120" r="6"/><circle cx="450" cy="100" r="6"/><circle cx="550" cy="110" r="6"/><circle cx="600" cy="90" r="6"/>
+                </g>
+                <g class="months">
+                  <text x="150" y="246">Jan</text><text x="250" y="246">Feb</text><text x="350" y="246">Mar</text><text x="450" y="246">Apr</text><text x="550" y="246">May</text>
+                </g>
+              </svg>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h2>Payment Summary</h2></div>
+            <div style="padding: 20px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #edf0f6;">
+                <span style="color: var(--muted); font-size: 14px;">Current Bill (May 2026)</span>
+                <strong style="font-size: 20px; color: var(--blue);">P 1,240.50</strong>
+              </div>
+              <div style="display: grid; gap: 12px; margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                  <span style="color: var(--muted);">Basic Charge</span>
+                  <span>P 850.00</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                  <span style="color: var(--muted);">Environmental Fee</span>
+                  <span>P 120.50</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                  <span style="color: var(--muted);">Maintenance Fee</span>
+                  <span>P 50.00</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                  <span style="color: var(--muted);">VAT (12%)</span>
+                  <span>P 220.00</span>
+                </div>
+              </div>
+              <button class="btn-primary" style="padding: 8px 16px; font-size: 14px;">
+                <i data-lucide="credit-card" style="width: 16px; height: 16px; margin-right: 8px;"></i>
+                Pay Now
+              </button>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel invoice-table" style="margin-top: 24px;">
           <div class="panel-head">
             <h2>Recent Activity</h2>
           </div>
           <table>
             <thead>
-              <tr><th>No</th><th>Reference ID</th><th>Issue Type</th><th>Date</th><th>Status</th></tr>
+              <tr><th>No</th><th>Reference ID</th><th>Type</th><th>Description</th><th>Date</th><th>Status</th></tr>
             </thead>
             <tbody>
-              <tr><td>1</td><td>#C-998</td><td>Pipe Leakage</td><td>01/05/2026</td><td><span class="status pending">Pending</span></td></tr>
-              <tr><td>2</td><td>#B-1052</td><td>Monthly Bill</td><td>25/04/2026</td><td><span class="status paid">Paid</span></td></tr>
+              <tr>
+                <td>1</td>
+                <td><strong>#C-998</strong></td>
+                <td><span class="badge badge-high">Complaint</span></td>
+                <td>Pipe Leakage - Main gate area</td>
+                <td>01/05/2026</td>
+                <td><span class="status pending">Under Investigation</span></td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td><strong>#B-1052</strong></td>
+                <td><span class="badge badge-low">Payment</span></td>
+                <td>Monthly Bill - April 2026</td>
+                <td>25/04/2026</td>
+                <td><span class="status paid">Paid</span></td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td><strong>#B-1051</strong></td>
+                <td><span class="badge badge-low">Payment</span></td>
+                <td>Monthly Bill - March 2026</td>
+                <td>22/03/2026</td>
+                <td><span class="status paid">Paid</span></td>
+              </tr>
             </tbody>
           </table>
+        </section>
+
+        <section style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 24px;">
+          <article class="panel">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+              <div style="width: 40px; height: 40px; border-radius: 10px; background: #f0f7ff; display: grid; place-items: center;">
+                <i data-lucide="droplets" style="width: 20px; height: 20px; color: var(--blue);"></i>
+              </div>
+              <div>
+                <h3 style="margin: 0; font-size: 13px; color: var(--muted);">Avg Daily Usage</h3>
+                <strong style="font-size: 20px; color: var(--text);">0.5 m³</strong>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 11px; color: var(--muted);">Based on last 30 days</p>
+          </article>
+
+          <article class="panel">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+              <div style="width: 40px; height: 40px; border-radius: 10px; background: #f0fdf4; display: grid; place-items: center;">
+                <i data-lucide="calendar-check" style="width: 20px; height: 20px; color: #16a34a;"></i>
+              </div>
+              <div>
+                <h3 style="margin: 0; font-size: 13px; color: var(--muted);">Payment Due</h3>
+                <strong style="font-size: 20px; color: var(--text);">May 10</strong>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 11px; color: var(--muted);">5 days remaining</p>
+          </article>
+
+          <article class="panel">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+              <div style="width: 40px; height: 40px; border-radius: 10px; background: #fff8f1; display: grid; place-items: center;">
+                <i data-lucide="trending-down" style="width: 20px; height: 20px; color: #f59e0b;"></i>
+              </div>
+              <div>
+                <h3 style="margin: 0; font-size: 13px; color: var(--muted);">Savings</h3>
+                <strong style="font-size: 20px; color: var(--text);">-2%</strong>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 11px; color: var(--muted);">vs last month</p>
+          </article>
         </section>
       </section>
 
@@ -305,7 +421,8 @@
             <!-- TAB: Profile -->
             <div class="panel tab-content is-active" id="tab-profile">
               <div class="profile-header">
-                <div class="profile-avatar-large">
+                <div class="profile-avatar-large" style="position: relative;">
+                  <img src="https://ui-avatars.com/api/?name=Maria+Santos&background=5b6fd8&color=fff&size=80&rounded=true" alt="Customer Avatar" style="width: 80px; height: 80px; border-radius: 50%;">
                   <span class="avatar-edit"><i data-lucide="camera"></i></span>
                 </div>
                 <div>
