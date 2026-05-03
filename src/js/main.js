@@ -107,7 +107,15 @@ if (form && card) {
     window.clearTimeout(submitTimer);
     
     // Redirect based on role
-    const redirectTo = selectedRole ? `dashboard-${selectedRole}.html` : form.getAttribute("data-redirect");
+    const roleMap = {
+      'customer': 'src/pages/customer/dashboard.html',
+      'general-manager': 'src/pages/general-manager/dashboard.html',
+      'inventory-officer': 'src/pages/inventory-officer/dashboard.html',
+      'technical-team': 'src/pages/technical-team/dashboard.html',
+      'zone-specialist': 'src/pages/zone-specialist/dashboard.html'
+    };
+    
+    const redirectTo = roleMap[selectedRole] || 'index.html';
     
     submitTimer = window.setTimeout(() => {
       card.classList.remove("is-submitting");
@@ -127,7 +135,7 @@ document.querySelectorAll("[data-toggle-password]").forEach((button) => {
     if (!hasValue && input.type !== "password") {
       input.type = "password";
       const icon = button.querySelector("img");
-      if (icon) icon.src = "assets/eye.svg";
+      if (icon) icon.src = "src/assets/icons/eye.svg";
       button.setAttribute("aria-label", "Show password");
     }
   };
@@ -142,7 +150,7 @@ document.querySelectorAll("[data-toggle-password]").forEach((button) => {
     input.type = show ? "text" : "password";
     button.setAttribute("aria-label", show ? "Hide password" : "Show password");
     if (icon) {
-      icon.src = show ? "assets/eye-off.svg" : "assets/eye.svg";
+      icon.src = show ? "src/assets/icons/eye-off.svg" : "src/assets/icons/eye.svg";
     }
   });
 });

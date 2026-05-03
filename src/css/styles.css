@@ -34,7 +34,7 @@ body {
   color: var(--text-main);
   background: 
     linear-gradient(rgba(15, 28, 63, 0.85), rgba(10, 20, 41, 0.9)),
-    url('assets/background.jpg') center/cover no-repeat fixed;
+    url('../assets/images/background.jpg') center/cover no-repeat fixed;
   overflow: hidden;
 }
 

@@ -1217,7 +1217,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Confirm button
             modal.querySelector('.logout-modal-btn-confirm').addEventListener('click', () => {
-                window.location.href = 'index.html';
+                window.location.href = '../../../index.html';
             });
             
             // Click outside to close
