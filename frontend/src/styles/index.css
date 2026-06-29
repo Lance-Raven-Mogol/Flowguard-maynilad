@@ -1,0 +1,29 @@
+/* Global stylesheet entry — composes the migrated auth + dashboard styles and
+   adds the few rules the original build injected via JavaScript at runtime. */
+@import './auth.css';
+@import './dashboard.css';
+
+/* Spinner + selectable category tiles (previously injected by dashboard.js). */
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+input[type='radio']:checked + .category-tile {
+  border-color: var(--blue) !important;
+  background: #f0f7ff !important;
+  box-shadow: 0 0 0 1px var(--blue);
+}
+.category-tile:hover {
+  border-color: var(--blue);
+  background: #f8fbff;
+}
+
+/* Keep the FAQ chevron rotation working with the React accordion. */
+.faq-item.is-open .faq-question svg {
+  transform: rotate(180deg);
+  transition: transform 0.3s ease;
+}
