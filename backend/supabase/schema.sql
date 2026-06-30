@@ -133,45 +133,6 @@ alter table public.assets            enable row level security;
 alter table public.advisories        enable row level security;
 
 -- ============================================================================
--- Seed data (idempotent via natural unique keys)
+-- No seed business data. Tables start empty; the only account created is the
+-- administrator (see backend/src/models/seed.ts / scripts/migrate.mjs).
 -- ============================================================================
-
-insert into public.incidents (ref_code, type, description, location, urgency, status, reported_by) values
-  ('INC-1001','leak','Pipe leakage near the public market main line','Brgy. Mercado, Boac','high','in_progress','Valued Customer'),
-  ('INC-1002','complaint','Low water pressure during daytime','Brgy. Balogo, Boac','medium','under_verification','Valued Customer'),
-  ('INC-1003','new-connection','New residential water connection request','Brgy. Ogbac, Boac','low','scheduled','Valued Customer'),
-  ('INC-1004','complaint','Discolored water supply reported','Brgy. Santol, Boac','high','resolved','Valued Customer')
-on conflict (ref_code) do nothing;
-
-insert into public.job_orders (ref_code, incident_ref, title, scope, team, assigned_to, estimated_cost, scheduled_date, status) values
-  ('JO-2026-101','INC-1001','Repair main line leak','Excavate and replace 2m of damaged PVC pipe','in-house','In-house Team A',3500.00,'2026-07-02','in_progress'),
-  ('JO-2026-102','INC-1003','Install new service connection','Tap new household to distribution line','contractor','Boac Pipeworks Inc.',5200.00,'2026-07-05','pending'),
-  ('JO-2026-103','INC-1004','Flush and disinfect distribution segment','Flush discolored segment and test quality','in-house','In-house Team B',1200.00,'2026-06-28','completed')
-on conflict (ref_code) do nothing;
-
-insert into public.materials (sku, name, category, description, quantity, unit, unit_price, supplier, source, min_level, status) values
-  ('SKU-PVC50','PVC Pipe 50mm','Pipes','Schedule 40 PVC pipe, 50mm x 6m',120,'pcs',185.00,'Maynilad Central Warehouse','mother-company',30,'in_stock'),
-  ('SKU-GVALV','Gate Valve 2"','Valves','Brass gate valve 2 inch',8,'pcs',640.00,'Marinduque Hardware','external',15,'low_stock'),
-  ('SKU-WMTR','Water Meter 1/2"','Meters','Residential water meter 1/2 inch',54,'pcs',850.00,'Maynilad Central Warehouse','mother-company',20,'in_stock'),
-  ('SKU-CEMENT','Portland Cement','Consumables','40kg bag Portland cement',6,'bags',255.00,'Boac Builders Supply','external',10,'low_stock'),
-  ('SKU-CLAMP','Repair Clamp 50mm','Fittings','Stainless repair clamp 50mm',3,'pcs',420.00,'Marinduque Hardware','external',12,'defective')
-on conflict (sku) do nothing;
-
-insert into public.material_requests (ref_code, material_sku, material_name, job_order_ref, quantity, requested_by, status) values
-  ('MR-5001','SKU-PVC50','PVC Pipe 50mm','JO-2026-101',4,'In-house Team A','approved'),
-  ('MR-5002','SKU-GVALV','Gate Valve 2"','JO-2026-102',2,'Boac Pipeworks Inc.','pending'),
-  ('MR-5003','SKU-WMTR','Water Meter 1/2"','JO-2026-102',1,'Boac Pipeworks Inc.','released')
-on conflict (ref_code) do nothing;
-
-insert into public.assets (asset_tag, name, type, location, install_date, expected_lifespan_years, last_maintenance, condition) values
-  ('AST-PIPE-001','Distribution Main A','Pipe','Brgy. Mercado, Boac','2015-03-12',25,'2025-01-10','good'),
-  ('AST-PUMP-002','Booster Pump Station 1','Pump','Brgy. Isok, Boac','2012-08-01',15,'2024-11-20','needs_maintenance'),
-  ('AST-MTR-003','Bulk Flow Meter','Meter','Brgy. Balogo, Boac','2009-06-15',12,'2023-05-05','needs_replacement'),
-  ('AST-VLV-004','Pressure Relief Valve','Valve','Brgy. Ogbac, Boac','2020-02-20',10,'2025-03-18','good')
-on conflict (asset_tag) do nothing;
-
-insert into public.advisories (title, body, area, type, status, published_at) values
-  ('Scheduled Maintenance - Brgy. Mercado','Water interruption from 9AM to 3PM for main line repair.','Brgy. Mercado, Boac','maintenance','published', now()),
-  ('Emergency Repair - Brgy. Santol','Crews are addressing a reported leak. Service may be intermittent.','Brgy. Santol, Boac','emergency','approved', null),
-  ('Service Interruption Notice - Boac Poblacion','Planned interruption for new connection tie-ins next week.','Boac Poblacion','interruption','draft', null)
-on conflict do nothing;

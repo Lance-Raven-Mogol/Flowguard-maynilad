@@ -29,11 +29,7 @@ if (!pat) {
 const ref = new URL(url).hostname.split('.')[0];
 
 const SEED_USERS = [
-  { full_name: 'Valued Customer', email: 'customer@flowguard.ph', role: 'customer' },
-  { full_name: 'Specialist Ramos', email: 'ramos@flowguard.ph', role: 'zone-specialist' },
-  { full_name: 'GM Reyes', email: 'reyes@flowguard.ph', role: 'general-manager' },
-  { full_name: 'Officer Cruz', email: 'cruz@flowguard.ph', role: 'inventory-officer' },
-  { full_name: 'Tech Santiago', email: 'santiago@flowguard.ph', role: 'technical-team' },
+  { full_name: 'Administrator', email: 'thecapstone01@gmail.com', role: 'general-manager', password: 'Admin123' },
 ];
 
 async function runSql(query) {
@@ -62,17 +58,17 @@ async function runSql(query) {
   if (error) throw new Error(`Seed lookup failed: ${error.message}`);
 
   const have = new Set((existing ?? []).map((r) => r.email.toLowerCase()));
-  const rows = SEED_USERS.filter((u) => !have.has(u.email)).map((u) => ({
+  const rows = SEED_USERS.filter((u) => !have.has(u.email)).map(({ password, ...u }) => ({
     ...u,
-    password_hash: bcrypt.hashSync('password123', 10),
+    password_hash: bcrypt.hashSync(password, 10),
   }));
 
   if (rows.length) {
     const { error: insErr } = await sb.from('app_users').insert(rows);
     if (insErr) throw new Error(`Seed insert failed: ${insErr.message}`);
-    console.log(`✓ Seeded ${rows.length} demo account(s).`);
+    console.log(`✓ Seeded ${rows.length} account(s).`);
   } else {
-    console.log('✓ Demo accounts already present.');
+    console.log('✓ Accounts already present.');
   }
 
   console.log('→ Ensuring "avatars" storage bucket…');
