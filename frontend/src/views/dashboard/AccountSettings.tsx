@@ -1,7 +1,8 @@
 /**
  * AccountSettings — real, working account page for every role: change profile
- * photo (Supabase Storage), update display name, and change password. All form
- * state lives at the top level so inputs never lose focus while typing.
+ * photo (Supabase Storage), update display name, and change password. Sections
+ * are stacked so the page fills naturally. All form state lives at the top
+ * level so inputs never lose focus while typing.
  */
 import { useRef, useState } from 'react';
 import { Camera } from 'lucide-react';
@@ -16,17 +17,12 @@ export function AccountSettings() {
   const { notify } = useToast();
   const roleLabel = ROLES.find((r) => r.value === user!.role)?.label ?? user!.role;
 
-  const [tab, setTab] = useState<'profile' | 'security'>('profile');
-
-  // Avatar
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
-  // Profile
   const [fullName, setFullName] = useState(user!.fullName);
   const [savingProfile, setSavingProfile] = useState(false);
 
-  // Security
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -86,63 +82,65 @@ export function AccountSettings() {
 
   return (
     <div className="account">
-      <div className="panel account-card">
-        <header className="account-head">
-          <div className="account-avatar">
-            <img src={avatarFor(user!, 96)} alt={user!.fullName} />
-            <button className="account-avatar-edit" onClick={() => fileRef.current?.click()} disabled={uploading} title="Change photo">
-              <Camera size={15} className={uploading ? 'animate-spin' : ''} />
-            </button>
-            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={onFile} />
-          </div>
-          <div className="account-id">
-            <h2>{user!.fullName}</h2>
-            <p>{user!.email}</p>
-            <span className="account-role">{roleLabel}</span>
-          </div>
-        </header>
-
-        <div className="account-tabs">
-          <button className={tab === 'profile' ? 'active' : ''} onClick={() => setTab('profile')}>
-            Profile
+      <header className="panel account-head">
+        <div className="account-avatar">
+          <img src={avatarFor(user!, 96)} alt={user!.fullName} />
+          <button className="account-avatar-edit" onClick={() => fileRef.current?.click()} disabled={uploading} title="Change photo">
+            <Camera size={15} className={uploading ? 'animate-spin' : ''} />
           </button>
-          <button className={tab === 'security' ? 'active' : ''} onClick={() => setTab('security')}>
-            Password &amp; Security
-          </button>
+          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={onFile} />
         </div>
+        <div className="account-id">
+          <h2>{user!.fullName}</h2>
+          <p>{user!.email}</p>
+          <span className="account-role">{roleLabel}</span>
+        </div>
+        <button className="account-photo-btn" onClick={() => fileRef.current?.click()} disabled={uploading}>
+          {uploading ? 'Uploading…' : 'Change Photo'}
+        </button>
+      </header>
 
-        {tab === 'profile' ? (
-          <div className="account-form">
-            <div className="form-grid-2">
-              <div className="form-group">
-                <label>Full Name</label>
-                <input value={fullName} onChange={(e) => setFullName(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label>Email Address</label>
-                <input value={user!.email} readOnly style={{ background: 'var(--panel-soft)' }} />
-              </div>
-              <div className="form-group">
-                <label>Role</label>
-                <input value={roleLabel} readOnly style={{ background: 'var(--panel-soft)' }} />
-              </div>
-              <div className="form-group">
-                <label>Member Since</label>
-                <input value={new Date(user!.createdAt).toLocaleDateString('en-GB')} readOnly style={{ background: 'var(--panel-soft)' }} />
-              </div>
+      <div className="account-cols">
+        <section className="panel account-section">
+          <div className="account-section-head">
+            <h3>Profile Information</h3>
+            <p>Update your display name. Your email and role are managed by your administrator.</p>
+          </div>
+          <div className="form-grid-2">
+            <div className="form-group">
+              <label>Full Name</label>
+              <input value={fullName} onChange={(e) => setFullName(e.target.value)} />
             </div>
-            <div className="account-actions">
-              <button className="btn-primary" disabled={savingProfile || fullName.trim() === user!.fullName || fullName.trim().length < 2} onClick={saveProfile}>
-                {savingProfile ? 'Saving…' : 'Save Changes'}
-              </button>
+            <div className="form-group">
+              <label>Email Address</label>
+              <input value={user!.email} readOnly style={{ background: 'var(--panel-soft)' }} />
+            </div>
+            <div className="form-group">
+              <label>Role</label>
+              <input value={roleLabel} readOnly style={{ background: 'var(--panel-soft)' }} />
+            </div>
+            <div className="form-group">
+              <label>Member Since</label>
+              <input value={new Date(user!.createdAt).toLocaleDateString('en-GB')} readOnly style={{ background: 'var(--panel-soft)' }} />
             </div>
           </div>
-        ) : (
-          <div className="account-form" style={{ maxWidth: 440 }}>
-            <div className="form-group">
-              <label>Current Password</label>
-              <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
-            </div>
+          <div className="account-actions">
+            <button className="btn-primary" disabled={savingProfile || fullName.trim() === user!.fullName || fullName.trim().length < 2} onClick={saveProfile}>
+              {savingProfile ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </section>
+
+        <section className="panel account-section">
+          <div className="account-section-head">
+            <h3>Password &amp; Security</h3>
+            <p>Use at least 6 characters. Keep your password private.</p>
+          </div>
+          <div className="form-group">
+            <label>Current Password</label>
+            <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
+          </div>
+          <div className="form-grid-2">
             <div className="form-group">
               <label>New Password</label>
               <input type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" />
@@ -151,13 +149,13 @@ export function AccountSettings() {
               <label>Confirm New Password</label>
               <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
             </div>
-            <div className="account-actions">
-              <button className="btn-primary" disabled={savingPw || !current || !next} onClick={savePassword}>
-                {savingPw ? 'Updating…' : 'Update Password'}
-              </button>
-            </div>
           </div>
-        )}
+          <div className="account-actions">
+            <button className="btn-primary" disabled={savingPw || !current || !next} onClick={savePassword}>
+              {savingPw ? 'Updating…' : 'Update Password'}
+            </button>
+          </div>
+        </section>
       </div>
     </div>
   );
