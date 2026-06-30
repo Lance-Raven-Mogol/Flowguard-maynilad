@@ -36,22 +36,24 @@ function DashboardShell() {
 
   const activeView = useMemo(() => config.views.find((v) => v.id === activeId), [config, activeId]);
 
+  const selectView = (id: string) => {
+    markViewSeen(id);
+    setActiveId(id);
+    setFilter('');
+  };
+
   return (
     <div className="dashboard">
       <Sidebar
         config={config}
         activeId={activeId}
-        onSelect={(id) => {
-          markViewSeen(id);
-          setActiveId(id);
-          setFilter('');
-        }}
+        onSelect={selectView}
         onLogout={() => setConfirmLogout(true)}
         badges={badges}
       />
 
       <main className="main-panel">
-        <Topbar config={config} filter={filter} onFilter={setFilter} />
+        <Topbar config={config} filter={filter} onFilter={setFilter} onNavigate={selectView} />
         <section className="view-section active-view">{activeView?.render({ filter })}</section>
       </main>
 

@@ -30,10 +30,15 @@ function loadSeen(userId: string): SeenState {
   }
 }
 
+export interface NotificationItem extends Alert {
+  unread: boolean;
+}
+
 interface NotificationsValue {
-  alerts: Alert[];
+  items: NotificationItem[];
   unreadCount: number;
-  markAlertsSeen: () => void;
+  /** Mark a single notification read (e.g. when the user clicks it). */
+  markAlertSeen: (key: string) => void;
   badges: Record<string, number>;
   markViewSeen: (viewId: string) => void;
 }
@@ -65,10 +70,12 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const alerts = useMemo(() => buildAlerts(stats, role, fullName), [stats, role, fullName]);
   const badgeItems = useMemo(() => buildBadgeItems(stats, role, fullName), [stats, role, fullName]);
 
-  const unreadCount = useMemo(
-    () => alerts.filter((a) => !seen.alerts.includes(a.key)).length,
+  const items = useMemo<NotificationItem[]>(
+    () => alerts.map((a) => ({ ...a, unread: !seen.alerts.includes(a.key) })),
     [alerts, seen.alerts],
   );
+
+  const unreadCount = useMemo(() => items.filter((i) => i.unread).length, [items]);
 
   const badges = useMemo(() => {
     const out: Record<string, number> = {};
@@ -79,14 +86,12 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     return out;
   }, [badgeItems, seen.badges]);
 
-  const markAlertsSeen = useCallback(() => {
-    const keys = alerts.map((a) => a.key);
+  const markAlertSeen = useCallback((key: string) => {
     setSeen((s) => {
-      const merged = Array.from(new Set([...s.alerts, ...keys]));
-      if (merged.length === s.alerts.length) return s; // nothing new
-      return { ...s, alerts: merged };
+      if (s.alerts.includes(key)) return s;
+      return { ...s, alerts: [...s.alerts, key] };
     });
-  }, [alerts]);
+  }, []);
 
   const markViewSeen = useCallback(
     (viewId: string) => {
@@ -103,8 +108,8 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ alerts, unreadCount, markAlertsSeen, badges, markViewSeen }),
-    [alerts, unreadCount, markAlertsSeen, badges, markViewSeen],
+    () => ({ items, unreadCount, markAlertSeen, badges, markViewSeen }),
+    [items, unreadCount, markAlertSeen, badges, markViewSeen],
   );
 
   return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;

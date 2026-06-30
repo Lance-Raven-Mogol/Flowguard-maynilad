@@ -138,48 +138,6 @@ function ViewAction({ title, children, wide }: { title: string; children: ReactN
   );
 }
 
-/** Zone-specialist remarks editor — comments forwarded to the technical team. */
-function RemarksAction({ c }: { c: RowActionCtx }) {
-  const [open, setOpen] = useState(false);
-  const [text, setText] = useState('');
-  const start = () => {
-    setText(String(c.row.remarks ?? ''));
-    setOpen(true);
-  };
-  const save = () => {
-    c.update({ remarks: text.trim() });
-    setOpen(false);
-  };
-  return (
-    <>
-      <button className="btn-action" onClick={start} disabled={c.busy}>
-        Remarks
-      </button>
-      {open && (
-        <Modal
-          title={`Remarks — ${c.row.ref_code}`}
-          open
-          onClose={() => setOpen(false)}
-          onSubmit={save}
-          submitText="Save Remarks"
-          submitting={c.busy}
-        >
-          <p style={{ marginTop: 0, color: 'var(--muted)', fontSize: 13 }}>
-            Reviewing: <strong style={{ color: 'var(--text)' }}>{String(c.row.description ?? '')}</strong>
-          </p>
-          <div className="form-group">
-            <label>Remarks for Technical Team</label>
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Findings, recommended action, parts likely needed…"
-            />
-          </div>
-        </Modal>
-      )}
-    </>
-  );
-}
 
 /* --------------------------------------------------------------- Incidents */
 const INCIDENT_STATUS = [
@@ -198,7 +156,7 @@ const INCIDENT_TYPE_OPTIONS = [
 const URGENCY = ['low', 'medium', 'high'];
 
 /** Read-only detail body for a complaint/incident, incl. customer photos + remarks. */
-function IncidentDetail({ row }: { row: EntityRow }) {
+function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRemarks?: boolean }) {
   return (
     <>
       <p className="detail-section-title">Complaint Details</p>
@@ -208,12 +166,68 @@ function IncidentDetail({ row }: { row: EntityRow }) {
         <DetailRow label="Status">{titleCase(row.status)}</DetailRow>
         <DetailRow label="Urgency">{titleCase(row.urgency)}</DetailRow>
         <DetailRow label="Location">{String(row.location ?? '')}</DetailRow>
-        <DetailRow label="Requested By">{String(row.reported_by ?? '')}</DetailRow>
+        <DetailRow label="Reported By">{String(row.reported_by ?? '')}</DetailRow>
         <DetailRow label="Filed On">{dateShort(row.created_at)}</DetailRow>
         <DetailRow label="Description">{String(row.description ?? '')}</DetailRow>
-        <DetailRow label="Zone Specialist Remarks">{String(row.remarks ?? '')}</DetailRow>
+        {!hideRemarks && <DetailRow label="Zone Specialist Remarks">{String(row.remarks ?? '')}</DetailRow>}
       </dl>
       <ImageGallery images={row.images} />
+    </>
+  );
+}
+
+/**
+ * "View" action for incidents. Opens a detail modal; zone specialists can also
+ * add/edit the remarks forwarded to the technical team directly inside it.
+ */
+function IncidentViewButton({ c, canEditRemarks }: { c: RowActionCtx; canEditRemarks: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [remarks, setRemarks] = useState('');
+  const [saving, setSaving] = useState(false);
+  const editable = canEditRemarks && !c.archived;
+
+  const openModal = () => {
+    setRemarks(String(c.row.remarks ?? ''));
+    setOpen(true);
+  };
+  const save = async () => {
+    setSaving(true);
+    try {
+      await c.update({ remarks: remarks.trim() });
+      setOpen(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <button className="btn-action" onClick={openModal} disabled={c.busy}>
+        View
+      </button>
+      {open && (
+        <Modal
+          title={`Complaint ${c.row.ref_code}`}
+          open
+          wide
+          onClose={() => setOpen(false)}
+          onSubmit={editable ? save : undefined}
+          submitText="Save Remarks"
+          submitting={saving}
+        >
+          <IncidentDetail row={c.row} hideRemarks={editable} />
+          {editable && (
+            <div className="form-group" style={{ marginTop: 18, marginBottom: 0 }}>
+              <label>Remarks for Technical Team</label>
+              <textarea
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+                placeholder="Findings, recommended action, parts likely needed…"
+              />
+            </div>
+          )}
+        </Modal>
+      )}
     </>
   );
 }
@@ -252,15 +266,10 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
   const actions = canWrite
     ? (c: RowActionCtx) => (
         <>
-          {manage && (
-            <ViewAction title={`Complaint ${c.row.ref_code}`} wide>
-              <IncidentDetail row={c.row} />
-            </ViewAction>
-          )}
+          {manage && <IncidentViewButton c={c} canEditRemarks={role === 'zone-specialist'} />}
           {manage && !c.archived && (
             <StatusSelect value={String(c.row.status)} options={INCIDENT_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />
           )}
-          {role === 'zone-specialist' && !c.archived && <RemarksAction c={c} />}
           <EditBtn c={c} />
           <ArchiveBtn c={c} />
         </>

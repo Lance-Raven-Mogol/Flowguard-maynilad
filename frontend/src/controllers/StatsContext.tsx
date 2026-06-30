@@ -85,6 +85,8 @@ export interface Alert {
   title: string;
   detail: string;
   tone: 'info' | 'warn' | 'danger';
+  /** Sidebar view id to open when this notification is clicked. */
+  view: string;
 }
 
 /** Stable key for an aggregate alert: tag + the sorted ids it covers. */
@@ -100,29 +102,34 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
   const openIncidents = stats.incidents.filter(isOpen);
   const draftAdvisories = stats.advisories.filter((a) => a.status !== 'published');
 
+  // Which sidebar view each alert kind opens, per role.
+  const incView = role === 'general-manager' ? 'incidents' : role === 'zone-specialist' ? 'investigations' : 'joborders';
+  const matView = role === 'general-manager' ? 'inventory' : 'materials';
+  const mrfView = role === 'general-manager' ? 'requests' : 'mrf';
+
   if (role === 'customer') {
     const mine = stats.incidents.filter((i) => String(i.reported_by).toLowerCase() === fullName.toLowerCase() && isOpen(i));
     mine.forEach((i) =>
-      alerts.push({ key: `inc:${i.id}:${i.status}`, icon: 'message-square', title: `Complaint ${i.ref_code} is ${String(i.status).replace(/_/g, ' ')}`, detail: String(i.description ?? ''), tone: 'info' }),
+      alerts.push({ key: `inc:${i.id}:${i.status}`, view: 'complaints', icon: 'message-square', title: `Complaint ${i.ref_code} is ${String(i.status).replace(/_/g, ' ')}`, detail: String(i.description ?? ''), tone: 'info' }),
     );
     stats.advisories
       .filter((a) => a.status === 'published')
       .slice(0, 3)
-      .forEach((a) => alerts.push({ key: `adv:${a.id}`, icon: 'megaphone', title: String(a.title), detail: String(a.area ?? ''), tone: a.type === 'emergency' ? 'danger' : 'info' }));
+      .forEach((a) => alerts.push({ key: `adv:${a.id}`, view: 'advisories', icon: 'megaphone', title: String(a.title), detail: String(a.area ?? ''), tone: a.type === 'emergency' ? 'danger' : 'info' }));
     return alerts;
   }
 
   if (['inventory-officer', 'general-manager'].includes(role)) {
-    if (lowStock.length) alerts.push({ key: aggKey('lowstock', lowStock), icon: 'alert-triangle', title: `${lowStock.length} material(s) low on stock`, detail: lowStock.map((m) => m.name).slice(0, 3).join(', '), tone: 'warn' });
-    if (defective.length) alerts.push({ key: aggKey('defective', defective), icon: 'package-x', title: `${defective.length} defective item(s)`, detail: 'Flagged for disposal / review', tone: 'danger' });
-    if (pendingMrf.length) alerts.push({ key: aggKey('mrf', pendingMrf), icon: 'file-input', title: `${pendingMrf.length} material request(s) pending`, detail: 'Awaiting approval / release', tone: 'warn' });
+    if (lowStock.length) alerts.push({ key: aggKey('lowstock', lowStock), view: matView, icon: 'alert-triangle', title: `${lowStock.length} material(s) low on stock`, detail: lowStock.map((m) => m.name).slice(0, 3).join(', '), tone: 'warn' });
+    if (defective.length) alerts.push({ key: aggKey('defective', defective), view: matView, icon: 'package-x', title: `${defective.length} defective item(s)`, detail: 'Flagged for disposal / review', tone: 'danger' });
+    if (pendingMrf.length) alerts.push({ key: aggKey('mrf', pendingMrf), view: mrfView, icon: 'file-input', title: `${pendingMrf.length} material request(s) pending`, detail: 'Awaiting approval / release', tone: 'warn' });
   }
   if (['zone-specialist', 'technical-team', 'general-manager'].includes(role)) {
-    if (openIncidents.length) alerts.push({ key: aggKey('openinc', openIncidents), icon: 'message-square', title: `${openIncidents.length} open incident(s)`, detail: `${openIncidents.filter((i) => i.urgency === 'high').length} high urgency`, tone: openIncidents.some((i) => i.urgency === 'high') ? 'danger' : 'info' });
-    if (criticalAssets.length) alerts.push({ key: aggKey('asset', criticalAssets), icon: 'wrench', title: `${criticalAssets.length} asset(s) need attention`, detail: criticalAssets.map((a) => a.name).slice(0, 3).join(', '), tone: 'warn' });
+    if (openIncidents.length) alerts.push({ key: aggKey('openinc', openIncidents), view: incView, icon: 'message-square', title: `${openIncidents.length} open incident(s)`, detail: `${openIncidents.filter((i) => i.urgency === 'high').length} high urgency`, tone: openIncidents.some((i) => i.urgency === 'high') ? 'danger' : 'info' });
+    if (criticalAssets.length) alerts.push({ key: aggKey('asset', criticalAssets), view: 'assets', icon: 'wrench', title: `${criticalAssets.length} asset(s) need attention`, detail: criticalAssets.map((a) => a.name).slice(0, 3).join(', '), tone: 'warn' });
   }
   if (role === 'general-manager' && draftAdvisories.length) {
-    alerts.push({ key: aggKey('draftadv', draftAdvisories), icon: 'megaphone', title: `${draftAdvisories.length} advisory(ies) awaiting publish`, detail: 'Review and approve', tone: 'info' });
+    alerts.push({ key: aggKey('draftadv', draftAdvisories), view: 'advisories', icon: 'megaphone', title: `${draftAdvisories.length} advisory(ies) awaiting publish`, detail: 'Review and approve', tone: 'info' });
   }
   return alerts;
 }

@@ -55,6 +55,42 @@ function mapDbError(err: unknown): never {
   throw err as Error;
 }
 
+/**
+ * If the DB reports a column that doesn't exist yet (schema not migrated),
+ * return its name so the caller can drop it and retry. Keeps the app working
+ * when newer optional columns (e.g. incidents.images / remarks) haven't been
+ * applied yet — those fields simply won't persist until the migration is run.
+ */
+function missingColumn(err: unknown): string | null {
+  const e = err as DbError;
+  const code = e?.code;
+  const msg = e?.message ?? '';
+  if (code === 'PGRST204' || code === '42703' || /column/i.test(msg)) {
+    const m = msg.match(/'([^']+)' column/) || msg.match(/column "?([a-z0-9_]+)"?/i);
+    if (m?.[1]) return m[1];
+  }
+  return null;
+}
+
+/** Run a write, dropping any not-yet-migrated columns and retrying. */
+async function writeResilient<T>(values: Row, run: (v: Row) => Promise<T>): Promise<T> {
+  const v: Row = { ...values };
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      return await run(v);
+    } catch (err) {
+      const col = missingColumn(err);
+      if (col && col in v) {
+        delete v[col];
+        console.warn(`[resource] column "${col}" not found — dropping it. Run the schema migration to enable it.`);
+        continue;
+      }
+      throw err;
+    }
+  }
+  return run(v);
+}
+
 function enrich(entity: string, row: Row): Row {
   return entity === 'assets' ? withAssetHealth(row) : row;
 }
@@ -88,7 +124,7 @@ export const resourceService = {
     }
 
     try {
-      const row = await repo.insertRow(def.table, values);
+      const row = await writeResilient(values, (v) => repo.insertRow(def.table, v));
       return enrich(entity, row);
     } catch (err) {
       mapDbError(err);
@@ -104,7 +140,7 @@ export const resourceService = {
     if (Object.keys(values).length === 0) throw badRequest('No valid fields to update.');
 
     try {
-      const row = await repo.updateRow(def.table, id, values);
+      const row = await writeResilient(values, (v) => repo.updateRow(def.table, id, v));
       if (!row) throw notFound('Record not found.');
       return enrich(entity, row);
     } catch (err) {

@@ -1423,9 +1423,15 @@ td strong {
 }
 
 .popover-item {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  background: #fff;
   padding: 14px 20px;
   display: flex;
+  align-items: flex-start;
   gap: 12px;
+  border: 0;
   border-bottom: 1px solid var(--panel-soft);
   cursor: pointer;
   transition: background 0.2s;
@@ -1437,6 +1443,25 @@ td strong {
 
 .popover-item:hover {
   background: var(--panel-soft);
+}
+
+/* Unread notification: subtle tint + a coloured dot on the right. */
+.popover-item.is-unread {
+  background: var(--blue-50);
+}
+
+.popover-item.is-unread:hover {
+  background: var(--blue-100, #e3ecff);
+}
+
+.item-unread-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--blue);
+  flex: none;
+  margin-top: 6px;
+  margin-left: auto;
 }
 
 .item-icon {

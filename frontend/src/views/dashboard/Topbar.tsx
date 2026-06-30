@@ -10,6 +10,8 @@ interface TopbarProps {
   config: RoleConfig;
   filter: string;
   onFilter: (value: string) => void;
+  /** Open a sidebar view (used when a notification is clicked). */
+  onNavigate: (viewId: string) => void;
 }
 
 const TONE_COLOR: Record<string, string> = { info: '#2f6bff', warn: '#e0982f', danger: '#e25577' };
@@ -21,9 +23,9 @@ export function avatarFor(user: { fullName: string; avatarUrl?: string | null },
   );
 }
 
-export function Topbar({ config, filter, onFilter }: TopbarProps) {
+export function Topbar({ config, filter, onFilter, onNavigate }: TopbarProps) {
   const { user } = useAuth();
-  const { alerts, unreadCount, markAlertsSeen } = useNotifications();
+  const { items, unreadCount, markAlertSeen } = useNotifications();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -33,10 +35,11 @@ export function Topbar({ config, filter, onFilter }: TopbarProps) {
   const roleLabel = ROLES.find((r) => r.value === user!.role)?.label ?? user!.role;
   const avatarUrl = avatarFor(user!);
 
-  // Opening the bell acknowledges the current alerts → the count bubble clears.
-  const toggleBell = () => {
-    if (!open) markAlertsSeen();
-    setOpen((o) => !o);
+  // Clicking a notification marks only that one read and opens its page.
+  const onNotificationClick = (key: string, view: string) => {
+    markAlertSeen(key);
+    onNavigate(view);
+    setOpen(false);
   };
 
   // Close the popover on outside click.
@@ -69,25 +72,30 @@ export function Topbar({ config, filter, onFilter }: TopbarProps) {
         </label>
 
         <div className="popover-wrapper" ref={wrapRef}>
-          <button className="icon-btn bell" type="button" aria-label="Notifications" onClick={toggleBell}>
+          <button className="icon-btn bell" type="button" aria-label="Notifications" onClick={() => setOpen((o) => !o)}>
             <Bell size={20} />
             {unreadCount > 0 && <span className="notif-count">{unreadCount}</span>}
           </button>
           <div className={`static-popover${open ? ' is-active' : ''}`}>
             <div className="popover-header">
               <h4>Notifications</h4>
-              <span>{unreadCount > 0 ? `${unreadCount} new` : alerts.length > 0 ? 'All read' : ''}</span>
+              <span>{unreadCount > 0 ? `${unreadCount} new` : items.length > 0 ? 'All read' : ''}</span>
             </div>
             <div className="popover-body">
-              {alerts.length === 0 ? (
+              {items.length === 0 ? (
                 <div className="popover-item" style={{ cursor: 'default' }}>
                   <div className="item-content">
                     <p>You're all caught up. No alerts right now.</p>
                   </div>
                 </div>
               ) : (
-                alerts.map((a, i) => (
-                  <div className="popover-item" key={i}>
+                items.map((a) => (
+                  <button
+                    type="button"
+                    className={`popover-item${a.unread ? ' is-unread' : ''}`}
+                    key={a.key}
+                    onClick={() => onNotificationClick(a.key, a.view)}
+                  >
                     <div className="item-icon" style={{ background: `${TONE_COLOR[a.tone]}1a`, color: TONE_COLOR[a.tone] }}>
                       <Icon name={a.icon} size={18} />
                     </div>
@@ -95,7 +103,8 @@ export function Topbar({ config, filter, onFilter }: TopbarProps) {
                       <strong>{a.title}</strong>
                       <p>{a.detail}</p>
                     </div>
-                  </div>
+                    {a.unread && <span className="item-unread-dot" aria-label="Unread" />}
+                  </button>
                 ))
               )}
             </div>

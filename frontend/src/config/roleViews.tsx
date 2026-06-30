@@ -209,10 +209,6 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         id: 'assets', label: 'Asset Inspections', icon: 'box', group: 'main',
         render: ({ filter }) => <AssetsModule filter={filter} title="Asset Inspections & Health" />,
       },
-      {
-        id: 'lifecycle', label: 'Asset Lifecycle', icon: 'activity', group: 'main',
-        render: ({ filter }) => <AssetsModule filter={filter} title="Asset Lifecycle Monitoring" />,
-      },
       faqView('guidelines', 'Zone Guidelines', 'book-open', 'Zone Investigation Guidelines', [
         { q: 'Standard safety protocol for site inspection', a: 'Wear high-visibility vests and protective gear. Coordinate with the barangay office before entering private property.' },
         { q: 'How do I verify an incident?', a: "Open 'Investigations', review the reported concern, and use the status dropdown to set it In Progress, Scheduled, or Resolved after inspection." },

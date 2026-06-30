@@ -39,7 +39,7 @@ export interface RowActionCtx {
   row: EntityRow;
   busy: boolean;
   archived: boolean;
-  update: (values: Record<string, unknown>) => void;
+  update: (values: Record<string, unknown>) => Promise<void>;
   remove: () => void;
   archive: () => void;
   restore: () => void;
