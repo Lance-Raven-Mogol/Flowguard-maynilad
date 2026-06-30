@@ -49,6 +49,16 @@ export function LineChart({ points, months }: { points: number[]; months: string
   return (
     <div className="chart-wrap">
       <svg viewBox={`0 0 ${W} ${H}`}>
+        <defs>
+          <linearGradient id="flowLine" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#2f6bff" />
+            <stop offset="100%" stopColor="#5965f0" />
+          </linearGradient>
+          <linearGradient id="flowFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="rgba(47, 107, 255, 0.28)" />
+            <stop offset="100%" stopColor="rgba(47, 107, 255, 0)" />
+          </linearGradient>
+        </defs>
         <g className="grid-lines">
           <path d="M50 216H610M50 168H610M50 120H610M50 72H610M50 24H610" />
         </g>

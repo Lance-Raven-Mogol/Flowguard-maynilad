@@ -7,8 +7,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <main className="page-shell">
-        <p style={{ color: 'var(--muted)' }}>Loading…</p>
+      <main style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', background: '#fff' }}>
+        <p style={{ color: '#7d8aa6', fontFamily: 'Poppins, sans-serif' }}>Loading…</p>
       </main>
     );
   }

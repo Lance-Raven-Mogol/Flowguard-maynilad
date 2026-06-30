@@ -20,6 +20,15 @@ import {
   SettingsView,
   StatList,
 } from '../views/components/panels';
+import {
+  AdvisoriesModule,
+  AssetsModule,
+  IncidentsModule,
+  JobOrdersModule,
+  MaterialRequestsModule,
+  MaterialsModule,
+  UsersPanel,
+} from './modules';
 
 export interface ViewContext {
   data: DashboardData;
@@ -106,12 +115,11 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       },
       {
         id: 'complaints', label: 'Complaints', icon: 'message-square', group: 'main',
-        render: ({ data, filter, openModal, notify }) => (
-          <>
-            <PanelHead title="My Complaints & Inquiries" action={<ActionButton label="File New Complaint" icon="plus-circle" onClick={() => openModal('file-complaint')} />} />
-            <DataTable table={data.tables.complaints} filter={filter} actionLabel="Action" renderActions={() => <button className="btn-view" onClick={() => notify('Opening complaint details…')}>View Details</button>} />
-          </>
-        ),
+        render: ({ filter }) => <IncidentsModule filter={filter} mine />,
+      },
+      {
+        id: 'advisories', label: 'Service Advisories', icon: 'megaphone', group: 'main',
+        render: ({ filter }) => <AdvisoriesModule filter={filter} readOnly title="Service Advisories" />,
       },
       {
         id: 'bills', label: 'My Bills', icon: 'file-text', badge: '2', group: 'main',
@@ -206,44 +214,28 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         ),
       },
       {
-        id: 'staff', label: 'Staff Management', icon: 'users', group: 'main',
-        render: ({ data, filter, openModal }) => (
-          <>
-            <PanelHead title="Field & Office Staff Directory" action={<ActionButton label="Add New Staff" icon="user-plus" onClick={() => openModal('add-staff')} />} />
-            <DataTable table={data.tables.staff} filter={filter} />
-          </>
-        ),
+        id: 'staff', label: 'User Management', icon: 'users', group: 'main',
+        render: ({ filter }) => <UsersPanel filter={filter} />,
+      },
+      {
+        id: 'incidents', label: 'Incidents', icon: 'message-square', group: 'main',
+        render: ({ filter }) => <IncidentsModule filter={filter} title="Incident Oversight" />,
       },
       {
         id: 'inventory', label: 'Inventory Overview', icon: 'package', group: 'main',
-        render: ({ data, filter, openModal }) => (
-          <>
-            <PanelHead title="Central Inventory Overview" action={<ActionButton label="Order Replenishment" icon="shopping-cart" onClick={() => openModal('order-inventory')} />} />
-            <DataTable table={data.tables.inventory} filter={filter} />
-          </>
-        ),
+        render: ({ filter }) => <MaterialsModule filter={filter} title="Central Inventory Overview" />,
       },
       {
-        id: 'reports', label: 'Operational Reports', icon: 'file-bar-chart', group: 'main',
-        render: ({ data, filter, openModal }) => (
-          <>
-            <PanelHead title="Management & Operational Reports" action={<ActionButton label="Generate Custom Report" icon="plus" onClick={() => openModal('generate-report')} />} />
-            <DataTable table={data.tables.reports} filter={filter} />
-          </>
-        ),
+        id: 'requests', label: 'Material Requests', icon: 'file-input', group: 'main',
+        render: ({ filter }) => <MaterialRequestsModule filter={filter} />,
       },
       {
-        id: 'suppliers', label: 'Suppliers & POs', icon: 'shopping-cart', group: 'main',
-        render: ({ data, filter, openModal }) => (
-          <>
-            <PanelHead title="Active Purchase Orders" action={<ActionButton label="Create New PO" icon="plus" onClick={() => openModal('new-po')} />} />
-            <DataTable table={data.tables.purchaseOrders} filter={filter} />
-            <div style={{ marginTop: 30 }}>
-              <PanelHead title="Preferred Vendor Directory" action={<ActionButton label="Register Vendor" icon="user-plus" variant="secondary" onClick={() => openModal('register-vendor')} />} />
-              <DataTable table={data.tables.vendors} filter={filter} />
-            </div>
-          </>
-        ),
+        id: 'assets', label: 'Asset Lifecycle', icon: 'box', group: 'main',
+        render: ({ filter }) => <AssetsModule filter={filter} />,
+      },
+      {
+        id: 'advisories', label: 'Service Advisories', icon: 'megaphone', group: 'main',
+        render: ({ filter }) => <AdvisoriesModule filter={filter} />,
       },
       {
         id: 'settings', label: 'System Settings', icon: 'settings', group: 'support',
@@ -306,21 +298,11 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       },
       {
         id: 'materials', label: 'Material List', icon: 'box', group: 'main',
-        render: ({ data, filter, openModal }) => (
-          <>
-            <PanelHead title="Material List & Stock Levels" action={<ActionButton label="Add New Item" icon="plus-circle" onClick={() => openModal('add-material')} />} />
-            <DataTable table={data.tables.materials} filter={filter} />
-          </>
-        ),
+        render: ({ filter }) => <MaterialsModule filter={filter} />,
       },
       {
-        id: 'mrf', label: 'MRF Requests', icon: 'file-input', badge: '4', group: 'main',
-        render: ({ data, filter, notify }) => (
-          <>
-            <PanelHead title="Material Request Forms (MRF)" />
-            <DataTable table={data.tables.mrf} filter={filter} actionLabel="Action" renderActions={() => <button className="btn-action" onClick={() => notify('Materials issued successfully!')}>Approve & Issue</button>} />
-          </>
-        ),
+        id: 'mrf', label: 'MRF Requests', icon: 'file-input', group: 'main',
+        render: ({ filter }) => <MaterialRequestsModule filter={filter} />,
       },
       {
         id: 'shipments', label: 'Incoming Shipments', icon: 'truck', group: 'main',
@@ -403,22 +385,20 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         ),
       },
       {
-        id: 'joborders', label: 'Job Orders', icon: 'clipboard-list', badge: '3', group: 'main',
-        render: ({ data, filter, notify }) => (
-          <>
-            <PanelHead title="My Assigned Job Orders" />
-            <DataTable table={data.tables.jobOrders} filter={filter} actionLabel="Action" renderActions={() => <button className="btn-action btn-blue" onClick={() => notify('Job status updated successfully!')}>Update</button>} />
-          </>
-        ),
+        id: 'joborders', label: 'Job Orders', icon: 'clipboard-list', group: 'main',
+        render: ({ filter }) => <JobOrdersModule filter={filter} />,
       },
       {
         id: 'materials', label: 'Material Requests', icon: 'hammer', group: 'main',
-        render: ({ data, filter, openModal }) => (
-          <>
-            <PanelHead title="My Material Requests (MRF)" action={<ActionButton label="New Request" icon="plus-circle" onClick={() => openModal('new-mrf')} />} />
-            <DataTable table={data.tables.techMrf} filter={filter} />
-          </>
-        ),
+        render: ({ filter }) => <MaterialRequestsModule filter={filter} title="My Material Requests (MRF)" />,
+      },
+      {
+        id: 'assets', label: 'Asset Registry', icon: 'box', group: 'main',
+        render: ({ filter }) => <AssetsModule filter={filter} title="Asset Registry & Health" />,
+      },
+      {
+        id: 'advisories', label: 'Advisories', icon: 'megaphone', group: 'main',
+        render: ({ filter }) => <AdvisoriesModule filter={filter} />,
       },
       {
         id: 'schedule', label: 'My Schedule', icon: 'calendar-check', group: 'main',
@@ -510,22 +490,12 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         ),
       },
       {
-        id: 'investigations', label: 'Investigations', icon: 'search', badge: '5', group: 'main',
-        render: ({ data, filter, openModal, notify }) => (
-          <>
-            <PanelHead title="Pending Zone Investigations" action={<ActionButton label="Start New Inspection" icon="plus" onClick={() => openModal('start-inspection')} />} />
-            <DataTable table={data.tables.investigations} filter={filter} actionLabel="Action" renderActions={() => <button className="btn-action btn-blue" onClick={() => notify('Processing investigation…')}>Process</button>} />
-          </>
-        ),
+        id: 'investigations', label: 'Investigations', icon: 'search', group: 'main',
+        render: ({ filter }) => <IncidentsModule filter={filter} title="Zone Investigations" />,
       },
       {
-        id: 'reports', label: 'Field Reports', icon: 'clipboard-list', group: 'main',
-        render: ({ data, filter, openModal }) => (
-          <>
-            <PanelHead title="Detailed Field Reports" action={<ActionButton label="Submit New Report" icon="plus" onClick={() => openModal('submit-report')} />} />
-            <DataTable table={data.tables.fieldReports} filter={filter} />
-          </>
-        ),
+        id: 'assets', label: 'Asset Inspections', icon: 'box', group: 'main',
+        render: ({ filter }) => <AssetsModule filter={filter} title="Asset Inspections & Health" />,
       },
       {
         id: 'schedule', label: 'My Schedule', icon: 'calendar', group: 'main',

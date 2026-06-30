@@ -5,7 +5,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
-import { store } from '../models/store.js';
+import { userRepo } from '../models/userRepo.js';
 import { ROLES, type PublicUser, type Role, type User } from '../models/types.js';
 import { badRequest, conflict, unauthorized } from '../utils/httpError.js';
 
@@ -28,7 +28,7 @@ export interface AuthResult {
 }
 
 export const authService = {
-  register(input: { fullName?: string; email?: string; password?: string; role?: string }): AuthResult {
+  async register(input: { fullName?: string; email?: string; password?: string; role?: string }): Promise<AuthResult> {
     const fullName = input.fullName?.trim();
     const email = input.email?.trim().toLowerCase();
     const password = input.password ?? '';
@@ -38,9 +38,9 @@ export const authService = {
     if (!email || !EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
     if (password.length < 6) throw badRequest('Password must be at least 6 characters.');
     if (!ROLES.includes(role)) throw badRequest('A valid role is required.');
-    if (store.findUserByEmail(email)) throw conflict('An account with this email already exists.');
+    if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
 
-    const user = store.createUser({
+    const user = await userRepo.create({
       fullName,
       email,
       role,
@@ -49,7 +49,7 @@ export const authService = {
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
-  login(input: { email?: string; password?: string; role?: string }): AuthResult {
+  async login(input: { email?: string; password?: string; role?: string }): Promise<AuthResult> {
     const email = input.email?.trim().toLowerCase();
     const password = input.password ?? '';
     const role = input.role as Role;
@@ -57,7 +57,7 @@ export const authService = {
     if (!email || !password) throw badRequest('Email and password are required.');
     if (!ROLES.includes(role)) throw badRequest('Please select a valid role.');
 
-    const user = store.findUserByEmail(email);
+    const user = await userRepo.findByEmail(email);
     if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
       throw unauthorized('Invalid email or password.');
     }

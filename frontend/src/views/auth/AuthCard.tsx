@@ -1,42 +1,54 @@
-/** Shared login/signup card shell, including the interactive cursor glow that
- * the original vanilla build wired up by hand. */
-import { useRef, type ReactNode } from 'react';
+/** Modern minimalist split-screen auth shell: a deep-blue brand panel beside a
+ *  clean white form panel. Shared by the login and signup pages. */
+import type { ReactNode } from 'react';
+import { BarChart3, ShieldCheck, Waves } from 'lucide-react';
 import logo from '../../assets/images/logo.png';
 
+const HIGHLIGHTS = [
+  { icon: BarChart3, text: 'Real-time analytics across every zone' },
+  { icon: Waves, text: 'Track usage, billing & field operations' },
+  { icon: ShieldCheck, text: 'Secure, role-based access control' },
+];
+
 export function AuthCard({ label, subtitle, children }: { label: string; subtitle: string; children: ReactNode }) {
-  const cardRef = useRef<HTMLElement>(null);
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    const card = cardRef.current;
-    if (!card) return;
-    const b = card.getBoundingClientRect();
-    const x = ((e.clientX - b.left) / b.width) * 100;
-    const y = ((e.clientY - b.top) / b.height) * 100;
-    card.style.setProperty('--glow-x', `${Math.max(0, Math.min(100, x))}%`);
-    card.style.setProperty('--glow-y', `${Math.max(0, Math.min(100, y))}%`);
-  };
-
-  const onPointerLeave = () => {
-    const card = cardRef.current;
-    if (!card) return;
-    card.style.setProperty('--glow-x', '50%');
-    card.style.setProperty('--glow-y', '14%');
-  };
-
   return (
-    <main className="page-shell">
-      <section className="login-card" aria-label={label} ref={cardRef} onPointerMove={onPointerMove} onPointerLeave={onPointerLeave}>
-        <span className="card-grid" aria-hidden="true" />
-        <span className="card-line" aria-hidden="true" />
-        <span className="card-flare" aria-hidden="true" />
-        <span className="interactive-glow" aria-hidden="true" />
-        <header className="card-header">
-          <div className="brand-mark">
-            <img src={logo} alt="FlowGuard logo" width={544} height={242} />
-          </div>
-          <p>{subtitle}</p>
-        </header>
-        {children}
+    <main className="auth-shell">
+      <aside className="auth-brand">
+        <span className="auth-orb auth-orb-1" aria-hidden="true" />
+        <span className="auth-orb auth-orb-2" aria-hidden="true" />
+        <div className="auth-brand-top">
+          <span className="auth-brand-logo">
+            <img src={logo} alt="FlowGuard" />
+          </span>
+        </div>
+        <div className="auth-brand-copy">
+          <h2>Smart water utility management, simplified.</h2>
+          <p>One intelligent workspace to monitor zones, resolve issues, and keep the city flowing.</p>
+          <ul className="auth-highlights">
+            {HIGHLIGHTS.map(({ icon: Icon, text }) => (
+              <li key={text}>
+                <span className="auth-highlight-icon">
+                  <Icon size={16} strokeWidth={2.2} />
+                </span>
+                {text}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="auth-brand-foot">© {new Date().getFullYear()} FlowGuard · Maynilad</p>
+      </aside>
+
+      <section className="auth-panel" aria-label={label}>
+        <div className="auth-form-wrap">
+          <header className="auth-head">
+            <span className="auth-logo-sm">
+              <img src={logo} alt="FlowGuard" />
+            </span>
+            <h1>{label}</h1>
+            <p>{subtitle}</p>
+          </header>
+          {children}
+        </div>
       </section>
     </main>
   );
