@@ -1,5 +1,10 @@
-import { Bell, MessageCircle, Search } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Bell, Search } from 'lucide-react';
 import type { RoleConfig } from '../../config/roleViews';
+import { ROLES } from '../../models/types';
+import { useAuth } from '../../controllers/AuthContext';
+import { useStats, buildAlerts } from '../../controllers/StatsContext';
+import { Icon } from '../components/Icon';
 
 interface TopbarProps {
   greeting: string;
@@ -8,10 +13,27 @@ interface TopbarProps {
   onFilter: (value: string) => void;
 }
 
+const TONE_COLOR: Record<string, string> = { info: '#2f6bff', warn: '#e0982f', danger: '#e25577' };
+
 export function Topbar({ greeting, config, filter, onFilter }: TopbarProps) {
-  const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-    config.avatar.name,
-  )}&background=${config.avatar.color}&color=fff&size=42&rounded=true`;
+  const { user } = useAuth();
+  const { stats } = useStats();
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const roleLabel = ROLES.find((r) => r.value === user!.role)?.label ?? user!.role;
+  const alerts = buildAlerts(stats, user!.role, user!.fullName);
+  const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(user!.fullName)}&background=2f6bff&color=fff&size=44&rounded=true&bold=true`;
+
+  // Close the popover on outside click.
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [open]);
 
   return (
     <header className="topbar">
@@ -26,15 +48,47 @@ export function Topbar({ greeting, config, filter, onFilter }: TopbarProps) {
             onChange={(e) => onFilter(e.target.value)}
           />
         </label>
-        <button className="icon-btn" type="button" aria-label="Messages">
-          <MessageCircle size={20} />
-        </button>
-        <button className="icon-btn bell" type="button" aria-label="Notifications">
-          <Bell size={20} />
-        </button>
+
+        <div className="popover-wrapper" ref={wrapRef}>
+          <button className="icon-btn bell" type="button" aria-label="Notifications" onClick={() => setOpen((o) => !o)}>
+            <Bell size={20} />
+            {alerts.length > 0 && <span className="notif-count">{alerts.length}</span>}
+          </button>
+          <div className={`static-popover${open ? ' is-active' : ''}`}>
+            <div className="popover-header">
+              <h4>Notifications</h4>
+              <span>{alerts.length} new</span>
+            </div>
+            <div className="popover-body">
+              {alerts.length === 0 ? (
+                <div className="popover-item" style={{ cursor: 'default' }}>
+                  <div className="item-content">
+                    <p>You're all caught up. No alerts right now.</p>
+                  </div>
+                </div>
+              ) : (
+                alerts.map((a, i) => (
+                  <div className="popover-item" key={i}>
+                    <div className="item-icon" style={{ background: `${TONE_COLOR[a.tone]}1a`, color: TONE_COLOR[a.tone] }}>
+                      <Icon name={a.icon} size={18} />
+                    </div>
+                    <div className="item-content">
+                      <strong>{a.title}</strong>
+                      <p>{a.detail}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
         <div className="profile">
-          <img src={avatarUrl} alt="Avatar" className="avatar" />
-          <strong>{config.avatar.name}</strong>
+          <img src={avatarUrl} alt={user!.fullName} className="avatar" />
+          <div style={{ lineHeight: 1.3 }}>
+            <strong>{user!.fullName}</strong>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>{roleLabel}</div>
+          </div>
         </div>
       </div>
     </header>

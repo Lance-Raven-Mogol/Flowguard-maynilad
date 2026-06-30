@@ -67,6 +67,35 @@ export const authService = {
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
+  async updateProfile(userId: string, input: { fullName?: string; email?: string }): Promise<PublicUser> {
+    const fullName = input.fullName?.trim();
+    const email = input.email?.trim().toLowerCase();
+
+    if (fullName !== undefined && fullName.length < 2) throw badRequest('Full name is too short.');
+    if (email !== undefined && !EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
+
+    if (email) {
+      const existing = await userRepo.findByEmail(email);
+      if (existing && existing.id !== userId) throw conflict('That email is already in use.');
+    }
+
+    const updated = await userRepo.update(userId, { fullName, email });
+    if (!updated) throw unauthorized('Account no longer exists.');
+    return toPublicUser(updated);
+  },
+
+  async changePassword(userId: string, input: { currentPassword?: string; newPassword?: string }): Promise<void> {
+    const current = input.currentPassword ?? '';
+    const next = input.newPassword ?? '';
+    if (next.length < 6) throw badRequest('New password must be at least 6 characters.');
+
+    const user = await userRepo.findById(userId);
+    if (!user) throw unauthorized('Account no longer exists.');
+    if (!bcrypt.compareSync(current, user.passwordHash)) throw badRequest('Current password is incorrect.');
+
+    await userRepo.update(userId, { passwordHash: bcrypt.hashSync(next, 10) });
+  },
+
   verifyToken(token: string): { sub: string; role: Role } {
     try {
       return jwt.verify(token, env.jwtSecret) as { sub: string; role: Role };

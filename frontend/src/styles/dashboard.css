@@ -390,16 +390,22 @@ input {
   transform: translateY(-1px);
 }
 
-.bell::after {
-  content: "";
+.notif-count {
   position: absolute;
-  top: 9px;
-  right: 10px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #ff5d7e;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff5d7e, #ff8aa6);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
   border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(255, 93, 126, 0.5);
 }
 
 .icon-btn svg {

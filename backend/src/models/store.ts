@@ -48,6 +48,15 @@ class Store {
     return user;
   }
 
+  updateUser(id: string, fields: { fullName?: string; email?: string; passwordHash?: string }): User | undefined {
+    const user = this.users.find((u) => u.id === id);
+    if (!user) return undefined;
+    if (fields.fullName !== undefined) user.fullName = fields.fullName;
+    if (fields.email !== undefined) user.email = fields.email.toLowerCase();
+    if (fields.passwordHash !== undefined) user.passwordHash = fields.passwordHash;
+    return user;
+  }
+
   // --- Dashboards ----------------------------------------------------------
   getDashboard(role: Role): DashboardData {
     return this.dashboards[role];

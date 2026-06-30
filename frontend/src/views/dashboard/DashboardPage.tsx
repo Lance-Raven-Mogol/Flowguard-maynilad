@@ -10,6 +10,7 @@ import { dashboardService } from '../../services/dashboardService';
 import { ApiError } from '../../services/apiClient';
 import { useAuth } from '../../controllers/AuthContext';
 import { useToast } from '../../controllers/ToastContext';
+import { StatsProvider, useStats, buildBadges } from '../../controllers/StatsContext';
 import { ROLE_CONFIG } from '../../config/roleViews';
 import { MODALS, type ModalKey } from '../../config/modals';
 import { Sidebar } from './Sidebar';
@@ -18,7 +19,16 @@ import { FormModal } from '../components/FormModal';
 import { Modal } from '../components/Modal';
 
 export function DashboardPage() {
+  return (
+    <StatsProvider>
+      <DashboardShell />
+    </StatsProvider>
+  );
+}
+
+function DashboardShell() {
   const { user, logout } = useAuth();
+  const { stats } = useStats();
   const { notify } = useToast();
   const navigate = useNavigate();
 
@@ -78,6 +88,7 @@ export function DashboardPage() {
           setFilter('');
         }}
         onLogout={() => setConfirmLogout(true)}
+        badges={buildBadges(stats, user!.role, user!.fullName)}
       />
 
       <main className="main-panel">

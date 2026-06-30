@@ -8,9 +8,10 @@ interface SidebarProps {
   activeId: string;
   onSelect: (id: string) => void;
   onLogout: () => void;
+  badges?: Record<string, number>;
 }
 
-function NavLink({ view, active, onSelect }: { view: ViewDef; active: boolean; onSelect: (id: string) => void }) {
+function NavLink({ view, active, onSelect, badge }: { view: ViewDef; active: boolean; onSelect: (id: string) => void; badge?: number | string }) {
   return (
     <a
       href="#"
@@ -22,12 +23,12 @@ function NavLink({ view, active, onSelect }: { view: ViewDef; active: boolean; o
     >
       <Icon name={view.icon} className="nav-icon" size={18} />
       <span>{view.label}</span>
-      {view.badge && <b>{view.badge}</b>}
+      {badge ? <b>{badge}</b> : null}
     </a>
   );
 }
 
-export function Sidebar({ config, activeId, onSelect, onLogout }: SidebarProps) {
+export function Sidebar({ config, activeId, onSelect, onLogout, badges = {} }: SidebarProps) {
   const main = config.views.filter((v) => v.group === 'main');
   const support = config.views.filter((v) => v.group === 'support');
 
@@ -44,14 +45,14 @@ export function Sidebar({ config, activeId, onSelect, onLogout }: SidebarProps) 
       <p className="menu-title">{config.menuTitle}</p>
       <nav className="nav-list" aria-label="Main menu">
         {main.map((v) => (
-          <NavLink key={v.id} view={v} active={v.id === activeId} onSelect={onSelect} />
+          <NavLink key={v.id} view={v} active={v.id === activeId} onSelect={onSelect} badge={badges[v.id] || v.badge} />
         ))}
       </nav>
 
       <p className="menu-title support-title">{config.supportTitle}</p>
       <nav className="nav-list support" aria-label="Support menu">
         {support.map((v) => (
-          <NavLink key={v.id} view={v} active={v.id === activeId} onSelect={onSelect} />
+          <NavLink key={v.id} view={v} active={v.id === activeId} onSelect={onSelect} badge={badges[v.id] || v.badge} />
         ))}
       </nav>
 

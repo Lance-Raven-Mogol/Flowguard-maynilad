@@ -84,6 +84,27 @@ export const userRepo = {
     return fromRow(data);
   },
 
+  async update(
+    id: string,
+    fields: { fullName?: string; email?: string; passwordHash?: string },
+  ): Promise<User | undefined> {
+    if (!supabase) return store.updateUser(id, fields);
+
+    const row: Record<string, unknown> = {};
+    if (fields.fullName !== undefined) row.full_name = fields.fullName;
+    if (fields.email !== undefined) row.email = fields.email.toLowerCase();
+    if (fields.passwordHash !== undefined) row.password_hash = fields.passwordHash;
+
+    const { data, error } = await supabase
+      .from(TABLE)
+      .update(row)
+      .eq('id', id)
+      .select('*')
+      .maybeSingle<UserRow>();
+    if (error) throw new Error(`Supabase update user failed: ${error.message}`);
+    return data ? fromRow(data) : undefined;
+  },
+
   /** Safe directory listing for admin (User Management module) — no hashes. */
   async listPublic(): Promise<PublicUser[]> {
     if (!supabase) return [];

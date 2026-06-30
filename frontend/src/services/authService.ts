@@ -32,6 +32,15 @@ export const authService = {
     return res.user;
   },
 
+  async updateProfile(input: { fullName?: string; email?: string }): Promise<User> {
+    const res = await api.patch<{ user: User }>('/auth/profile', input);
+    return res.user;
+  },
+
+  async changePassword(input: { currentPassword: string; newPassword: string }): Promise<void> {
+    await api.patch<{ ok: true }>('/auth/password', input);
+  },
+
   logout(): void {
     tokenStore.clear();
   },
