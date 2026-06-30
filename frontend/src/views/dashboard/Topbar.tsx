@@ -46,7 +46,7 @@ export function Topbar({ config, filter, onFilter }: TopbarProps) {
   return (
     <header className="topbar">
       <h1 className="greeting">
-        {prefix}, <span className="greeting-name">{user!.fullName}</span> <span aria-hidden="true">👋</span>
+        <span className="greeting-pre">{prefix},</span> {user!.fullName}
       </h1>
       <div className="top-actions">
         <label className="search-box">

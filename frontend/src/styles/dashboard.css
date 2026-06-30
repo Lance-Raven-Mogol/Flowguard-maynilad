@@ -329,12 +329,14 @@ input {
 }
 
 .greeting {
+  font-size: 22px;
   font-weight: 600;
+  color: var(--text);
 }
 
-.greeting-name {
-  font-weight: 400;
-  color: var(--text-soft);
+.greeting-pre {
+  color: var(--muted);
+  font-weight: 500;
 }
 
 .top-actions {
@@ -1004,18 +1006,23 @@ td strong {
 /* ------------------------------------------------------- Account settings */
 .account {
   display: grid;
+  grid-template-columns: 320px 1fr;
   gap: 22px;
-  max-width: 920px;
+  align-items: start;
 }
 
 .account-hero {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 22px;
-  padding: 24px 26px;
-  background: linear-gradient(120deg, #0a1b3d, #1d3a6e);
+  text-align: center;
+  gap: 16px;
+  padding: 32px 24px;
+  background: linear-gradient(160deg, #0a1b3d, #1d3a6e);
   color: #fff;
   border: 0;
+  position: sticky;
+  top: 96px;
 }
 
 .account-avatar {
@@ -1083,7 +1090,7 @@ td strong {
 }
 
 .account-body {
-  padding: 6px 22px 22px;
+  padding: 8px 26px 26px;
 }
 
 .account-tabs {
@@ -1126,6 +1133,17 @@ td strong {
   display: flex;
   justify-content: flex-end;
   margin-top: 8px;
+}
+
+@media (max-width: 920px) {
+  .account {
+    grid-template-columns: 1fr;
+  }
+  .account-hero {
+    position: static;
+    flex-direction: row;
+    text-align: left;
+  }
 }
 
 @media (max-width: 620px) {
