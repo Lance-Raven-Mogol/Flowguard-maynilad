@@ -7,7 +7,6 @@ import { useStats, buildAlerts } from '../../controllers/StatsContext';
 import { Icon } from '../components/Icon';
 
 interface TopbarProps {
-  greeting: string;
   config: RoleConfig;
   filter: string;
   onFilter: (value: string) => void;
@@ -15,15 +14,24 @@ interface TopbarProps {
 
 const TONE_COLOR: Record<string, string> = { info: '#2f6bff', warn: '#e0982f', danger: '#e25577' };
 
-export function Topbar({ greeting, config, filter, onFilter }: TopbarProps) {
+export function avatarFor(user: { fullName: string; avatarUrl?: string | null }, size = 44): string {
+  return (
+    user.avatarUrl ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(user.fullName)}&background=2f6bff&color=fff&size=${size * 2}&rounded=true&bold=true`
+  );
+}
+
+export function Topbar({ config, filter, onFilter }: TopbarProps) {
   const { user } = useAuth();
   const { stats } = useStats();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
+  const hour = new Date().getHours();
+  const prefix = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const roleLabel = ROLES.find((r) => r.value === user!.role)?.label ?? user!.role;
   const alerts = buildAlerts(stats, user!.role, user!.fullName);
-  const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(user!.fullName)}&background=2f6bff&color=fff&size=44&rounded=true&bold=true`;
+  const avatarUrl = avatarFor(user!);
 
   // Close the popover on outside click.
   useEffect(() => {
@@ -37,7 +45,9 @@ export function Topbar({ greeting, config, filter, onFilter }: TopbarProps) {
 
   return (
     <header className="topbar">
-      <h1>{greeting}</h1>
+      <h1 className="greeting">
+        {prefix}, <span className="greeting-name">{user!.fullName}</span> <span aria-hidden="true">👋</span>
+      </h1>
       <div className="top-actions">
         <label className="search-box">
           <Search size={18} />

@@ -56,6 +56,29 @@ interface ModuleProps {
   filter?: string;
 }
 
+/** Edit button shown only for active rows. */
+function EditBtn({ c }: { c: RowActionCtx }) {
+  if (c.archived) return null;
+  return (
+    <button className="btn-action" onClick={c.edit} disabled={c.busy}>
+      Edit
+    </button>
+  );
+}
+
+/** Archive (active) or Restore (archived) toggle for a row. */
+function ArchiveBtn({ c }: { c: RowActionCtx }) {
+  return c.archived ? (
+    <button className="btn-action" onClick={c.restore} disabled={c.busy}>
+      Restore
+    </button>
+  ) : (
+    <button className="btn-action btn-archive" onClick={c.archive} disabled={c.busy}>
+      Archive
+    </button>
+  );
+}
+
 /* --------------------------------------------------------------- Incidents */
 const INCIDENT_STATUS = [
   { value: 'under_verification', label: 'Under Verification' },
@@ -63,7 +86,13 @@ const INCIDENT_STATUS = [
   { value: 'scheduled', label: 'Scheduled' },
   { value: 'resolved', label: 'Resolved' },
 ];
-const INCIDENT_TYPES = ['complaint', 'leak', 'new-connection', 'disconnection', 'other'];
+const INCIDENT_TYPE_OPTIONS = [
+  { value: 'complaint', label: 'General Complaint' },
+  { value: 'leak', label: 'Pipe Leak' },
+  { value: 'new-connection', label: 'New Connection' },
+  { value: 'disconnection', label: 'Disconnection' },
+  { value: 'other', label: 'Other' },
+];
 const URGENCY = ['low', 'medium', 'high'];
 
 export function IncidentsModule({ filter, mine = false, title }: ModuleProps & { mine?: boolean; title?: string }) {
@@ -82,20 +111,22 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
   ];
 
   const fields: ModuleField[] = [
-    { name: 'type', label: 'Type', kind: 'select', options: INCIDENT_TYPES, default: 'complaint' },
+    { name: 'type', label: 'Type', kind: 'select', optionList: INCIDENT_TYPE_OPTIONS, default: 'complaint' },
     { name: 'description', label: 'Description', kind: 'textarea', placeholder: 'Describe the concern…' },
     { name: 'location', label: 'Location', placeholder: 'Brgy., Boac' },
     { name: 'urgency', label: 'Urgency', kind: 'select', options: URGENCY, default: 'medium' },
-    { name: 'reported_by', label: 'Reported By', default: user!.fullName },
+    // Customers are attributed automatically by the server; staff can name the reporter.
+    ...(mine ? [] : [{ name: 'reported_by', label: 'Reported By', default: user!.fullName } as ModuleField]),
   ];
 
-  const actions = manage
+  const actions = canWrite
     ? (c: RowActionCtx) => (
         <>
-          <StatusSelect value={String(c.row.status)} options={INCIDENT_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />
-          {role === 'general-manager' && (
-            <button className="btn-action" onClick={c.remove} disabled={c.busy}>Delete</button>
+          {manage && !c.archived && (
+            <StatusSelect value={String(c.row.status)} options={INCIDENT_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />
           )}
+          <EditBtn c={c} />
+          <ArchiveBtn c={c} />
         </>
       )
     : undefined;
@@ -179,9 +210,9 @@ export function JobOrdersModule({ filter }: ModuleProps) {
         canWrite
           ? (c) => (
               <>
-                <StatusSelect value={String(c.row.status)} options={JOB_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />
-                <button className="btn-action" onClick={c.edit} disabled={c.busy}>Edit</button>
-                {role === 'general-manager' && <button className="btn-action" onClick={c.remove} disabled={c.busy}>Delete</button>}
+                {!c.archived && <StatusSelect value={String(c.row.status)} options={JOB_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />}
+                <EditBtn c={c} />
+                <ArchiveBtn c={c} />
               </>
             )
           : undefined
@@ -244,8 +275,8 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
         canWrite
           ? (c) => (
               <>
-                <button className="btn-action btn-blue" onClick={c.edit} disabled={c.busy}>Edit</button>
-                <button className="btn-action" onClick={c.remove} disabled={c.busy}>Delete</button>
+                <EditBtn c={c} />
+                <ArchiveBtn c={c} />
               </>
             )
           : undefined
@@ -301,9 +332,13 @@ export function MaterialRequestsModule({ filter, title }: ModuleProps & { title?
         metric('r4', 'Released', count(rows, (r) => r.status === 'released'), 'package-check', 'invoices'),
       ]}
       actions={
-        canApprove
+        canWrite
           ? (c) => (
-              <StatusSelect value={String(c.row.status)} options={MR_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />
+              <>
+                {canApprove && !c.archived && <StatusSelect value={String(c.row.status)} options={MR_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />}
+                <EditBtn c={c} />
+                <ArchiveBtn c={c} />
+              </>
             )
           : undefined
       }
@@ -364,9 +399,9 @@ export function AssetsModule({ filter, title }: ModuleProps & { title?: string }
         canWrite
           ? (c) => (
               <>
-                <StatusSelect value={String(c.row.condition)} options={CONDITION} disabled={c.busy} onChange={(s) => c.update({ condition: s })} />
-                <button className="btn-action" onClick={c.edit} disabled={c.busy}>Edit</button>
-                {role === 'general-manager' && <button className="btn-action" onClick={c.remove} disabled={c.busy}>Delete</button>}
+                {!c.archived && <StatusSelect value={String(c.row.condition)} options={CONDITION} disabled={c.busy} onChange={(s) => c.update({ condition: s })} />}
+                <EditBtn c={c} />
+                <ArchiveBtn c={c} />
               </>
             )
           : undefined
@@ -417,9 +452,13 @@ export function AdvisoriesModule({ filter, readOnly = false, title }: ModuleProp
       mineField={readOnly ? 'status' : undefined}
       mineValue={readOnly ? 'published' : undefined}
       actions={
-        canApprove
+        canWrite
           ? (c) => (
-              <StatusSelect value={String(c.row.status)} options={ADVISORY_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />
+              <>
+                {canApprove && !c.archived && <StatusSelect value={String(c.row.status)} options={ADVISORY_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />}
+                <EditBtn c={c} />
+                <ArchiveBtn c={c} />
+              </>
             )
           : undefined
       }

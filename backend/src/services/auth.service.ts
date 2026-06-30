@@ -6,6 +6,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { userRepo } from '../models/userRepo.js';
+import { renameIncidentReporter } from '../models/resourceRepo.js';
+import { uploadAvatar } from '../models/supabase.js';
 import { ROLES, type PublicUser, type Role, type User } from '../models/types.js';
 import { badRequest, conflict, notFound, unauthorized } from '../utils/httpError.js';
 
@@ -102,7 +104,27 @@ export const authService = {
       if (existing && existing.id !== userId) throw conflict('That email is already in use.');
     }
 
+    const before = await userRepo.findById(userId);
     const updated = await userRepo.update(userId, { fullName, email });
+    if (!updated) throw unauthorized('Account no longer exists.');
+
+    // Keep the user's filed complaints attached to them after a name change.
+    if (before && fullName && before.fullName !== fullName) {
+      await renameIncidentReporter(before.fullName, fullName);
+    }
+    return toPublicUser(updated);
+  },
+
+  /** Upload a new profile photo (base64 data URL) to Supabase Storage. */
+  async updateAvatar(userId: string, dataUrl?: string): Promise<PublicUser> {
+    const match = /^data:(image\/(?:png|jpe?g|webp|gif));base64,(.+)$/.exec(dataUrl ?? '');
+    if (!match) throw badRequest('Please upload a valid PNG, JPG, WEBP or GIF image.');
+
+    const buffer = Buffer.from(match[2], 'base64');
+    if (buffer.length > 3 * 1024 * 1024) throw badRequest('Image must be smaller than 3MB.');
+
+    const url = await uploadAvatar(userId, buffer, match[1]);
+    const updated = await userRepo.update(userId, { avatarUrl: `${url}?v=${Date.now()}` });
     if (!updated) throw unauthorized('Account no longer exists.');
     return toPublicUser(updated);
   },

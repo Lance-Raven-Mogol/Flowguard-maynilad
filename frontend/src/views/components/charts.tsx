@@ -6,12 +6,52 @@ export interface LegendItem {
   dot: 'dark' | 'blue' | 'pale';
 }
 
+const DOT_COLOR: Record<LegendItem['dot'], string> = {
+  dark: '#2f6bff',
+  blue: '#5965f0',
+  pale: '#c3d6f7',
+};
+
+/** A real, data-driven donut: arc lengths are computed from the legend values. */
 export function DonutPanel({ value, label, legend }: { value: string; label: string; legend: LegendItem[] }) {
+  const nums = legend.map((l) => Math.max(0, parseFloat(String(l.value).replace(/[^0-9.]/g, '')) || 0));
+  const total = nums.reduce((a, b) => a + b, 0);
+
+  let before = 0;
+  const segments = legend.map((l, i) => {
+    const frac = total > 0 ? (nums[i] / total) * 100 : 0;
+    const seg = { color: DOT_COLOR[l.dot], frac, offset: -before };
+    before += frac;
+    return seg;
+  });
+
   return (
     <div className="invoice-content">
-      <div className="donut">
-        <span>{value}</span>
-        <small>{label}</small>
+      <div className="donut-chart">
+        <svg viewBox="0 0 36 36" role="img" aria-label={`${label}: ${value}`}>
+          <circle className="donut-track" cx="18" cy="18" r="15.5" fill="none" strokeWidth="4" pathLength={100} />
+          {total > 0 &&
+            segments.map((s, i) => (
+              <circle
+                key={i}
+                cx="18"
+                cy="18"
+                r="15.5"
+                fill="none"
+                stroke={s.color}
+                strokeWidth="4"
+                strokeLinecap="round"
+                pathLength={100}
+                strokeDasharray={`${Math.max(s.frac - 1.2, 0)} ${100 - Math.max(s.frac - 1.2, 0)}`}
+                strokeDashoffset={s.offset}
+                transform="rotate(-90 18 18)"
+              />
+            ))}
+        </svg>
+        <div className="donut-center">
+          <span>{value}</span>
+          <small>{label}</small>
+        </div>
       </div>
       <dl className="legend">
         {legend.map((l) => (

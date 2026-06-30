@@ -10,3 +10,4 @@ authRoutes.post('/login', asyncHandler(authController.login));
 authRoutes.get('/me', requireAuth, authController.me);
 authRoutes.patch('/profile', requireAuth, asyncHandler(authController.updateProfile));
 authRoutes.patch('/password', requireAuth, asyncHandler(authController.changePassword));
+authRoutes.patch('/avatar', requireAuth, asyncHandler(authController.updateAvatar));

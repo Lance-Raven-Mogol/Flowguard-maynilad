@@ -3,7 +3,7 @@
  * service-role client and target a table by name (the caller — resource.service
  * — is responsible for validating the table/columns first).
  */
-import { requireSupabase } from './supabase.js';
+import { requireSupabase, supabase } from './supabase.js';
 
 export type Row = Record<string, unknown>;
 
@@ -13,9 +13,12 @@ export interface DbError {
   message: string;
 }
 
-export async function listRows(table: string): Promise<Row[]> {
+export async function listRows(table: string, opts: { archived?: 'only' | 'all' } = {}): Promise<Row[]> {
   const sb = requireSupabase();
-  const { data, error } = await sb.from(table).select('*').order('created_at', { ascending: false });
+  let query = sb.from(table).select('*').order('created_at', { ascending: false });
+  if (opts.archived === 'only') query = query.eq('archived', true);
+  else if (opts.archived !== 'all') query = query.eq('archived', false);
+  const { data, error } = await query;
   if (error) throw error as DbError;
   return (data ?? []) as Row[];
 }
@@ -37,5 +40,12 @@ export async function updateRow(table: string, id: string, values: Row): Promise
 export async function deleteRow(table: string, id: string): Promise<void> {
   const sb = requireSupabase();
   const { error } = await sb.from(table).delete().eq('id', id);
+  if (error) throw error as DbError;
+}
+
+/** Keep a customer's complaints attached to them when their display name changes. */
+export async function renameIncidentReporter(from: string, to: string): Promise<void> {
+  if (!supabase || from === to) return;
+  const { error } = await supabase.from('incidents').update({ reported_by: to }).eq('reported_by', from);
   if (error) throw error as DbError;
 }

@@ -114,6 +114,15 @@ create table if not exists public.advisories (
   published_at timestamptz
 );
 
+-- Incremental columns (safe to re-run).
+alter table public.app_users         add column if not exists avatar_url text;
+alter table public.incidents         add column if not exists archived boolean not null default false;
+alter table public.job_orders        add column if not exists archived boolean not null default false;
+alter table public.materials         add column if not exists archived boolean not null default false;
+alter table public.material_requests add column if not exists archived boolean not null default false;
+alter table public.assets            add column if not exists archived boolean not null default false;
+alter table public.advisories        add column if not exists archived boolean not null default false;
+
 -- RLS on (backend uses the service-role key, which bypasses it).
 alter table public.app_users         enable row level security;
 alter table public.incidents         enable row level security;

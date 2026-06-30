@@ -83,8 +83,8 @@ function CustomerOverview({ stats, fullName }: { stats: DashboardStats; fullName
             value={String(mine.length)}
             label="Total"
             legend={[
-              { label: 'Open', value: String(n(mine, (i) => i.status !== 'resolved')), dot: 'dark' },
-              { label: 'In Progress', value: String(n(mine, (i) => i.status === 'in_progress')), dot: 'blue' },
+              { label: 'Awaiting Verification', value: String(n(mine, (i) => i.status === 'under_verification')), dot: 'dark' },
+              { label: 'In Progress / Scheduled', value: String(n(mine, (i) => i.status === 'in_progress' || i.status === 'scheduled')), dot: 'blue' },
               { label: 'Resolved', value: String(n(mine, (i) => i.status === 'resolved')), dot: 'pale' },
             ]}
           />

@@ -33,8 +33,11 @@ export interface ModuleColumn {
 export interface RowActionCtx {
   row: EntityRow;
   busy: boolean;
+  archived: boolean;
   update: (values: Record<string, unknown>) => void;
   remove: () => void;
+  archive: () => void;
+  restore: () => void;
   edit: () => void;
 }
 
@@ -52,6 +55,8 @@ export interface LiveModuleProps {
   metrics?: (rows: EntityRow[]) => Metric[];
   actions?: (ctx: RowActionCtx) => ReactNode;
   actionLabel?: string;
+  /** Show the "Show archived" toggle (defaults to on when the user can write). */
+  archivable?: boolean;
 }
 
 export function LiveModule({
@@ -67,6 +72,7 @@ export function LiveModule({
   metrics,
   actions,
   actionLabel = 'Action',
+  archivable,
 }: LiveModuleProps) {
   const { notify } = useToast();
   const { reload: reloadStats } = useStats();
@@ -78,18 +84,21 @@ export function LiveModule({
   const [values, setValues] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+
+  const showArchiveToggle = (archivable ?? canWrite) === true;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRows(await resourceService.list(entity));
+      setRows(await resourceService.list(entity, showArchived ? 'only' : undefined));
       setError(null);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Failed to load records.');
     } finally {
       setLoading(false);
     }
-  }, [entity]);
+  }, [entity, showArchived]);
 
   useEffect(() => {
     load();
@@ -185,8 +194,11 @@ export function LiveModule({
         return actions({
           row,
           busy: busyId === row.id,
+          archived: Boolean(row.archived),
           update: (vals) => runUpdate(row.id, vals),
           remove: () => runRemove(row.id),
+          archive: () => runUpdate(row.id, { archived: true }),
+          restore: () => runUpdate(row.id, { archived: false }),
           edit: () => openEdit(row),
         });
       }
@@ -194,13 +206,20 @@ export function LiveModule({
 
   return (
     <>
-      {metrics && rows.length > 0 && <MetricsGrid metrics={metrics(rows)} />}
+      {metrics && !showArchived && rows.length > 0 && <MetricsGrid metrics={metrics(rows)} />}
       <PanelHead
-        title={title}
+        title={showArchived ? `${title} · Archived` : title}
         action={
-          canWrite && fields ? (
-            <ActionButton label={createLabel ?? 'Add New'} icon="plus-circle" onClick={openCreate} />
-          ) : undefined
+          <div className="panel-head-actions">
+            {showArchiveToggle && (
+              <button className="btn-action" type="button" onClick={() => setShowArchived((s) => !s)}>
+                {showArchived ? 'View Active' : 'View Archived'}
+              </button>
+            )}
+            {canWrite && fields && !showArchived && (
+              <ActionButton label={createLabel ?? 'Add New'} icon="plus-circle" onClick={openCreate} />
+            )}
+          </div>
         }
       />
 

@@ -40,6 +40,11 @@ export const authService = {
     await api.patch<{ ok: true }>('/auth/password', input);
   },
 
+  async updateAvatar(dataUrl: string): Promise<User> {
+    const res = await api.patch<{ user: User }>('/auth/avatar', { dataUrl });
+    return res.user;
+  },
+
   logout(): void {
     tokenStore.clear();
   },

@@ -75,6 +75,18 @@ async function runSql(query) {
     console.log('✓ Demo accounts already present.');
   }
 
+  console.log('→ Ensuring "avatars" storage bucket…');
+  const { error: bucketErr } = await sb.storage.createBucket('avatars', {
+    public: true,
+    fileSizeLimit: '3MB',
+    allowedMimeTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+  });
+  if (bucketErr && !/already exists/i.test(bucketErr.message)) {
+    console.warn('  ! bucket:', bucketErr.message);
+  } else {
+    console.log('✓ avatars bucket ready.');
+  }
+
   const { count } = await sb.from('app_users').select('*', { count: 'exact', head: true });
   console.log(`✓ Migration complete. app_users rows: ${count ?? 'unknown'}`);
 })().catch((e) => {

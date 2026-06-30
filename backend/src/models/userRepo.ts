@@ -20,6 +20,7 @@ interface UserRow {
   email: string;
   role: Role;
   password_hash: string;
+  avatar_url: string | null;
   created_at: string;
 }
 
@@ -30,6 +31,7 @@ function fromRow(row: UserRow): User {
     email: row.email,
     role: row.role,
     passwordHash: row.password_hash,
+    avatarUrl: row.avatar_url,
     createdAt: row.created_at,
   };
 }
@@ -86,7 +88,7 @@ export const userRepo = {
 
   async update(
     id: string,
-    fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role },
+    fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string },
   ): Promise<User | undefined> {
     if (!supabase) return store.updateUser(id, fields);
 
@@ -95,6 +97,7 @@ export const userRepo = {
     if (fields.email !== undefined) row.email = fields.email.toLowerCase();
     if (fields.passwordHash !== undefined) row.password_hash = fields.passwordHash;
     if (fields.role !== undefined) row.role = fields.role;
+    if (fields.avatarUrl !== undefined) row.avatar_url = fields.avatarUrl;
 
     const { data, error } = await supabase
       .from(TABLE)
@@ -111,7 +114,7 @@ export const userRepo = {
     if (!supabase) return [];
     const { data, error } = await supabase
       .from(TABLE)
-      .select('id, full_name, email, role, created_at')
+      .select('id, full_name, email, role, created_at, avatar_url')
       .order('created_at', { ascending: true });
     if (error) throw new Error(`Supabase listPublic failed: ${error.message}`);
     return (data ?? []).map((r: Omit<UserRow, 'password_hash'>) => ({
@@ -119,6 +122,7 @@ export const userRepo = {
       fullName: r.full_name,
       email: r.email,
       role: r.role,
+      avatarUrl: r.avatar_url,
       createdAt: r.created_at,
     }));
   },

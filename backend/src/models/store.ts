@@ -45,13 +45,14 @@ class Store {
     return user;
   }
 
-  updateUser(id: string, fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role }): User | undefined {
+  updateUser(id: string, fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string }): User | undefined {
     const user = this.users.find((u) => u.id === id);
     if (!user) return undefined;
     if (fields.fullName !== undefined) user.fullName = fields.fullName;
     if (fields.email !== undefined) user.email = fields.email.toLowerCase();
     if (fields.passwordHash !== undefined) user.passwordHash = fields.passwordHash;
     if (fields.role !== undefined) user.role = fields.role;
+    if (fields.avatarUrl !== undefined) user.avatarUrl = fields.avatarUrl;
     return user;
   }
 }

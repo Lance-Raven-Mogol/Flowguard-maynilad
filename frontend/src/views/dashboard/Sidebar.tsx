@@ -1,7 +1,6 @@
-import { LogOut } from 'lucide-react';
+import { Droplets, LogOut } from 'lucide-react';
 import type { RoleConfig, ViewDef } from '../../config/roleViews';
 import { Icon } from '../components/Icon';
-import logo from '../../assets/images/logo.png';
 
 interface SidebarProps {
   config: RoleConfig;
@@ -35,7 +34,9 @@ export function Sidebar({ config, activeId, onSelect, onLogout, badges = {} }: S
   return (
     <aside className="sidebar">
       <div className="brand">
-        <img src={logo} alt="FlowGuard Logo" className="brand-logo" />
+        <span className="brand-mark" aria-hidden="true">
+          <Droplets size={24} strokeWidth={2.2} />
+        </span>
         <div>
           <strong>{config.brand.title}</strong>
           <small>{config.brand.subtitle}</small>

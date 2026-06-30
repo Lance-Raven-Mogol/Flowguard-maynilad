@@ -23,6 +23,7 @@ export interface User {
   fullName: string;
   email: string;
   role: Role;
+  avatarUrl?: string | null;
   createdAt: string;
 }
 

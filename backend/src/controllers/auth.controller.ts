@@ -29,4 +29,10 @@ export const authController = {
     await authService.changePassword(req.user.id, req.body ?? {});
     res.json({ ok: true });
   },
+
+  async updateAvatar(req: Request, res: Response): Promise<void> {
+    if (!req.user) throw unauthorized();
+    const user = await authService.updateAvatar(req.user.id, req.body?.dataUrl);
+    res.json({ user });
+  },
 };

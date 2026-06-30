@@ -5,13 +5,15 @@ import { unauthorized } from '../utils/httpError.js';
 
 export const resourceController = {
   async list(req: Request, res: Response): Promise<void> {
-    const rows = await resourceService.list(req.params.entity);
+    const q = req.query.archived;
+    const archived = q === 'only' ? 'only' : q === 'all' ? 'all' : undefined;
+    const rows = await resourceService.list(req.params.entity, archived);
     res.json({ data: rows });
   },
 
   async create(req: Request, res: Response): Promise<void> {
     if (!req.user) throw unauthorized();
-    const row = await resourceService.create(req.params.entity, req.user.role, req.body ?? {});
+    const row = await resourceService.create(req.params.entity, req.user, req.body ?? {});
     res.status(201).json({ data: row });
   },
 

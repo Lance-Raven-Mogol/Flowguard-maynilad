@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { ResourceTable } from '../../models/types';
 import { Cell } from './StatusPills';
+import { Icon } from './Icon';
 
 interface DataTableProps {
   table: ResourceTable;
@@ -46,8 +47,12 @@ export function DataTable({ table, filter = '', renderActions, actionLabel = 'Ac
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={table.columns.length + (renderActions ? 1 : 0)} style={{ textAlign: 'center', color: 'var(--muted)' }}>
-                No matching records.
+              <td className="table-empty" colSpan={table.columns.length + (renderActions ? 1 : 0)}>
+                <span className="table-empty-icon">
+                  <Icon name="inbox" />
+                </span>
+                <strong>{filter ? 'No matching records' : 'Nothing here yet'}</strong>
+                <small>{filter ? 'Try a different search term.' : 'New entries will appear here once added.'}</small>
               </td>
             </tr>
           )}

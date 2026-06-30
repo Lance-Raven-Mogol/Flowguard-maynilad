@@ -28,3 +28,14 @@ export function requireSupabase(): SupabaseClient {
   if (!supabase) throw new Error('Supabase is not configured.');
   return supabase;
 }
+
+/** Upload a user's avatar to the public `avatars` bucket; returns its URL. */
+export async function uploadAvatar(userId: string, buffer: Buffer, contentType: string): Promise<string> {
+  const sb = requireSupabase();
+  const ext = (contentType.split('/')[1] || 'png').replace('jpeg', 'jpg');
+  const path = `${userId}.${ext}`;
+  const { error } = await sb.storage.from('avatars').upload(path, buffer, { contentType, upsert: true });
+  if (error) throw new Error(`Avatar upload failed: ${error.message}`);
+  const { data } = sb.storage.from('avatars').getPublicUrl(path);
+  return data.publicUrl;
+}

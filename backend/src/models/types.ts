@@ -25,6 +25,7 @@ export interface User {
   email: string;
   role: Role;
   passwordHash: string;
+  avatarUrl?: string | null;
   createdAt: string;
 }
 
@@ -34,6 +35,7 @@ export interface PublicUser {
   fullName: string;
   email: string;
   role: Role;
+  avatarUrl?: string | null;
   createdAt: string;
 }
 

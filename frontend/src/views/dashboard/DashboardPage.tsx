@@ -13,12 +13,6 @@ import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { Modal } from '../components/Modal';
 
-function greetingFor(name: string): string {
-  const h = new Date().getHours();
-  const part = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-  return `${part}, ${name.split(' ')[0]}`;
-}
-
 export function DashboardPage() {
   return (
     <StatsProvider>
@@ -38,7 +32,6 @@ function DashboardShell() {
   const [confirmLogout, setConfirmLogout] = useState(false);
 
   const activeView = useMemo(() => config.views.find((v) => v.id === activeId), [config, activeId]);
-  const greeting = useMemo(() => greetingFor(user!.fullName), [user]);
 
   return (
     <div className="dashboard">
@@ -54,7 +47,7 @@ function DashboardShell() {
       />
 
       <main className="main-panel">
-        <Topbar greeting={greeting} config={config} filter={filter} onFilter={setFilter} />
+        <Topbar config={config} filter={filter} onFilter={setFilter} />
         <section className="view-section active-view">{activeView?.render({ filter })}</section>
       </main>
 

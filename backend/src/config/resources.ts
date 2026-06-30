@@ -36,7 +36,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
   incidents: {
     table: 'incidents',
     writeRoles: ['customer', 'zone-specialist', 'technical-team'],
-    allowed: ['type', 'description', 'location', 'urgency', 'status', 'reported_by'],
+    allowed: ['type', 'description', 'location', 'urgency', 'status', 'reported_by', 'archived'],
     required: ['description'],
     autoKeys: [{ column: 'ref_code', prefix: 'INC', digits: 4 }],
     touch: 'updated_at',
@@ -45,7 +45,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
   'job-orders': {
     table: 'job_orders',
     writeRoles: ['technical-team'],
-    allowed: ['incident_ref', 'title', 'scope', 'team', 'assigned_to', 'estimated_cost', 'scheduled_date', 'status'],
+    allowed: ['incident_ref', 'title', 'scope', 'team', 'assigned_to', 'estimated_cost', 'scheduled_date', 'status', 'archived'],
     required: ['title'],
     numeric: ['estimated_cost'],
     nullable: ['scheduled_date'],
@@ -55,7 +55,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
   materials: {
     table: 'materials',
     writeRoles: ['inventory-officer'],
-    allowed: ['sku', 'name', 'category', 'description', 'quantity', 'unit', 'unit_price', 'supplier', 'source', 'min_level', 'status'],
+    allowed: ['sku', 'name', 'category', 'description', 'quantity', 'unit', 'unit_price', 'supplier', 'source', 'min_level', 'status', 'archived'],
     required: ['name'],
     numeric: ['quantity', 'unit_price', 'min_level'],
     autoKeys: [{ column: 'sku', prefix: 'SKU', digits: 5 }],
@@ -64,7 +64,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
   'material-requests': {
     table: 'material_requests',
     writeRoles: ['technical-team', 'inventory-officer'],
-    allowed: ['material_sku', 'material_name', 'job_order_ref', 'quantity', 'requested_by', 'status'],
+    allowed: ['material_sku', 'material_name', 'job_order_ref', 'quantity', 'requested_by', 'status', 'archived'],
     required: ['material_name'],
     numeric: ['quantity'],
     autoKeys: [{ column: 'ref_code', prefix: 'MR', digits: 4 }],
@@ -73,7 +73,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
   assets: {
     table: 'assets',
     writeRoles: ['technical-team', 'zone-specialist'],
-    allowed: ['asset_tag', 'name', 'type', 'location', 'install_date', 'expected_lifespan_years', 'last_maintenance', 'condition'],
+    allowed: ['asset_tag', 'name', 'type', 'location', 'install_date', 'expected_lifespan_years', 'last_maintenance', 'condition', 'archived'],
     required: ['name'],
     numeric: ['expected_lifespan_years'],
     nullable: ['install_date', 'last_maintenance'],
@@ -83,7 +83,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
   advisories: {
     table: 'advisories',
     writeRoles: ['technical-team'],
-    allowed: ['title', 'body', 'area', 'type', 'status', 'published_at'],
+    allowed: ['title', 'body', 'area', 'type', 'status', 'published_at', 'archived'],
     required: ['title'],
     nullable: ['published_at'],
   },

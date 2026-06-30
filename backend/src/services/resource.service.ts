@@ -6,7 +6,7 @@
 import { RESOURCES, type ResourceDef } from '../config/resources.js';
 import * as repo from '../models/resourceRepo.js';
 import type { Row, DbError } from '../models/resourceRepo.js';
-import type { Role } from '../models/types.js';
+import type { PublicUser, Role } from '../models/types.js';
 import { withAssetHealth } from './assetHealth.js';
 import { badRequest, conflict, forbidden, notFound } from '../utils/httpError.js';
 
@@ -60,17 +60,24 @@ function enrich(entity: string, row: Row): Row {
 }
 
 export const resourceService = {
-  async list(entity: string): Promise<Row[]> {
+  async list(entity: string, archived?: 'only' | 'all'): Promise<Row[]> {
     const def = getDef(entity);
-    const rows = await repo.listRows(def.table);
+    const rows = await repo.listRows(def.table, { archived });
     return entity === 'assets' ? rows.map(withAssetHealth) : rows;
   },
 
-  async create(entity: string, role: Role, body: Record<string, unknown>): Promise<Row> {
+  async create(entity: string, user: PublicUser, body: Record<string, unknown>): Promise<Row> {
     const def = getDef(entity);
-    if (!canWrite(def, role)) throw forbidden('You do not have permission to create this record.');
+    if (!canWrite(def, user.role)) throw forbidden('You do not have permission to create this record.');
 
     const values = sanitize(def, body);
+
+    // A customer's complaint is always attributed to them (prevents spoofing
+    // and keeps it linked through display-name changes).
+    if (entity === 'incidents' && user.role === 'customer') {
+      values.reported_by = user.fullName;
+    }
+
     for (const field of def.required) {
       if (values[field] === undefined || values[field] === '' || values[field] === null) {
         throw badRequest(`"${field}" is required.`);

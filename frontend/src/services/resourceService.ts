@@ -9,7 +9,10 @@ import { api } from './apiClient';
 export type EntityRow = Record<string, unknown> & { id: string };
 
 export const resourceService = {
-  list: (entity: string) => api.get<{ data: EntityRow[] }>(`/resources/${entity}`).then((r) => r.data),
+  list: (entity: string, archived?: 'only' | 'all') =>
+    api
+      .get<{ data: EntityRow[] }>(`/resources/${entity}${archived ? `?archived=${archived}` : ''}`)
+      .then((r) => r.data),
   create: (entity: string, values: Record<string, unknown>) =>
     api.post<{ data: EntityRow }>(`/resources/${entity}`, values).then((r) => r.data),
   update: (entity: string, id: string, values: Record<string, unknown>) =>

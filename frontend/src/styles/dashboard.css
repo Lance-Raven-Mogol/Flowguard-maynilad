@@ -133,21 +133,22 @@ input {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.brand-logo {
-  width: 50px;
-  height: 50px;
-  object-fit: contain;
+.brand-mark {
+  width: 48px;
+  height: 48px;
   flex: none;
-  border-radius: 12px;
-  padding: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  box-shadow: inset 0 0 0 1px rgba(120, 180, 255, 0.25), 0 0 18px rgba(47, 107, 255, 0.25);
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--blue), var(--indigo));
+  box-shadow: inset 0 0 0 1px rgba(160, 200, 255, 0.35), 0 8px 20px rgba(47, 107, 255, 0.4);
   transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
-.brand-logo:hover {
-  transform: scale(1.06) rotate(-2deg);
-  box-shadow: inset 0 0 0 1px rgba(120, 180, 255, 0.45), 0 0 26px rgba(47, 107, 255, 0.45);
+.brand-mark:hover {
+  transform: translateY(-2px) scale(1.04);
+  box-shadow: inset 0 0 0 1px rgba(160, 200, 255, 0.55), 0 12px 26px rgba(47, 107, 255, 0.55);
 }
 
 .brand-icon {
@@ -327,6 +328,15 @@ input {
   color: var(--text);
 }
 
+.greeting {
+  font-weight: 600;
+}
+
+.greeting-name {
+  font-weight: 400;
+  color: var(--text-soft);
+}
+
 .top-actions {
   display: flex;
   align-items: center;
@@ -461,12 +471,12 @@ input {
 
 .metric {
   position: relative;
-  min-height: 116px;
-  padding: 20px 20px 18px 24px;
+  min-height: 100px;
+  padding: 20px 22px 20px 26px;
   display: grid;
-  grid-template-columns: 1fr 48px;
+  grid-template-columns: 1fr 46px;
   gap: 12px;
-  align-items: start;
+  align-items: center;
   overflow: hidden;
   transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
 }
@@ -496,8 +506,12 @@ input {
   background: linear-gradient(180deg, var(--cyan), var(--sky));
 }
 
+.profit::before {
+  background: linear-gradient(180deg, #16a37b, #34d399);
+}
+
 .invoices::before {
-  background: linear-gradient(180deg, #3b96da, var(--blue));
+  background: linear-gradient(180deg, #e0982f, #fbbf24);
 }
 
 .metric p {
@@ -533,14 +547,15 @@ input {
 }
 
 .metric-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
   background: linear-gradient(135deg, var(--blue-50), #dfe9ff);
   box-shadow: inset 0 0 0 1px rgba(47, 107, 255, 0.12);
   display: grid;
   place-items: center;
   color: var(--blue);
+  align-self: start;
 }
 
 .revenue .metric-icon {
@@ -548,9 +563,14 @@ input {
   color: #099a8f;
 }
 
+.profit .metric-icon {
+  background: linear-gradient(135deg, #e3fbf0, #d2f4e3);
+  color: #0f9d6b;
+}
+
 .invoices .metric-icon {
-  background: linear-gradient(135deg, #e6f2ff, #d6e8ff);
-  color: #2f7fd0;
+  background: linear-gradient(135deg, #fff3e0, #ffe7c2);
+  color: #d98a2b;
 }
 
 .metric-icon svg {
@@ -580,19 +600,45 @@ input {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
   margin-bottom: 16px;
 }
 
 .panel-head h2 {
   margin: 0;
+  min-width: 0;
   color: var(--text);
   font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.2px;
 }
 
-.panel-head button,
-.table-tools button {
+/* The action area in a panel header must never shrink or wrap its label. */
+.panel-head > .btn-primary,
+.panel-head > .btn-secondary,
+.panel-head > .btn-action,
+.panel-head-actions {
+  flex: none;
+  white-space: nowrap;
+}
+
+.panel-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Archive button — subtle danger tint. */
+.btn-action.btn-archive:hover {
+  border-color: #f6c6d4;
+  color: var(--bad);
+  background: #fdebf2;
+}
+
+/* Bare icon-only buttons (no btn-* class) render as compact square tools. */
+.panel-head > button:not([class*="btn-"]),
+.table-tools button:not([class*="btn-"]) {
   border: 1px solid var(--line);
   background: #fff;
   color: var(--muted);
@@ -605,8 +651,8 @@ input {
   transition: all 0.2s ease;
 }
 
-.panel-head button:hover,
-.table-tools button:hover {
+.panel-head > button:not([class*="btn-"]):hover,
+.table-tools button:not([class*="btn-"]):hover {
   color: var(--blue);
   border-color: var(--blue-100);
   background: var(--blue-50);
@@ -619,46 +665,46 @@ input {
   align-items: center;
 }
 
-.donut {
-  width: 168px;
-  height: 168px;
-  border-radius: 50%;
-  background: conic-gradient(
-    var(--blue) 0 27%,
-    #cfe0ff 27% 38%,
-    var(--indigo) 38% 78%,
-    #eef3fb 78% 100%
-  );
-  display: grid;
-  place-items: center;
+.donut-chart {
   position: relative;
-  color: var(--text);
-  filter: drop-shadow(0 12px 22px rgba(47, 107, 255, 0.2));
+  width: 170px;
+  height: 170px;
+  filter: drop-shadow(0 10px 20px rgba(47, 107, 255, 0.16));
 }
 
-.donut::before {
-  content: "";
+.donut-chart svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(0deg);
+}
+
+.donut-track {
+  stroke: #eef3fb;
+}
+
+.donut-chart circle {
+  transition: stroke-dasharray 0.6s ease;
+}
+
+.donut-center {
   position: absolute;
-  inset: 36px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: inset 0 0 22px rgba(31, 60, 120, 0.1);
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 2px;
 }
 
-.donut span,
-.donut small {
-  position: relative;
-  z-index: 1;
-}
-
-.donut span {
-  font-size: 26px;
+.donut-center span {
+  font-size: 30px;
   font-weight: 700;
-  align-self: end;
+  letter-spacing: -0.5px;
+  color: var(--text);
+  line-height: 1;
 }
 
-.donut small {
-  align-self: start;
+.donut-center small {
+  font-size: 12px;
   color: var(--muted);
 }
 
@@ -749,6 +795,44 @@ input {
 /* ------------------------------------------------------------------ Tables */
 .invoice-table {
   padding: 22px 24px 24px;
+  overflow-x: auto;
+}
+
+/* Friendly empty state inside any data table. */
+.table-empty {
+  text-align: center;
+  padding: 44px 16px !important;
+}
+
+.table-empty-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 14px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--blue-50), #dfe9ff);
+  color: var(--blue);
+}
+
+.table-empty-icon svg {
+  width: 26px;
+  height: 26px;
+  stroke-width: 1.8;
+}
+
+.table-empty strong {
+  display: block;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.table-empty small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12.5px;
 }
 
 .table-tools {
@@ -915,6 +999,143 @@ td strong {
   background: var(--blue-50);
   border-color: var(--blue-100);
   color: var(--blue);
+}
+
+/* ------------------------------------------------------- Account settings */
+.account {
+  display: grid;
+  gap: 22px;
+  max-width: 920px;
+}
+
+.account-hero {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 24px 26px;
+  background: linear-gradient(120deg, #0a1b3d, #1d3a6e);
+  color: #fff;
+  border: 0;
+}
+
+.account-avatar {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  flex: none;
+}
+
+.account-avatar img {
+  width: 88px;
+  height: 88px;
+  border-radius: 22px;
+  object-fit: cover;
+  background: #0a1b3d;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3), inset 0 0 0 2px rgba(255, 255, 255, 0.25);
+}
+
+.account-avatar-edit {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid #14203f;
+  background: #fff;
+  color: var(--blue);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.account-avatar-edit:hover {
+  transform: scale(1.08);
+  background: var(--blue);
+  color: #fff;
+}
+
+.account-id h2 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.account-id p {
+  margin: 0 0 10px;
+  color: #b9cbef;
+  font-size: 14px;
+}
+
+.account-role {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #cfe0ff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(160, 195, 255, 0.3);
+}
+
+.account-body {
+  padding: 6px 22px 22px;
+}
+
+.account-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 22px;
+}
+
+.account-tabs button {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 14px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.account-tabs button:hover {
+  color: var(--text);
+}
+
+.account-tabs button.active {
+  color: var(--blue);
+  border-bottom-color: var(--blue);
+}
+
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.account-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+@media (max-width: 620px) {
+  .form-grid-2 {
+    grid-template-columns: 1fr;
+  }
+  .account-hero {
+    flex-direction: column;
+    text-align: center;
+  }
 }
 
 /* ----------------------------------------------------- Settings & profile */
@@ -1332,7 +1553,7 @@ td strong {
   justify-content: center;
 }
 
-.dashboard.sidebar-minimized .brand-logo {
+.dashboard.sidebar-minimized .brand-mark {
   width: 42px;
   height: 42px;
 }
