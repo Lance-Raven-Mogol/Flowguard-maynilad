@@ -328,15 +328,28 @@ input {
   color: var(--text);
 }
 
+.topbar-greet {
+  display: grid;
+  gap: 1px;
+}
+
 .greeting {
-  font-size: 22px;
+  font-size: 21px;
   font-weight: 600;
   color: var(--text);
+  line-height: 1.2;
 }
 
 .greeting-pre {
   color: var(--muted);
   font-weight: 500;
+}
+
+.topbar-sub {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
 }
 
 .top-actions {
@@ -1005,36 +1018,35 @@ td strong {
 
 /* ------------------------------------------------------- Account settings */
 .account {
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 22px;
-  align-items: start;
+  max-width: 1080px;
 }
 
-.account-hero {
+.account-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.account-head {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  text-align: center;
-  gap: 16px;
-  padding: 32px 24px;
-  background: linear-gradient(160deg, #0a1b3d, #1d3a6e);
+  gap: 22px;
+  padding: 28px 30px;
+  background:
+    radial-gradient(420px 200px at 100% 0%, rgba(89, 101, 240, 0.5), transparent 60%),
+    linear-gradient(160deg, #0a1b3d, #1d3a6e);
   color: #fff;
-  border: 0;
-  position: sticky;
-  top: 96px;
 }
 
 .account-avatar {
   position: relative;
-  width: 88px;
-  height: 88px;
+  width: 84px;
+  height: 84px;
   flex: none;
 }
 
 .account-avatar img {
-  width: 88px;
-  height: 88px;
+  width: 84px;
+  height: 84px;
   border-radius: 22px;
   object-fit: cover;
   background: #0a1b3d;
@@ -1089,15 +1101,15 @@ td strong {
   border: 1px solid rgba(160, 195, 255, 0.3);
 }
 
-.account-body {
-  padding: 8px 26px 26px;
-}
-
 .account-tabs {
   display: flex;
   gap: 6px;
+  padding: 0 30px;
   border-bottom: 1px solid var(--line);
-  margin-bottom: 22px;
+}
+
+.account-form {
+  padding: 26px 30px 28px;
 }
 
 .account-tabs button {
@@ -1135,24 +1147,14 @@ td strong {
   margin-top: 8px;
 }
 
-@media (max-width: 920px) {
-  .account {
-    grid-template-columns: 1fr;
-  }
-  .account-hero {
-    position: static;
-    flex-direction: row;
-    text-align: left;
-  }
-}
-
 @media (max-width: 620px) {
   .form-grid-2 {
     grid-template-columns: 1fr;
   }
-  .account-hero {
+  .account-head {
     flex-direction: column;
     text-align: center;
+    gap: 14px;
   }
 }
 

@@ -27,8 +27,9 @@ export function Topbar({ config, filter, onFilter }: TopbarProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  const hour = new Date().getHours();
-  const prefix = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const now = new Date();
+  const prefix = now.getHours() < 12 ? 'Good morning' : now.getHours() < 18 ? 'Good afternoon' : 'Good evening';
+  const today = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const roleLabel = ROLES.find((r) => r.value === user!.role)?.label ?? user!.role;
   const alerts = buildAlerts(stats, user!.role, user!.fullName);
   const avatarUrl = avatarFor(user!);
@@ -45,9 +46,12 @@ export function Topbar({ config, filter, onFilter }: TopbarProps) {
 
   return (
     <header className="topbar">
-      <h1 className="greeting">
-        <span className="greeting-pre">{prefix},</span> {user!.fullName}
-      </h1>
+      <div className="topbar-greet">
+        <h1 className="greeting">
+          <span className="greeting-pre">{prefix},</span> {user!.fullName}
+        </h1>
+        <p className="topbar-sub">{today}</p>
+      </div>
       <div className="top-actions">
         <label className="search-box">
           <Search size={18} />

@@ -86,22 +86,22 @@ export function AccountSettings() {
 
   return (
     <div className="account">
-      <header className="account-hero panel">
-        <div className="account-avatar">
-          <img src={avatarFor(user!, 96)} alt={user!.fullName} />
-          <button className="account-avatar-edit" onClick={() => fileRef.current?.click()} disabled={uploading} title="Change photo">
-            <Camera size={15} className={uploading ? 'animate-spin' : ''} />
-          </button>
-          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={onFile} />
-        </div>
-        <div className="account-id">
-          <h2>{user!.fullName}</h2>
-          <p>{user!.email}</p>
-          <span className="account-role">{roleLabel}</span>
-        </div>
-      </header>
+      <div className="panel account-card">
+        <header className="account-head">
+          <div className="account-avatar">
+            <img src={avatarFor(user!, 96)} alt={user!.fullName} />
+            <button className="account-avatar-edit" onClick={() => fileRef.current?.click()} disabled={uploading} title="Change photo">
+              <Camera size={15} className={uploading ? 'animate-spin' : ''} />
+            </button>
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={onFile} />
+          </div>
+          <div className="account-id">
+            <h2>{user!.fullName}</h2>
+            <p>{user!.email}</p>
+            <span className="account-role">{roleLabel}</span>
+          </div>
+        </header>
 
-      <div className="panel account-body">
         <div className="account-tabs">
           <button className={tab === 'profile' ? 'active' : ''} onClick={() => setTab('profile')}>
             Profile
