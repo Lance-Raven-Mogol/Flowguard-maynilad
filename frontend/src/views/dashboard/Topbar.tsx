@@ -76,7 +76,7 @@ export function Topbar({ config, filter, onFilter }: TopbarProps) {
           <div className={`static-popover${open ? ' is-active' : ''}`}>
             <div className="popover-header">
               <h4>Notifications</h4>
-              <span>{unreadCount} new</span>
+              <span>{unreadCount > 0 ? `${unreadCount} new` : alerts.length > 0 ? 'All read' : ''}</span>
             </div>
             <div className="popover-body">
               {alerts.length === 0 ? (
