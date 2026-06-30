@@ -3,17 +3,20 @@
  * each FlowGuard module from the paper (incidents, job orders, inventory,
  * material requests, assets + health scoring, advisories, users) to live data.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { BadgeTone, Metric, StatusTone, TableCell } from '../models/types';
 import { ROLES } from '../models/types';
 import { useAuth } from '../controllers/AuthContext';
 import { useToast } from '../controllers/ToastContext';
+import { useStats } from '../controllers/StatsContext';
 import { api, ApiError } from '../services/apiClient';
 import type { EntityRow } from '../services/resourceService';
 import { LiveModule, StatusSelect, type ModuleColumn, type ModuleField, type RowActionCtx } from '../views/components/LiveModule';
 import { DataTable } from '../views/components/DataTable';
 import { Modal } from '../views/components/Modal';
 import { ActionButton, PanelHead } from '../views/components/panels';
+
+const roleLabel = (role: unknown): string => ROLES.find((r) => r.value === role)?.label ?? String(role ?? '');
 
 /* ------------------------------------------------------------------ helpers */
 const GREEN = new Set(['resolved', 'completed', 'released', 'published', 'approved', 'in_stock', 'good']);
@@ -79,6 +82,96 @@ function ArchiveBtn({ c }: { c: RowActionCtx }) {
   );
 }
 
+/* --------------------------------------------------- Detail / view helpers */
+/** A single label/value row inside a detail (view) modal. */
+function DetailRow({ label, children }: { label: string; children?: ReactNode }) {
+  const empty = children == null || children === '' ;
+  return (
+    <div className="detail-row">
+      <dt>{label}</dt>
+      <dd>{empty ? '—' : children}</dd>
+    </div>
+  );
+}
+
+/** Read-only gallery of attached images (opens full size in a new tab). */
+function ImageGallery({ images }: { images?: unknown }) {
+  const list = Array.isArray(images) ? (images as string[]) : [];
+  if (!list.length) return null;
+  return (
+    <>
+      <p className="detail-section-title">Attached Photos ({list.length})</p>
+      <div className="detail-gallery">
+        {list.map((src, i) => (
+          <a key={i} href={src} target="_blank" rel="noreferrer" title="Open full size">
+            <img src={src} alt={`Attachment ${i + 1}`} />
+          </a>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** Generic "View" row action — opens a read-only detail modal. */
+function ViewAction({ title, children, wide }: { title: string; children: ReactNode; wide?: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className="btn-action" onClick={() => setOpen(true)}>
+        View
+      </button>
+      {open && (
+        <Modal title={title} open wide={wide} onClose={() => setOpen(false)}>
+          {children}
+        </Modal>
+      )}
+    </>
+  );
+}
+
+/** Zone-specialist remarks editor — comments forwarded to the technical team. */
+function RemarksAction({ c }: { c: RowActionCtx }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const start = () => {
+    setText(String(c.row.remarks ?? ''));
+    setOpen(true);
+  };
+  const save = () => {
+    c.update({ remarks: text.trim() });
+    setOpen(false);
+  };
+  return (
+    <>
+      <button className="btn-action" onClick={start} disabled={c.busy}>
+        Remarks
+      </button>
+      {open && (
+        <Modal
+          title={`Remarks — ${c.row.ref_code}`}
+          open
+          onClose={() => setOpen(false)}
+          onSubmit={save}
+          submitText="Save Remarks"
+          submitting={c.busy}
+        >
+          <p style={{ marginTop: 0, color: 'var(--muted)', fontSize: 13 }}>
+            Reviewing: <strong style={{ color: 'var(--text)' }}>{String(c.row.description ?? '')}</strong>
+          </p>
+          <div className="form-group">
+            <label>Remarks for Technical Team</label>
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Findings, recommended action, parts likely needed…"
+            />
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
 /* --------------------------------------------------------------- Incidents */
 const INCIDENT_STATUS = [
   { value: 'under_verification', label: 'Under Verification' },
@@ -94,6 +187,27 @@ const INCIDENT_TYPE_OPTIONS = [
   { value: 'other', label: 'Other' },
 ];
 const URGENCY = ['low', 'medium', 'high'];
+
+/** Read-only detail body for a complaint/incident, incl. customer photos + remarks. */
+function IncidentDetail({ row }: { row: EntityRow }) {
+  return (
+    <>
+      <p className="detail-section-title">Complaint Details</p>
+      <dl className="detail-list">
+        <DetailRow label="Reference">{String(row.ref_code ?? '')}</DetailRow>
+        <DetailRow label="Type">{titleCase(row.type)}</DetailRow>
+        <DetailRow label="Status">{titleCase(row.status)}</DetailRow>
+        <DetailRow label="Urgency">{titleCase(row.urgency)}</DetailRow>
+        <DetailRow label="Location">{String(row.location ?? '')}</DetailRow>
+        <DetailRow label="Requested By">{String(row.reported_by ?? '')}</DetailRow>
+        <DetailRow label="Filed On">{dateShort(row.created_at)}</DetailRow>
+        <DetailRow label="Description">{String(row.description ?? '')}</DetailRow>
+        <DetailRow label="Zone Specialist Remarks">{String(row.remarks ?? '')}</DetailRow>
+      </dl>
+      <ImageGallery images={row.images} />
+    </>
+  );
+}
 
 export function IncidentsModule({ filter, mine = false, title }: ModuleProps & { mine?: boolean; title?: string }) {
   const { user } = useAuth();
@@ -115,16 +229,29 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
     { name: 'description', label: 'Description', kind: 'textarea', placeholder: 'Describe the concern…' },
     { name: 'location', label: 'Location', placeholder: 'Brgy., Boac' },
     { name: 'urgency', label: 'Urgency', kind: 'select', options: URGENCY, default: 'medium' },
-    // Customers are attributed automatically by the server; staff can name the reporter.
-    ...(mine ? [] : [{ name: 'reported_by', label: 'Reported By', default: user!.fullName } as ModuleField]),
+    { name: 'images', label: 'Photos (optional)', kind: 'images' },
+    // Reporter is always the signed-in account — read-only, never editable.
+    {
+      name: 'reported_by',
+      label: 'Requested By',
+      default: user!.fullName,
+      readOnly: true,
+      hint: `${user!.fullName} · ${roleLabel(role)} (auto-filled from your account)`,
+    },
   ];
 
   const actions = canWrite
     ? (c: RowActionCtx) => (
         <>
+          {manage && (
+            <ViewAction title={`Complaint ${c.row.ref_code}`} wide>
+              <IncidentDetail row={c.row} />
+            </ViewAction>
+          )}
           {manage && !c.archived && (
             <StatusSelect value={String(c.row.status)} options={INCIDENT_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />
           )}
+          {role === 'zone-specialist' && !c.archived && <RemarksAction c={c} />}
           <EditBtn c={c} />
           <ArchiveBtn c={c} />
         </>
@@ -165,10 +292,49 @@ const JOB_STATUS = [
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
-export function JobOrdersModule({ filter }: ModuleProps) {
+/** Full job-order detail incl. the linked complaint + zone-specialist remarks. */
+function JobOrderDetail({ row }: { row: EntityRow }) {
+  const { stats } = useStats();
+  const incident = stats.incidents.find((i) => String(i.ref_code) === String(row.incident_ref));
+  return (
+    <>
+      <p className="detail-section-title">Job Order</p>
+      <dl className="detail-list">
+        <DetailRow label="Reference">{String(row.ref_code ?? '')}</DetailRow>
+        <DetailRow label="Title">{String(row.title ?? '')}</DetailRow>
+        <DetailRow label="Status">{titleCase(row.status)}</DetailRow>
+        <DetailRow label="Team">{titleCase(row.team)}</DetailRow>
+        <DetailRow label="Assigned To">{String(row.assigned_to ?? '')}</DetailRow>
+        <DetailRow label="Estimated Cost">{money(row.estimated_cost)}</DetailRow>
+        <DetailRow label="Scheduled">{dateShort(row.scheduled_date)}</DetailRow>
+        <DetailRow label="Scope of Work">{String(row.scope ?? '')}</DetailRow>
+        <DetailRow label="Linked Complaint">{String(row.incident_ref ?? '')}</DetailRow>
+      </dl>
+
+      {incident ? (
+        <>
+          <p className="detail-section-title">Linked Complaint — for Material Allocation</p>
+          <dl className="detail-list">
+            <DetailRow label="Type">{titleCase(incident.type)}</DetailRow>
+            <DetailRow label="Urgency">{titleCase(incident.urgency)}</DetailRow>
+            <DetailRow label="Location">{String(incident.location ?? '')}</DetailRow>
+            <DetailRow label="Requested By">{String(incident.reported_by ?? '')}</DetailRow>
+            <DetailRow label="Description">{String(incident.description ?? '')}</DetailRow>
+            <DetailRow label="Zone Specialist Remarks">{String(incident.remarks ?? '')}</DetailRow>
+          </dl>
+          <ImageGallery images={incident.images} />
+        </>
+      ) : row.incident_ref ? (
+        <p style={{ color: 'var(--muted)', fontSize: 13 }}>Linked complaint {String(row.incident_ref)} not found.</p>
+      ) : null}
+    </>
+  );
+}
+
+export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps & { readOnly?: boolean; title?: string }) {
   const { user } = useAuth();
   const role = user!.role;
-  const canWrite = WRITE['job-orders'].includes(role);
+  const canWrite = !readOnly && WRITE['job-orders'].includes(role);
 
   const columns: ModuleColumn[] = [
     { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
@@ -191,15 +357,25 @@ export function JobOrdersModule({ filter }: ModuleProps) {
     { name: 'status', label: 'Status', kind: 'select', optionList: JOB_STATUS },
   ];
 
+  // The technical team's tab is view-only: every row exposes a full-detail View
+  // (job order + linked complaint + remarks) needed for material allocation.
+  const viewAction = (c: RowActionCtx) => (
+    <ViewAction title={`Job Order ${c.row.ref_code}`} wide>
+      <JobOrderDetail row={c.row} />
+    </ViewAction>
+  );
+
   return (
     <LiveModule
       entity="job-orders"
-      title="Job Order Management"
+      title={title ?? 'Job Order Management'}
       createLabel="Create Job Order"
       columns={columns}
       fields={fields}
       canWrite={canWrite}
       filter={filter}
+      actionLabel={readOnly ? 'Details' : 'Action'}
+      archivable={!readOnly}
       metrics={(rows) => [
         metric('j1', 'Total Job Orders', String(rows.length), 'clipboard-list', 'customers'),
         metric('j2', 'In Progress', count(rows, (r) => r.status === 'in_progress'), 'wrench', 'revenue'),
@@ -207,9 +383,12 @@ export function JobOrdersModule({ filter }: ModuleProps) {
         metric('j4', 'Completed', count(rows, (r) => r.status === 'completed'), 'check-circle', 'invoices'),
       ]}
       actions={
-        canWrite
+        readOnly
+          ? viewAction
+          : canWrite
           ? (c) => (
               <>
+                {viewAction(c)}
                 {!c.archived && <StatusSelect value={String(c.row.status)} options={JOB_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />}
                 <EditBtn c={c} />
                 <ArchiveBtn c={c} />
@@ -293,6 +472,28 @@ const MR_STATUS = [
   { value: 'rejected', label: 'Rejected' },
 ];
 
+/** Full MRF detail incl. which job order the material is allocated to. */
+function MrfDetail({ row }: { row: EntityRow }) {
+  const { stats } = useStats();
+  const jo = stats.jobOrders.find((j) => String(j.ref_code) === String(row.job_order_ref));
+  return (
+    <>
+      <p className="detail-section-title">Material Request</p>
+      <dl className="detail-list">
+        <DetailRow label="Reference">{String(row.ref_code ?? '')}</DetailRow>
+        <DetailRow label="Material">{String(row.material_name ?? '')}</DetailRow>
+        <DetailRow label="SKU">{String(row.material_sku ?? '')}</DetailRow>
+        <DetailRow label="Quantity">{String(row.quantity ?? 0)}</DetailRow>
+        <DetailRow label="Job Order Ref">{String(row.job_order_ref ?? '')}</DetailRow>
+        <DetailRow label="Used On (Job Order)">{jo ? String(jo.title ?? '') : row.job_order_ref ? 'Not found' : '—'}</DetailRow>
+        <DetailRow label="Requested By">{String(row.requested_by ?? '')}</DetailRow>
+        <DetailRow label="Status">{titleCase(row.status)}</DetailRow>
+        <DetailRow label="Requested On">{dateShort(row.created_at)}</DetailRow>
+      </dl>
+    </>
+  );
+}
+
 export function MaterialRequestsModule({ filter, title }: ModuleProps & { title?: string }) {
   const { user } = useAuth();
   const role = user!.role;
@@ -313,7 +514,13 @@ export function MaterialRequestsModule({ filter, title }: ModuleProps & { title?
     { name: 'material_sku', label: 'SKU', placeholder: 'SKU-XXXX (optional)' },
     { name: 'quantity', label: 'Quantity', kind: 'number', default: '1' },
     { name: 'job_order_ref', label: 'Job Order Ref', placeholder: 'JO-XXXX (optional)' },
-    { name: 'requested_by', label: 'Requested By', default: user!.fullName },
+    {
+      name: 'requested_by',
+      label: 'Requested By',
+      default: user!.fullName,
+      readOnly: true,
+      hint: `${user!.fullName} · ${roleLabel(role)} (auto-filled from your account)`,
+    },
   ];
 
   return (
@@ -331,17 +538,20 @@ export function MaterialRequestsModule({ filter, title }: ModuleProps & { title?
         metric('r3', 'Approved', count(rows, (r) => r.status === 'approved'), 'check-circle', 'profit'),
         metric('r4', 'Released', count(rows, (r) => r.status === 'released'), 'package-check', 'invoices'),
       ]}
-      actions={
-        canWrite
-          ? (c) => (
-              <>
-                {canApprove && !c.archived && <StatusSelect value={String(c.row.status)} options={MR_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />}
-                <EditBtn c={c} />
-                <ArchiveBtn c={c} />
-              </>
-            )
-          : undefined
-      }
+      actions={(c) => (
+        <>
+          <ViewAction title={`Material Request ${c.row.ref_code}`} wide>
+            <MrfDetail row={c.row} />
+          </ViewAction>
+          {canWrite && (
+            <>
+              {canApprove && !c.archived && <StatusSelect value={String(c.row.status)} options={MR_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />}
+              <EditBtn c={c} />
+              <ArchiveBtn c={c} />
+            </>
+          )}
+        </>
+      )}
     />
   );
 }

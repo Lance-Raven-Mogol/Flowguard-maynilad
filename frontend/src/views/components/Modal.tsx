@@ -8,10 +8,14 @@ interface ModalProps {
   onSubmit?: () => void;
   submitText?: string;
   submitting?: boolean;
+  /** Wider card for detail / view modals. */
+  wide?: boolean;
+  /** Label for the dismiss button (defaults to "Cancel", or "Close" when there's no submit action). */
+  closeText?: string;
   children: React.ReactNode;
 }
 
-export function Modal({ title, open, onClose, onSubmit, submitText = 'Submit', submitting, children }: ModalProps) {
+export function Modal({ title, open, onClose, onSubmit, submitText = 'Submit', submitting, wide, closeText, children }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -23,7 +27,7 @@ export function Modal({ title, open, onClose, onSubmit, submitText = 'Submit', s
 
   return (
     <div className="modal-overlay is-active" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <div className={`modal-card${wide ? ' is-wide' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{title}</h3>
           <button className="modal-close" onClick={onClose} aria-label="Close">
@@ -33,7 +37,7 @@ export function Modal({ title, open, onClose, onSubmit, submitText = 'Submit', s
         <div className="modal-body">{children}</div>
         <div className="modal-footer">
           <button className="btn-secondary" onClick={onClose}>
-            Cancel
+            {closeText ?? (onSubmit ? 'Cancel' : 'Close')}
           </button>
           {onSubmit && (
             <button className="btn-primary" onClick={onSubmit} disabled={submitting}>

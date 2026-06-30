@@ -117,6 +117,9 @@ create table if not exists public.advisories (
 -- Incremental columns (safe to re-run).
 alter table public.app_users         add column if not exists avatar_url text;
 alter table public.incidents         add column if not exists archived boolean not null default false;
+-- Zone-specialist remarks forwarded to the technical team + customer photo evidence.
+alter table public.incidents         add column if not exists remarks text;
+alter table public.incidents         add column if not exists images  jsonb not null default '[]'::jsonb;
 alter table public.job_orders        add column if not exists archived boolean not null default false;
 alter table public.materials         add column if not exists archived boolean not null default false;
 alter table public.material_requests add column if not exists archived boolean not null default false;

@@ -112,6 +112,10 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter }) => <IncidentsModule filter={filter} title="Incident Oversight" />,
       },
       {
+        id: 'joborders', label: 'Job Orders', icon: 'clipboard-list', group: 'main',
+        render: ({ filter }) => <JobOrdersModule filter={filter} title="Job Order Management" />,
+      },
+      {
         id: 'inventory', label: 'Inventory', icon: 'package', group: 'main',
         render: ({ filter }) => <MaterialsModule filter={filter} title="Central Inventory Overview" />,
       },
@@ -166,7 +170,7 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       overview('My Tasks'),
       {
         id: 'joborders', label: 'Job Orders', icon: 'clipboard-list', group: 'main',
-        render: ({ filter }) => <JobOrdersModule filter={filter} />,
+        render: ({ filter }) => <JobOrdersModule filter={filter} readOnly title="In Progress Job Orders" />,
       },
       {
         id: 'materials', label: 'Material Requests', icon: 'hammer', group: 'main',
@@ -204,6 +208,10 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       {
         id: 'assets', label: 'Asset Inspections', icon: 'box', group: 'main',
         render: ({ filter }) => <AssetsModule filter={filter} title="Asset Inspections & Health" />,
+      },
+      {
+        id: 'lifecycle', label: 'Asset Lifecycle', icon: 'activity', group: 'main',
+        render: ({ filter }) => <AssetsModule filter={filter} title="Asset Lifecycle Monitoring" />,
       },
       faqView('guidelines', 'Zone Guidelines', 'book-open', 'Zone Investigation Guidelines', [
         { q: 'Standard safety protocol for site inspection', a: 'Wear high-visibility vests and protective gear. Coordinate with the barangay office before entering private property.' },

@@ -3,7 +3,7 @@ import { Bell, Search } from 'lucide-react';
 import type { RoleConfig } from '../../config/roleViews';
 import { ROLES } from '../../models/types';
 import { useAuth } from '../../controllers/AuthContext';
-import { useStats, buildAlerts } from '../../controllers/StatsContext';
+import { useNotifications } from '../../controllers/NotificationsContext';
 import { Icon } from '../components/Icon';
 
 interface TopbarProps {
@@ -23,7 +23,7 @@ export function avatarFor(user: { fullName: string; avatarUrl?: string | null },
 
 export function Topbar({ config, filter, onFilter }: TopbarProps) {
   const { user } = useAuth();
-  const { stats } = useStats();
+  const { alerts, unreadCount, markAlertsSeen } = useNotifications();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -31,8 +31,13 @@ export function Topbar({ config, filter, onFilter }: TopbarProps) {
   const prefix = now.getHours() < 12 ? 'Good morning' : now.getHours() < 18 ? 'Good afternoon' : 'Good evening';
   const today = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const roleLabel = ROLES.find((r) => r.value === user!.role)?.label ?? user!.role;
-  const alerts = buildAlerts(stats, user!.role, user!.fullName);
   const avatarUrl = avatarFor(user!);
+
+  // Opening the bell acknowledges the current alerts → the count bubble clears.
+  const toggleBell = () => {
+    if (!open) markAlertsSeen();
+    setOpen((o) => !o);
+  };
 
   // Close the popover on outside click.
   useEffect(() => {
@@ -64,14 +69,14 @@ export function Topbar({ config, filter, onFilter }: TopbarProps) {
         </label>
 
         <div className="popover-wrapper" ref={wrapRef}>
-          <button className="icon-btn bell" type="button" aria-label="Notifications" onClick={() => setOpen((o) => !o)}>
+          <button className="icon-btn bell" type="button" aria-label="Notifications" onClick={toggleBell}>
             <Bell size={20} />
-            {alerts.length > 0 && <span className="notif-count">{alerts.length}</span>}
+            {unreadCount > 0 && <span className="notif-count">{unreadCount}</span>}
           </button>
           <div className={`static-popover${open ? ' is-active' : ''}`}>
             <div className="popover-header">
               <h4>Notifications</h4>
-              <span>{alerts.length} new</span>
+              <span>{unreadCount} new</span>
             </div>
             <div className="popover-body">
               {alerts.length === 0 ? (

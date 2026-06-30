@@ -79,11 +79,16 @@ export function useStats(): StatsValue {
 const isOpen = (i: EntityRow) => i.status !== 'resolved';
 
 export interface Alert {
+  /** Stable identity for read/seen tracking — independent of the user's name. */
+  key: string;
   icon: string;
   title: string;
   detail: string;
   tone: 'info' | 'warn' | 'danger';
 }
+
+/** Stable key for an aggregate alert: tag + the sorted ids it covers. */
+const aggKey = (tag: string, rows: EntityRow[]) => `${tag}:${rows.map((r) => r.id).sort().join(',')}`;
 
 /** Role-aware notification feed derived from the live snapshot. */
 export function buildAlerts(stats: DashboardStats, role: string, fullName: string): Alert[] {
@@ -98,41 +103,47 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
   if (role === 'customer') {
     const mine = stats.incidents.filter((i) => String(i.reported_by).toLowerCase() === fullName.toLowerCase() && isOpen(i));
     mine.forEach((i) =>
-      alerts.push({ icon: 'message-square', title: `Complaint ${i.ref_code} is ${String(i.status).replace(/_/g, ' ')}`, detail: String(i.description ?? ''), tone: 'info' }),
+      alerts.push({ key: `inc:${i.id}:${i.status}`, icon: 'message-square', title: `Complaint ${i.ref_code} is ${String(i.status).replace(/_/g, ' ')}`, detail: String(i.description ?? ''), tone: 'info' }),
     );
     stats.advisories
       .filter((a) => a.status === 'published')
       .slice(0, 3)
-      .forEach((a) => alerts.push({ icon: 'megaphone', title: String(a.title), detail: String(a.area ?? ''), tone: a.type === 'emergency' ? 'danger' : 'info' }));
+      .forEach((a) => alerts.push({ key: `adv:${a.id}`, icon: 'megaphone', title: String(a.title), detail: String(a.area ?? ''), tone: a.type === 'emergency' ? 'danger' : 'info' }));
     return alerts;
   }
 
   if (['inventory-officer', 'general-manager'].includes(role)) {
-    if (lowStock.length) alerts.push({ icon: 'alert-triangle', title: `${lowStock.length} material(s) low on stock`, detail: lowStock.map((m) => m.name).slice(0, 3).join(', '), tone: 'warn' });
-    if (defective.length) alerts.push({ icon: 'package-x', title: `${defective.length} defective item(s)`, detail: 'Flagged for disposal / review', tone: 'danger' });
-    if (pendingMrf.length) alerts.push({ icon: 'file-input', title: `${pendingMrf.length} material request(s) pending`, detail: 'Awaiting approval / release', tone: 'warn' });
+    if (lowStock.length) alerts.push({ key: aggKey('lowstock', lowStock), icon: 'alert-triangle', title: `${lowStock.length} material(s) low on stock`, detail: lowStock.map((m) => m.name).slice(0, 3).join(', '), tone: 'warn' });
+    if (defective.length) alerts.push({ key: aggKey('defective', defective), icon: 'package-x', title: `${defective.length} defective item(s)`, detail: 'Flagged for disposal / review', tone: 'danger' });
+    if (pendingMrf.length) alerts.push({ key: aggKey('mrf', pendingMrf), icon: 'file-input', title: `${pendingMrf.length} material request(s) pending`, detail: 'Awaiting approval / release', tone: 'warn' });
   }
   if (['zone-specialist', 'technical-team', 'general-manager'].includes(role)) {
-    if (openIncidents.length) alerts.push({ icon: 'message-square', title: `${openIncidents.length} open incident(s)`, detail: `${openIncidents.filter((i) => i.urgency === 'high').length} high urgency`, tone: openIncidents.some((i) => i.urgency === 'high') ? 'danger' : 'info' });
-    if (criticalAssets.length) alerts.push({ icon: 'wrench', title: `${criticalAssets.length} asset(s) need attention`, detail: criticalAssets.map((a) => a.name).slice(0, 3).join(', '), tone: 'warn' });
+    if (openIncidents.length) alerts.push({ key: aggKey('openinc', openIncidents), icon: 'message-square', title: `${openIncidents.length} open incident(s)`, detail: `${openIncidents.filter((i) => i.urgency === 'high').length} high urgency`, tone: openIncidents.some((i) => i.urgency === 'high') ? 'danger' : 'info' });
+    if (criticalAssets.length) alerts.push({ key: aggKey('asset', criticalAssets), icon: 'wrench', title: `${criticalAssets.length} asset(s) need attention`, detail: criticalAssets.map((a) => a.name).slice(0, 3).join(', '), tone: 'warn' });
   }
   if (role === 'general-manager' && draftAdvisories.length) {
-    alerts.push({ icon: 'megaphone', title: `${draftAdvisories.length} advisory(ies) awaiting publish`, detail: 'Review and approve', tone: 'info' });
+    alerts.push({ key: aggKey('draftadv', draftAdvisories), icon: 'megaphone', title: `${draftAdvisories.length} advisory(ies) awaiting publish`, detail: 'Review and approve', tone: 'info' });
   }
   return alerts;
 }
 
-/** Live counts for the sidebar badges, keyed by the view id of each role. */
-export function buildBadges(stats: DashboardStats, role: string, fullName: string): Record<string, number> {
-  const open = stats.incidents.filter(isOpen).length;
-  const pendingMrf = stats.materialRequests.filter((r) => r.status === 'pending').length;
-  const lowStock = stats.materials.filter((m) => m.status === 'low_stock').length;
-  const activeJobs = stats.jobOrders.filter((j) => j.status === 'pending' || j.status === 'in_progress').length;
-  const draftAdv = stats.advisories.filter((a) => a.status !== 'published').length;
+const ids = (rows: EntityRow[]) => rows.map((r) => String(r.id));
+
+/**
+ * The item ids contributing to each sidebar badge, keyed by view id. Tracking
+ * ids (not just counts) lets the notification layer mark a tab's items as seen
+ * when it's opened, so the badge clears until genuinely new items arrive.
+ */
+export function buildBadgeItems(stats: DashboardStats, role: string, fullName: string): Record<string, string[]> {
+  const open = ids(stats.incidents.filter(isOpen));
+  const pendingMrf = ids(stats.materialRequests.filter((r) => r.status === 'pending'));
+  const lowStock = ids(stats.materials.filter((m) => m.status === 'low_stock'));
+  const activeJobs = ids(stats.jobOrders.filter((j) => j.status === 'pending' || j.status === 'in_progress'));
+  const draftAdv = ids(stats.advisories.filter((a) => a.status !== 'published'));
 
   switch (role) {
     case 'customer':
-      return { complaints: stats.incidents.filter((i) => String(i.reported_by).toLowerCase() === fullName.toLowerCase() && isOpen(i)).length };
+      return { complaints: ids(stats.incidents.filter((i) => String(i.reported_by).toLowerCase() === fullName.toLowerCase() && isOpen(i))) };
     case 'zone-specialist':
       return { investigations: open };
     case 'technical-team':

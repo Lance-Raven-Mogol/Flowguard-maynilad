@@ -36,7 +36,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
   incidents: {
     table: 'incidents',
     writeRoles: ['customer', 'zone-specialist', 'technical-team'],
-    allowed: ['type', 'description', 'location', 'urgency', 'status', 'reported_by', 'archived'],
+    allowed: ['type', 'description', 'location', 'urgency', 'status', 'reported_by', 'remarks', 'images', 'archived'],
     required: ['description'],
     autoKeys: [{ column: 'ref_code', prefix: 'INC', digits: 4 }],
     touch: 'updated_at',

@@ -7,7 +7,8 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../controllers/AuthContext';
-import { StatsProvider, useStats, buildBadges } from '../../controllers/StatsContext';
+import { StatsProvider } from '../../controllers/StatsContext';
+import { NotificationsProvider, useNotifications } from '../../controllers/NotificationsContext';
 import { ROLE_CONFIG } from '../../config/roleViews';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
@@ -16,14 +17,16 @@ import { Modal } from '../components/Modal';
 export function DashboardPage() {
   return (
     <StatsProvider>
-      <DashboardShell />
+      <NotificationsProvider>
+        <DashboardShell />
+      </NotificationsProvider>
     </StatsProvider>
   );
 }
 
 function DashboardShell() {
   const { user, logout } = useAuth();
-  const { stats } = useStats();
+  const { badges, markViewSeen } = useNotifications();
   const navigate = useNavigate();
 
   const config = ROLE_CONFIG[user!.role];
@@ -39,11 +42,12 @@ function DashboardShell() {
         config={config}
         activeId={activeId}
         onSelect={(id) => {
+          markViewSeen(id);
           setActiveId(id);
           setFilter('');
         }}
         onLogout={() => setConfirmLogout(true)}
-        badges={buildBadges(stats, user!.role, user!.fullName)}
+        badges={badges}
       />
 
       <main className="main-panel">

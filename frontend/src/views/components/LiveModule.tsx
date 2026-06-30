@@ -4,7 +4,8 @@
  * create/edit (modal) and per-row actions (status changes, delete). Every
  * dashboard module is a thin configuration of this component.
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ImagePlus } from 'lucide-react';
 import type { Metric, ResourceTable, TableCell, TableRow } from '../../models/types';
 import { resourceService, type EntityRow } from '../../services/resourceService';
 import { ApiError } from '../../services/apiClient';
@@ -18,11 +19,15 @@ import { Modal } from './Modal';
 export interface ModuleField {
   name: string;
   label: string;
-  kind?: 'text' | 'textarea' | 'number' | 'date' | 'select';
+  kind?: 'text' | 'textarea' | 'number' | 'date' | 'select' | 'images';
   options?: string[];
   optionList?: { value: string; label: string }[];
   placeholder?: string;
   default?: string;
+  /** Render the field as a non-editable display (value is still submitted). */
+  readOnly?: boolean;
+  /** Helper text shown under the field (e.g. the reporter's role). */
+  hint?: string;
 }
 
 export interface ModuleColumn {
@@ -81,7 +86,7 @@ export function LiveModule({
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<EntityRow | null>(null);
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, unknown>>({});
   const [submitting, setSubmitting] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -128,9 +133,9 @@ export function LiveModule({
 
   const openCreate = () => {
     setEditing(null);
-    const init: Record<string, string> = {};
+    const init: Record<string, unknown> = {};
     fields?.forEach((f) => {
-      init[f.name] = f.default ?? f.optionList?.[0]?.value ?? f.options?.[0] ?? '';
+      init[f.name] = f.kind === 'images' ? [] : f.default ?? f.optionList?.[0]?.value ?? f.options?.[0] ?? '';
     });
     setValues(init);
     setOpen(true);
@@ -138,9 +143,10 @@ export function LiveModule({
 
   const openEdit = (row: EntityRow) => {
     setEditing(row);
-    const init: Record<string, string> = {};
+    const init: Record<string, unknown> = {};
     fields?.forEach((f) => {
-      init[f.name] = row[f.name] != null ? String(row[f.name]) : '';
+      if (f.kind === 'images') init[f.name] = Array.isArray(row[f.name]) ? row[f.name] : [];
+      else init[f.name] = row[f.name] != null ? String(row[f.name]) : '';
     });
     setValues(init);
     setOpen(true);
@@ -243,15 +249,21 @@ export function LiveModule({
           {fields.map((f) => (
             <div className="form-group" key={f.name}>
               <label>{f.label}</label>
-              {f.kind === 'textarea' ? (
+              {f.kind === 'images' ? (
+                <ImageUpload
+                  value={(values[f.name] as string[]) ?? []}
+                  onChange={(imgs) => setValues((p) => ({ ...p, [f.name]: imgs }))}
+                />
+              ) : f.kind === 'textarea' ? (
                 <textarea
                   placeholder={f.placeholder}
-                  value={values[f.name] ?? ''}
+                  readOnly={f.readOnly}
+                  value={String(values[f.name] ?? '')}
                   onChange={(e) => setValues((p) => ({ ...p, [f.name]: e.target.value }))}
                 />
-              ) : f.kind === 'select' ? (
+              ) : f.kind === 'select' && !f.readOnly ? (
                 <select
-                  value={values[f.name] ?? ''}
+                  value={String(values[f.name] ?? '')}
                   onChange={(e) => setValues((p) => ({ ...p, [f.name]: e.target.value }))}
                 >
                   {(f.optionList ?? (f.options ?? []).map((o) => ({ value: o, label: o }))).map((o) => (
@@ -264,15 +276,89 @@ export function LiveModule({
                 <input
                   type={f.kind === 'number' ? 'number' : f.kind === 'date' ? 'date' : 'text'}
                   placeholder={f.placeholder}
-                  value={values[f.name] ?? ''}
+                  readOnly={f.readOnly}
+                  value={String(values[f.name] ?? '')}
                   onChange={(e) => setValues((p) => ({ ...p, [f.name]: e.target.value }))}
                 />
               )}
+              {f.hint && <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>{f.hint}</small>}
             </div>
           ))}
         </Modal>
       )}
     </>
+  );
+}
+
+/**
+ * Multi-image upload with live previews. Images are held as base64 data URLs so
+ * they travel with the record (stored in a jsonb column). Add/remove any time.
+ */
+const MAX_IMAGES = 6;
+const MAX_BYTES = 2 * 1024 * 1024; // 2MB per image
+
+export function ImageUpload({ value, onChange }: { value: string[]; onChange: (imgs: string[]) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { notify } = useToast();
+  const [busy, setBusy] = useState(false);
+
+  const onFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (!files.length) return;
+    setBusy(true);
+    try {
+      const room = MAX_IMAGES - value.length;
+      const picked = files.slice(0, Math.max(0, room));
+      if (files.length > room) notify(`You can attach up to ${MAX_IMAGES} images.`, 'error');
+      const next: string[] = [];
+      for (const file of picked) {
+        if (!file.type.startsWith('image/')) {
+          notify('Only image files can be attached.', 'error');
+          continue;
+        }
+        if (file.size > MAX_BYTES) {
+          notify(`"${file.name}" is over 2MB and was skipped.`, 'error');
+          continue;
+        }
+        next.push(
+          await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          }),
+        );
+      }
+      if (next.length) onChange([...value, ...next]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="image-field">
+      {value.map((src, i) => (
+        <div className="image-thumb" key={i}>
+          <img src={src} alt={`Attachment ${i + 1}`} />
+          <button
+            type="button"
+            className="image-thumb-remove"
+            aria-label="Remove image"
+            onClick={() => onChange(value.filter((_, j) => j !== i))}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+      {value.length < MAX_IMAGES && (
+        <button type="button" className="image-add" onClick={() => inputRef.current?.click()} disabled={busy}>
+          <ImagePlus size={20} />
+          {busy ? 'Adding…' : 'Add Photo'}
+        </button>
+      )}
+      <input ref={inputRef} type="file" accept="image/*" multiple hidden onChange={onFiles} />
+    </div>
   );
 }
 
