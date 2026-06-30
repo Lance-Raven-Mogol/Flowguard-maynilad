@@ -293,9 +293,53 @@ export function LiveModule({
 /**
  * Multi-image upload with live previews. Images are held as base64 data URLs so
  * they travel with the record (stored in a jsonb column). Add/remove any time.
+ * Files are downscaled + re-encoded client-side so payloads stay small and the
+ * request never trips the server body limit.
  */
 const MAX_IMAGES = 6;
-const MAX_BYTES = 2 * 1024 * 1024; // 2MB per image
+const MAX_INPUT_BYTES = 12 * 1024 * 1024; // reject absurdly large source files
+const MAX_DIM = 1280; // longest edge after downscale
+const REENCODE_OVER = 350 * 1024; // re-encode anything bigger than this
+
+const readDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+const loadImage = (src: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+
+/** Downscale to MAX_DIM and re-encode to JPEG when the source is large. */
+async function compressImage(file: File): Promise<string> {
+  const original = await readDataUrl(file);
+  // Small files (and GIFs, to preserve animation) pass through untouched.
+  if (file.size <= REENCODE_OVER || file.type === 'image/gif') return original;
+  try {
+    const img = await loadImage(original);
+    const scale = Math.min(1, MAX_DIM / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return original;
+    ctx.drawImage(img, 0, 0, w, h);
+    const out = canvas.toDataURL('image/jpeg', 0.72);
+    // Guard against pathological cases where re-encoding grows the payload.
+    return out.length < original.length ? out : original;
+  } catch {
+    return original;
+  }
+}
 
 export function ImageUpload({ value, onChange }: { value: string[]; onChange: (imgs: string[]) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -317,18 +361,11 @@ export function ImageUpload({ value, onChange }: { value: string[]; onChange: (i
           notify('Only image files can be attached.', 'error');
           continue;
         }
-        if (file.size > MAX_BYTES) {
-          notify(`"${file.name}" is over 2MB and was skipped.`, 'error');
+        if (file.size > MAX_INPUT_BYTES) {
+          notify(`"${file.name}" is too large and was skipped.`, 'error');
           continue;
         }
-        next.push(
-          await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result));
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          }),
-        );
+        next.push(await compressImage(file));
       }
       if (next.length) onChange([...value, ...next]);
     } finally {

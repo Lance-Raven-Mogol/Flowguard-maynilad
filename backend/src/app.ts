@@ -10,7 +10,8 @@ export function createApp() {
   const app = express();
 
   app.use(cors({ origin: env.corsOrigin }));
-  app.use(express.json({ limit: '5mb' }));
+  // Generous limit: complaint photos travel as base64 (downscaled client-side).
+  app.use(express.json({ limit: '12mb' }));
 
   app.use('/api', apiRouter);
 

@@ -1825,13 +1825,22 @@ td strong {
   gap: 10px;
 }
 
-.detail-gallery a {
+.detail-gallery button {
   display: block;
   width: 110px;
   height: 110px;
+  padding: 0;
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid var(--line-strong);
+  cursor: pointer;
+  background: var(--panel-soft);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.detail-gallery button:hover {
+  transform: translateY(-2px);
+  border-color: var(--blue);
 }
 
 .detail-gallery img {
@@ -1839,6 +1848,48 @@ td strong {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+/* Lightbox for enlarging an attached photo. */
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(8, 16, 36, 0.82);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  cursor: zoom-out;
+  animation: popoverIn 0.15s ease-out;
+}
+
+.image-lightbox img {
+  max-width: min(92vw, 1000px);
+  max-height: 88vh;
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  object-fit: contain;
+}
+
+.image-lightbox-close {
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.image-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 @media (max-width: 520px) {
@@ -1973,6 +2024,8 @@ td strong {
 
 .action-group {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
 

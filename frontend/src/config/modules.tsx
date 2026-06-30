@@ -94,20 +94,29 @@ function DetailRow({ label, children }: { label: string; children?: ReactNode })
   );
 }
 
-/** Read-only gallery of attached images (opens full size in a new tab). */
+/** Read-only gallery of attached images; click to enlarge in a lightbox. */
 function ImageGallery({ images }: { images?: unknown }) {
   const list = Array.isArray(images) ? (images as string[]) : [];
+  const [zoom, setZoom] = useState<string | null>(null);
   if (!list.length) return null;
   return (
     <>
       <p className="detail-section-title">Attached Photos ({list.length})</p>
       <div className="detail-gallery">
         {list.map((src, i) => (
-          <a key={i} href={src} target="_blank" rel="noreferrer" title="Open full size">
+          <button key={i} type="button" onClick={() => setZoom(src)} title="Click to enlarge">
             <img src={src} alt={`Attachment ${i + 1}`} />
-          </a>
+          </button>
         ))}
       </div>
+      {zoom && (
+        <div className="image-lightbox" onClick={() => setZoom(null)} role="dialog" aria-label="Enlarged photo">
+          <img src={zoom} alt="Enlarged attachment" />
+          <button type="button" className="image-lightbox-close" aria-label="Close">
+            ✕
+          </button>
+        </div>
+      )}
     </>
   );
 }
@@ -233,7 +242,7 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
     // Reporter is always the signed-in account — read-only, never editable.
     {
       name: 'reported_by',
-      label: 'Requested By',
+      label: 'Reported By',
       default: user!.fullName,
       readOnly: true,
       hint: `${user!.fullName} · ${roleLabel(role)} (auto-filled from your account)`,
