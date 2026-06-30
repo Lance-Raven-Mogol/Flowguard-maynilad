@@ -6,9 +6,22 @@ const BASE_URL = '/api';
 const TOKEN_KEY = 'flowguard.token';
 
 export const tokenStore = {
-  get: (): string | null => localStorage.getItem(TOKEN_KEY),
-  set: (token: string) => localStorage.setItem(TOKEN_KEY, token),
-  clear: () => localStorage.removeItem(TOKEN_KEY),
+  get: (): string | null => localStorage.getItem(TOKEN_KEY) ?? sessionStorage.getItem(TOKEN_KEY),
+  /** `remember` → persist across browser restarts (localStorage); otherwise the
+   *  session ends when the tab closes (sessionStorage). */
+  set: (token: string, remember = true) => {
+    if (remember) {
+      localStorage.setItem(TOKEN_KEY, token);
+      sessionStorage.removeItem(TOKEN_KEY);
+    } else {
+      sessionStorage.setItem(TOKEN_KEY, token);
+      localStorage.removeItem(TOKEN_KEY);
+    }
+  },
+  clear: () => {
+    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
+  },
 };
 
 export class ApiError extends Error {

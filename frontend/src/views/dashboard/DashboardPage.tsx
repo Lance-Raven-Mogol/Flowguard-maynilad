@@ -1,22 +1,23 @@
 /**
- * Dashboard page — the authenticated shell. Loads the role's dashboard data,
- * owns the active view / search / modal state, and delegates rendering of the
- * active view to its declarative config.
+ * Dashboard page — the authenticated shell. Owns the active view / search /
+ * logout state and delegates rendering of the active view to the role's
+ * declarative config. All operational data is loaded live by the views
+ * themselves (see StatsContext + LiveModule).
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { DashboardData, TableRow } from '../../models/types';
-import { dashboardService } from '../../services/dashboardService';
-import { ApiError } from '../../services/apiClient';
 import { useAuth } from '../../controllers/AuthContext';
-import { useToast } from '../../controllers/ToastContext';
 import { StatsProvider, useStats, buildBadges } from '../../controllers/StatsContext';
 import { ROLE_CONFIG } from '../../config/roleViews';
-import { MODALS, type ModalKey } from '../../config/modals';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
-import { FormModal } from '../components/FormModal';
 import { Modal } from '../components/Modal';
+
+function greetingFor(name: string): string {
+  const h = new Date().getHours();
+  const part = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  return `${part}, ${name.split(' ')[0]}`;
+}
 
 export function DashboardPage() {
   return (
@@ -29,54 +30,15 @@ export function DashboardPage() {
 function DashboardShell() {
   const { user, logout } = useAuth();
   const { stats } = useStats();
-  const { notify } = useToast();
   const navigate = useNavigate();
 
   const config = ROLE_CONFIG[user!.role];
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState('overview');
   const [filter, setFilter] = useState('');
-  const [modalKey, setModalKey] = useState<ModalKey | null>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
 
-  useEffect(() => {
-    dashboardService
-      .get()
-      .then(setData)
-      .catch((e) => setError(e instanceof ApiError ? e.message : 'Failed to load dashboard.'));
-  }, []);
-
   const activeView = useMemo(() => config.views.find((v) => v.id === activeId), [config, activeId]);
-
-  const handleCreated = (tableId: string, row: TableRow) => {
-    setData((prev) => {
-      if (!prev) return prev;
-      const table = prev.tables[tableId];
-      if (!table) return prev;
-      return { ...prev, tables: { ...prev.tables, [tableId]: { ...table, rows: [row, ...table.rows] } } };
-    });
-  };
-
-  if (error) {
-    return (
-      <div className="dashboard">
-        <main className="main-panel" style={{ display: 'grid', placeItems: 'center' }}>
-          <p style={{ color: 'var(--muted)' }}>{error}</p>
-        </main>
-      </div>
-    );
-  }
-
-  if (!data) {
-    return (
-      <div className="dashboard">
-        <main className="main-panel" style={{ display: 'grid', placeItems: 'center' }}>
-          <p style={{ color: 'var(--muted)' }}>Loading dashboard…</p>
-        </main>
-      </div>
-    );
-  }
+  const greeting = useMemo(() => greetingFor(user!.fullName), [user]);
 
   return (
     <div className="dashboard">
@@ -92,18 +54,9 @@ function DashboardShell() {
       />
 
       <main className="main-panel">
-        <Topbar greeting={data.greeting} config={config} filter={filter} onFilter={setFilter} />
-        <section className="view-section active-view">
-          {activeView?.render({ data, filter, openModal: setModalKey, notify })}
-        </section>
+        <Topbar greeting={greeting} config={config} filter={filter} onFilter={setFilter} />
+        <section className="view-section active-view">{activeView?.render({ filter })}</section>
       </main>
-
-      <FormModal
-        key={modalKey ?? 'none'}
-        config={modalKey ? MODALS[modalKey] : null}
-        onClose={() => setModalKey(null)}
-        onCreated={handleCreated}
-      />
 
       <Modal
         title="Confirm Logout"

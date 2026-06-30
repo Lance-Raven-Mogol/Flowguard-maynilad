@@ -13,6 +13,7 @@ export function LoginPage() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -23,7 +24,7 @@ export function LoginPage() {
     }
     setSubmitting(true);
     try {
-      await login({ email, password });
+      await login({ email, password, remember });
       navigate('/dashboard');
     } catch (err) {
       notify(err instanceof ApiError ? err.message : 'Login failed.', 'error');
@@ -45,7 +46,7 @@ export function LoginPage() {
         <PasswordInput id="password" value={password} onChange={setPassword} placeholder="Enter your password" autoComplete="current-password" />
 
         <label className="remember-option">
-          <input className="remember-input" type="checkbox" name="remember" />
+          <input className="remember-input" type="checkbox" name="remember" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
           <span className="checkbox-indicator" aria-hidden="true" />
           <span className="remember-text">Remember me</span>
         </label>

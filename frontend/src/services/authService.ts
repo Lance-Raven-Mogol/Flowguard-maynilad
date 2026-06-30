@@ -4,6 +4,7 @@ import { api, tokenStore } from './apiClient';
 export interface LoginInput {
   email: string;
   password: string;
+  remember?: boolean;
 }
 
 export interface RegisterInput {
@@ -13,9 +14,9 @@ export interface RegisterInput {
 }
 
 export const authService = {
-  async login(input: LoginInput): Promise<User> {
+  async login({ remember, ...input }: LoginInput): Promise<User> {
     const res = await api.post<AuthResponse>('/auth/login', input);
-    tokenStore.set(res.token);
+    tokenStore.set(res.token, remember ?? true);
     return res.user;
   },
 

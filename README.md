@@ -312,15 +312,18 @@ healthScore = round( ageScore × factor[condition] )
 Base URL: `/api` (frontend proxies to `http://localhost:4000` in dev).
 Authenticated routes require header: `Authorization: Bearer <JWT>`.
 
-### Auth & system
+### Auth & users
 | Method | Endpoint | Auth | Description |
 | --- | --- | --- | --- |
 | `GET` | `/api/health` | — | Health check |
-| `POST` | `/api/auth/register` | — | Create account → `{ token, user }` |
-| `POST` | `/api/auth/login` | — | Log in → `{ token, user }` |
+| `POST` | `/api/auth/register` | — | Self-register (always a **customer**) → `{ token, user }` |
+| `POST` | `/api/auth/login` | — | Log in with **email + password** (role from account) → `{ token, user }` |
 | `GET` | `/api/auth/me` | ✓ | Current user |
+| `PATCH` | `/api/auth/profile` | ✓ | Update own display name |
+| `PATCH` | `/api/auth/password` | ✓ | Change own password |
 | `GET` | `/api/users` | ✓ (GM) | User directory |
-| `GET` | `/api/dashboard` | ✓ | Role dashboard data (seeded visuals) |
+| `POST` | `/api/users` | ✓ (GM) | Create a staff account with a role |
+| `PATCH` | `/api/users/:id/role` | ✓ (GM) | Reassign a user's role |
 
 ### Generic resource API
 `:entity` ∈ `incidents` · `job-orders` · `materials` · `material-requests` · `assets` · `advisories`

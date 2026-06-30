@@ -9,6 +9,7 @@ import type { Metric, ResourceTable, TableCell, TableRow } from '../../models/ty
 import { resourceService, type EntityRow } from '../../services/resourceService';
 import { ApiError } from '../../services/apiClient';
 import { useToast } from '../../controllers/ToastContext';
+import { useStats } from '../../controllers/StatsContext';
 import { MetricsGrid } from './MetricsGrid';
 import { DataTable } from './DataTable';
 import { PanelHead, ActionButton } from './panels';
@@ -68,6 +69,7 @@ export function LiveModule({
   actionLabel = 'Action',
 }: LiveModuleProps) {
   const { notify } = useToast();
+  const { reload: reloadStats } = useStats();
   const [rows, setRows] = useState<EntityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -142,7 +144,7 @@ export function LiveModule({
       else await resourceService.create(entity, values);
       notify(editing ? 'Record updated successfully!' : 'Record created successfully!');
       setOpen(false);
-      await load();
+      await Promise.all([load(), reloadStats()]);
     } catch (e) {
       notify(e instanceof ApiError ? e.message : 'Something went wrong.', 'error');
     } finally {
@@ -155,7 +157,7 @@ export function LiveModule({
     try {
       await resourceService.update(entity, id, vals);
       notify('Updated successfully!');
-      await load();
+      await Promise.all([load(), reloadStats()]);
     } catch (e) {
       notify(e instanceof ApiError ? e.message : 'Update failed.', 'error');
     } finally {
@@ -168,7 +170,7 @@ export function LiveModule({
     try {
       await resourceService.remove(entity, id);
       notify('Record deleted.');
-      await load();
+      await Promise.all([load(), reloadStats()]);
     } catch (e) {
       notify(e instanceof ApiError ? e.message : 'Delete failed.', 'error');
     } finally {

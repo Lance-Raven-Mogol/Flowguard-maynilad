@@ -1,19 +1,17 @@
 /**
- * In-memory data store. Swappable for a real database later — every consumer
- * goes through this module rather than touching the arrays directly.
+ * In-memory user store — the fallback used only when Supabase is not
+ * configured (e.g. local dev without keys). Seeded on boot. When Supabase is
+ * configured, `userRepo` talks to the database instead and this is unused.
  */
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
-import type { DashboardData, Role, ResourceTable, TableRow, User } from './types.js';
-import { SEED_DASHBOARDS, SEED_USERS } from './seed.js';
+import type { Role, User } from './types.js';
+import { SEED_USERS } from './seed.js';
 
 class Store {
   private users: User[] = [];
-  private dashboards: Record<Role, DashboardData>;
 
   constructor() {
-    // Deep clone seed dashboards so runtime mutations never corrupt the seed.
-    this.dashboards = structuredClone(SEED_DASHBOARDS);
     for (const u of SEED_USERS) {
       this.users.push({
         id: randomUUID(),
@@ -26,7 +24,6 @@ class Store {
     }
   }
 
-  // --- Users ---------------------------------------------------------------
   findUserByEmail(email: string): User | undefined {
     return this.users.find((u) => u.email === email.toLowerCase());
   }
@@ -56,23 +53,6 @@ class Store {
     if (fields.passwordHash !== undefined) user.passwordHash = fields.passwordHash;
     if (fields.role !== undefined) user.role = fields.role;
     return user;
-  }
-
-  // --- Dashboards ----------------------------------------------------------
-  getDashboard(role: Role): DashboardData {
-    return this.dashboards[role];
-  }
-
-  getTable(role: Role, tableId: string): ResourceTable | undefined {
-    return this.dashboards[role]?.tables[tableId];
-  }
-
-  /** Prepend a freshly created row to a role's table. Returns the new row. */
-  addRow(role: Role, tableId: string, row: TableRow): TableRow | undefined {
-    const table = this.getTable(role, tableId);
-    if (!table) return undefined;
-    table.rows.unshift(row);
-    return row;
   }
 }
 

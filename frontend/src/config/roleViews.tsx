@@ -5,8 +5,7 @@
  * overview and settings are fully data-driven components.
  */
 import type { ReactNode } from 'react';
-import type { DashboardData, Role } from '../models/types';
-import type { ModalKey } from './modals';
+import type { Role } from '../models/types';
 import { FaqAccordion, PanelHead } from '../views/components/panels';
 import { DashboardOverview } from '../views/dashboard/DashboardOverview';
 import { AccountSettings } from '../views/dashboard/AccountSettings';
@@ -21,10 +20,7 @@ import {
 } from './modules';
 
 export interface ViewContext {
-  data: DashboardData;
   filter: string;
-  openModal: (key: ModalKey) => void;
-  notify: (msg: string) => void;
 }
 
 export interface ViewDef {
