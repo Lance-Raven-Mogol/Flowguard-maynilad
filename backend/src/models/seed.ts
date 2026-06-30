@@ -1,6 +1,6 @@
 /**
  * Seed data — the administrator account created on first boot (in Supabase via
- * `userRepo.seedDemoUsers`, or in the in-memory store as a fallback).
+ * `userRepo.seedAdminUser`, or in the in-memory store as a fallback).
  */
 import type { Role } from './types.js';
 

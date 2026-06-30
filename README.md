@@ -30,7 +30,7 @@ A centralized, web‑based platform that replaces the manual and semi‑manual o
 11. [API Reference](#-api-reference)
 12. [Setup Guide (Step‑by‑Step)](#-setup-guide-step-by-step)
 13. [Environment Variables](#-environment-variables)
-14. [Demo Accounts](#-demo-accounts)
+14. [Admin Account](#-admin-account)
 15. [NPM Scripts](#-npm-scripts)
 16. [Verification & Testing](#-verification--testing)
 17. [Security Notes](#-security-notes)
@@ -191,7 +191,7 @@ flowchart LR
 maynilad/
 ├── backend/                         # Express + TypeScript API
 │   ├── supabase/
-│   │   └── schema.sql               # All tables + RLS + seed data (idempotent)
+│   │   └── schema.sql               # All tables + RLS (no seed business data)
 │   ├── scripts/
 │   │   └── migrate.mjs              # One‑shot migration runner (Management API)
 │   └── src/
@@ -204,7 +204,7 @@ maynilad/
 │       │   ├── supabase.ts          # Service‑role admin client
 │       │   ├── userRepo.ts          # User data access (Supabase + in‑memory fallback)
 │       │   ├── resourceRepo.ts      # Generic CRUD against any table
-│       │   ├── store.ts · seed.ts   # In‑memory store + seed dashboards
+│       │   ├── store.ts · seed.ts   # In‑memory store + admin seed account
 │       │   └── types.ts             # Domain model
 │       ├── routes/                  # auth · dashboard · resources · users
 │       ├── services/
@@ -238,7 +238,7 @@ maynilad/
 
 ## 🗄️ Database Schema
 
-PostgreSQL tables in Supabase (`public` schema). All have **Row Level Security enabled**; the backend uses the **service‑role key** (bypasses RLS) for trusted access. Full DDL + seed in [`backend/supabase/schema.sql`](backend/supabase/schema.sql).
+PostgreSQL tables in Supabase (`public` schema). All have **Row Level Security enabled**; the backend uses the **service‑role key** (bypasses RLS) for trusted access. Full DDL in [`backend/supabase/schema.sql`](backend/supabase/schema.sql) — tables start empty (no seed business data).
 
 ### `app_users`
 | Column | Type | Notes |
@@ -404,18 +404,18 @@ SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
    cd backend
    SUPABASE_ACCESS_TOKEN=sbp_xxx node scripts/migrate.mjs
    ```
-   This applies the schema **and** seeds the demo data. (Revoke the token afterwards.)
+   This applies the schema **and** creates the admin account. (Revoke the token afterwards.)
 
 ### Step 6 — Run the apps
 ```bash
 npm run dev        # backend (4000) + frontend (5173) together
 ```
-Open **http://localhost:5173**. The backend auto‑seeds the 5 demo accounts on boot and logs `Data store: Supabase`.
+Open **http://localhost:5173**. The backend auto‑seeds the admin account on boot and logs `Data store: Supabase`.
 
 Run separately if you prefer: `npm run dev:api` · `npm run dev:web`.
 
 ### Step 7 — Log in & explore
-Use a [demo account](#-demo-accounts) (password `password123`) or create a new account from **Sign up**.
+Log in with the [admin account](#-admin-account), or create a new account from **Sign up** (new sign‑ups are always **customers**).
 
 ---
 
@@ -436,17 +436,17 @@ Use a [demo account](#-demo-accounts) (password `password123`) or create a new a
 
 ---
 
-## 🔑 Demo Accounts
+## 🔑 Admin Account
 
-Every seeded account uses the password **`password123`**:
+The system seeds a single **administrator** account on first boot. Staff
+accounts for the other roles are created from the in‑app **User Management**
+directory (General Manager only); new self‑registrations are always customers.
 
-| Role | Email |
-| --- | --- |
-| Customer | `customer@flowguard.ph` |
-| Zone Specialist | `ramos@flowguard.ph` |
-| General Manager | `reyes@flowguard.ph` |
-| Inventory Officer | `cruz@flowguard.ph` |
-| Technical Team | `santiago@flowguard.ph` |
+| Role | Email | Password |
+| --- | --- | --- |
+| General Manager (admin) | `thecapstone01@gmail.com` | `Admin123` |
+
+> Change this password after first login (Account Settings → Password & Security).
 
 ---
 

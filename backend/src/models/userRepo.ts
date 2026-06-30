@@ -128,10 +128,10 @@ export const userRepo = {
   },
 
   /**
-   * Idempotently insert the demo accounts (skipped when they already exist).
+   * Idempotently insert the seed account(s) (skipped when they already exist).
    * Only runs against Supabase — the in-memory store seeds itself.
    */
-  async seedDemoUsers(): Promise<void> {
+  async seedAdminUser(): Promise<void> {
     if (!supabase) return;
 
     const { data, error } = await supabase.from(TABLE).select('email');
@@ -149,6 +149,6 @@ export const userRepo = {
     }));
     const { error: insertError } = await supabase.from(TABLE).insert(rows);
     if (insertError) throw new Error(`Supabase seed insert failed: ${insertError.message}`);
-    console.log(`[supabase] Seeded ${rows.length} demo account(s) into ${TABLE}.`);
+    console.log(`[supabase] Seeded ${rows.length} account(s) into ${TABLE}.`);
   },
 };

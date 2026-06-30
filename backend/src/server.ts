@@ -12,7 +12,7 @@ app.listen(env.port, async () => {
 
   if (isSupabaseConfigured) {
     try {
-      await userRepo.seedDemoUsers();
+      await userRepo.seedAdminUser();
       console.log('[supabase] Connected — user accounts ready.');
     } catch (err) {
       console.error(

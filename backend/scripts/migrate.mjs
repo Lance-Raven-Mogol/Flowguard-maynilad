@@ -2,7 +2,7 @@
  * One-shot Supabase migration runner.
  *
  * Runs backend/supabase/schema.sql against the project via the Supabase
- * Management API, then seeds the demo accounts. Requires a Personal Access
+ * Management API, then seeds the admin account. Requires a Personal Access
  * Token (https://supabase.com/dashboard/account/tokens), passed as:
  *
  *   SUPABASE_ACCESS_TOKEN=sbp_xxx node scripts/migrate.mjs
@@ -52,7 +52,7 @@ async function runSql(query) {
   await runSql(schema);
   console.log('✓ Schema applied (public.app_users ready).');
 
-  console.log('→ Seeding demo accounts…');
+  console.log('→ Seeding admin account…');
   const sb = createClient(url, serviceKey, { auth: { persistSession: false } });
   const { data: existing, error } = await sb.from('app_users').select('email');
   if (error) throw new Error(`Seed lookup failed: ${error.message}`);

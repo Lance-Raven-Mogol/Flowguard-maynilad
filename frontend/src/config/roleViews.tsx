@@ -37,7 +37,6 @@ export interface RoleConfig {
   menuTitle: string;
   supportTitle: string;
   searchPlaceholder: string;
-  avatar: { name: string; color: string };
   views: ViewDef[];
 }
 
@@ -77,7 +76,6 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
     menuTitle: 'MAIN MENU',
     supportTitle: 'HELP & SUPPORT',
     searchPlaceholder: 'Search complaints or advisories',
-    avatar: { name: 'Valued Customer', color: '2f6bff' },
     views: [
       overview('My Dashboard'),
       {
@@ -103,7 +101,6 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
     menuTitle: 'ADMIN MENU',
     supportTitle: 'SYSTEM',
     searchPlaceholder: 'Search operational data',
-    avatar: { name: 'GM Reyes', color: '2f6bff' },
     views: [
       overview('Overview'),
       {
@@ -140,7 +137,6 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
     menuTitle: 'STOCK MENU',
     supportTitle: 'HELP & SUPPORT',
     searchPlaceholder: 'Search item or MRF ID',
-    avatar: { name: 'Officer Cruz', color: '2f6bff' },
     views: [
       overview('Stock Overview'),
       {
@@ -166,7 +162,6 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
     menuTitle: 'WORK MENU',
     supportTitle: 'HELP & SUPPORT',
     searchPlaceholder: 'Search job order ID',
-    avatar: { name: 'Tech Santiago', color: '2f6bff' },
     views: [
       overview('My Tasks'),
       {
@@ -200,7 +195,6 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
     menuTitle: 'MAIN MENU',
     supportTitle: 'HELP & SUPPORT',
     searchPlaceholder: 'Search zone or case ID',
-    avatar: { name: 'Specialist Ramos', color: '2f6bff' },
     views: [
       overview('Overview'),
       {
