@@ -7,14 +7,15 @@ interface PasswordInputProps {
   onChange: (value: string) => void;
   placeholder?: string;
   autoComplete?: string;
+  label?: string;
 }
 
-export function PasswordInput({ id, value, onChange, placeholder, autoComplete }: PasswordInputProps) {
+export function PasswordInput({ id, value, onChange, placeholder, autoComplete, label = 'Password' }: PasswordInputProps) {
   const [visible, setVisible] = useState(false);
   return (
     <div className="input-shell">
       <label className="input-copy" htmlFor={id}>
-        <span className="input-label">Password</span>
+        <span className="input-label">{label}</span>
         <input
           id={id}
           type={visible ? 'text' : 'password'}

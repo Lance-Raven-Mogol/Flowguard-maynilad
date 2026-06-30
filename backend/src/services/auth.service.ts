@@ -7,7 +7,7 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { userRepo } from '../models/userRepo.js';
 import { ROLES, type PublicUser, type Role, type User } from '../models/types.js';
-import { badRequest, conflict, unauthorized } from '../utils/httpError.js';
+import { badRequest, conflict, notFound, unauthorized } from '../utils/httpError.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -28,43 +28,66 @@ export interface AuthResult {
 }
 
 export const authService = {
-  async register(input: { fullName?: string; email?: string; password?: string; role?: string }): Promise<AuthResult> {
+  /**
+   * Public self-registration. Always creates a **customer** account — staff
+   * accounts and their roles are provisioned by the general manager.
+   */
+  async register(input: { fullName?: string; email?: string; password?: string }): Promise<AuthResult> {
     const fullName = input.fullName?.trim();
     const email = input.email?.trim().toLowerCase();
     const password = input.password ?? '';
-    const role = input.role as Role;
 
-    if (!fullName) throw badRequest('Full name is required.');
+    if (!fullName || fullName.length < 2) throw badRequest('Full name is required.');
     if (!email || !EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
     if (password.length < 6) throw badRequest('Password must be at least 6 characters.');
-    if (!ROLES.includes(role)) throw badRequest('A valid role is required.');
     if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
 
     const user = await userRepo.create({
       fullName,
       email,
-      role,
+      role: 'customer',
       passwordHash: bcrypt.hashSync(password, 10),
     });
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
-  async login(input: { email?: string; password?: string; role?: string }): Promise<AuthResult> {
+  /** Login by email + password only. The role is whatever the account holds. */
+  async login(input: { email?: string; password?: string }): Promise<AuthResult> {
     const email = input.email?.trim().toLowerCase();
     const password = input.password ?? '';
-    const role = input.role as Role;
 
     if (!email || !password) throw badRequest('Email and password are required.');
-    if (!ROLES.includes(role)) throw badRequest('Please select a valid role.');
 
     const user = await userRepo.findByEmail(email);
     if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
       throw unauthorized('Invalid email or password.');
     }
-    if (user.role !== role) {
-      throw unauthorized('This account is not registered for the selected role.');
-    }
     return { token: signToken(user), user: toPublicUser(user) };
+  },
+
+  /** Admin (GM) — create a staff account with an explicit role. */
+  async adminCreateUser(input: { fullName?: string; email?: string; password?: string; role?: string }): Promise<PublicUser> {
+    const fullName = input.fullName?.trim();
+    const email = input.email?.trim().toLowerCase();
+    const password = input.password ?? '';
+    const role = input.role as Role;
+
+    if (!fullName || fullName.length < 2) throw badRequest('Full name is required.');
+    if (!email || !EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
+    if (password.length < 6) throw badRequest('Password must be at least 6 characters.');
+    if (!ROLES.includes(role)) throw badRequest('A valid role is required.');
+    if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
+
+    const user = await userRepo.create({ fullName, email, role, passwordHash: bcrypt.hashSync(password, 10) });
+    return toPublicUser(user);
+  },
+
+  /** Admin (GM) — reassign a user's role. */
+  async adminUpdateRole(userId: string, role?: string): Promise<PublicUser> {
+    if (!ROLES.includes(role as Role)) throw badRequest('A valid role is required.');
+    const updated = await userRepo.update(userId, { role: role as Role });
+    if (!updated) throw notFound('User not found.');
+    return toPublicUser(updated);
   },
 
   async updateProfile(userId: string, input: { fullName?: string; email?: string }): Promise<PublicUser> {

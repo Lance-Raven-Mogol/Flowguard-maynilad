@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ROLES, type Role } from '../../models/types';
 import { useAuth } from '../../controllers/AuthContext';
 import { useToast } from '../../controllers/ToastContext';
 import { ApiError } from '../../services/apiClient';
@@ -15,23 +14,29 @@ export function SignupPage() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<Role | ''>('');
+  const [confirm, setConfirm] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const missing: string[] = [];
-    if (!fullName) missing.push('Full Name');
-    if (!email) missing.push('Email');
-    if (!password) missing.push('Password');
-    if (!role) missing.push('Role');
-    if (missing.length) {
-      notify(`Missing: ${missing.join(', ')}`, 'error');
+
+    if (!fullName.trim() || !email.trim() || !password) {
+      notify('Please fill in all fields.', 'error');
       return;
     }
+    if (password.length < 6) {
+      notify('Password must be at least 6 characters.', 'error');
+      return;
+    }
+    if (password !== confirm) {
+      notify('Passwords do not match.', 'error');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await register({ fullName, email, password, role: role as Role });
+      await register({ fullName: fullName.trim(), email: email.trim(), password });
+      notify('Account created. Welcome to FlowGuard!');
       navigate('/dashboard');
     } catch (err) {
       notify(err instanceof ApiError ? err.message : 'Sign up failed.', 'error');
@@ -41,7 +46,7 @@ export function SignupPage() {
   };
 
   return (
-    <AuthCard label="Create account" subtitle="Create your account.">
+    <AuthCard label="Create account" subtitle="Join FlowGuard as a customer in a few seconds.">
       <form className="login-form" noValidate onSubmit={handleSubmit}>
         <div className="input-shell">
           <label className="input-copy" htmlFor="full-name">
@@ -57,19 +62,14 @@ export function SignupPage() {
           </label>
         </div>
 
-        <PasswordInput id="signup-password" value={password} onChange={setPassword} placeholder="Create your password" autoComplete="new-password" />
+        <PasswordInput id="signup-password" value={password} onChange={setPassword} placeholder="Create a password (min. 6 characters)" autoComplete="new-password" />
 
-        <div className="input-shell role-shell">
-          <label className="input-copy" htmlFor="signup-role">
-            <span className="input-label">Role</span>
-            <select id="signup-role" required value={role} onChange={(e) => setRole(e.target.value as Role)}>
-              <option value="" disabled>Select role</option>
-              {ROLES.map((r) => (
-                <option key={r.value} value={r.value}>{r.label}</option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <PasswordInput id="signup-confirm" label="Confirm Password" value={confirm} onChange={setConfirm} placeholder="Confirm your password" autoComplete="new-password" />
+
+        <p className="auth-hint">
+          You’ll be registered as a <strong>Customer</strong>. Staff accounts and roles are
+          provisioned by your administrator.
+        </p>
 
         <button className="primary-submit" type="submit" disabled={submitting}>
           {submitting ? 'Creating…' : 'Create Account'}

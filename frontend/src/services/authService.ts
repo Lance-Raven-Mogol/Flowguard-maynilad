@@ -1,17 +1,15 @@
-import type { AuthResponse, Role, User } from '../models/types';
+import type { AuthResponse, User } from '../models/types';
 import { api, tokenStore } from './apiClient';
 
 export interface LoginInput {
   email: string;
   password: string;
-  role: Role;
 }
 
 export interface RegisterInput {
   fullName: string;
   email: string;
   password: string;
-  role: Role;
 }
 
 export const authService = {

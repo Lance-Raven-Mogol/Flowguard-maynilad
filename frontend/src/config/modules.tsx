@@ -5,12 +5,15 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { BadgeTone, Metric, StatusTone, TableCell } from '../models/types';
+import { ROLES } from '../models/types';
 import { useAuth } from '../controllers/AuthContext';
-import { api } from '../services/apiClient';
+import { useToast } from '../controllers/ToastContext';
+import { api, ApiError } from '../services/apiClient';
 import type { EntityRow } from '../services/resourceService';
 import { LiveModule, StatusSelect, type ModuleColumn, type ModuleField, type RowActionCtx } from '../views/components/LiveModule';
 import { DataTable } from '../views/components/DataTable';
-import { PanelHead } from '../views/components/panels';
+import { Modal } from '../views/components/Modal';
+import { ActionButton, PanelHead } from '../views/components/panels';
 
 /* ------------------------------------------------------------------ helpers */
 const GREEN = new Set(['resolved', 'completed', 'released', 'published', 'approved', 'in_stock', 'good']);
@@ -425,16 +428,63 @@ export function AdvisoriesModule({ filter, readOnly = false, title }: ModuleProp
 }
 
 /* ----------------------------------------------------- Users (admin only) */
+interface UserRow {
+  id: string;
+  fullName: string;
+  email: string;
+  role: string;
+  createdAt: string;
+}
+const BLANK_USER = { fullName: '', email: '', password: '', role: 'customer' };
+
 export function UsersPanel({ filter }: ModuleProps) {
-  const [rows, setRows] = useState<{ id: string; fullName: string; email: string; role: string; createdAt: string }[]>([]);
+  const { notify } = useToast();
+  const [rows, setRows] = useState<UserRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [form, setForm] = useState(BLANK_USER);
+
+  const load = () =>
+    api
+      .get<{ data: UserRow[] }>('/users')
+      .then((r) => setRows(r.data))
+      .catch((e) => setError(e instanceof ApiError ? e.message : 'Failed to load users.'));
 
   useEffect(() => {
-    api
-      .get<{ data: typeof rows }>('/users')
-      .then((r) => setRows(r.data))
-      .catch((e) => setError(e?.message ?? 'Failed to load users.'));
+    load();
   }, []);
+
+  const createUser = async () => {
+    setSubmitting(true);
+    try {
+      await api.post('/users', form);
+      notify('User account created successfully!');
+      setOpen(false);
+      setForm(BLANK_USER);
+      await load();
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not create user.', 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const changeRole = async (id: string, role: string) => {
+    setBusyId(id);
+    try {
+      await api.patch(`/users/${id}/role`, { role });
+      notify('Role updated successfully!');
+      await load();
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not update role.', 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const roleOptions = ROLES.map((r) => ({ value: r.value, label: r.label }));
 
   const table = useMemo(
     () => ({
@@ -455,8 +505,48 @@ export function UsersPanel({ filter }: ModuleProps) {
 
   return (
     <>
-      <PanelHead title="User Management" />
-      {error ? <p style={{ color: '#e25577' }}>{error}</p> : <DataTable table={table} filter={filter} />}
+      <PanelHead title="User Management" action={<ActionButton label="Add User" icon="user-plus" onClick={() => setOpen(true)} />} />
+      {error ? (
+        <p style={{ color: '#e25577' }}>{error}</p>
+      ) : (
+        <DataTable
+          table={table}
+          filter={filter}
+          actionLabel="Assign Role"
+          renderActions={(id) => {
+            const u = rows.find((x) => x.id === id);
+            if (!u) return null;
+            return <StatusSelect value={u.role} options={roleOptions} disabled={busyId === id} onChange={(role) => changeRole(id, role)} />;
+          }}
+        />
+      )}
+
+      {open && (
+        <Modal title="Add Staff User" open onClose={() => setOpen(false)} onSubmit={createUser} submitText="Create User" submitting={submitting}>
+          <div className="form-group">
+            <label>Full Name</label>
+            <input value={form.fullName} onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))} placeholder="Full name" />
+          </div>
+          <div className="form-group">
+            <label>Email</label>
+            <input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="name@flowguard.ph" />
+          </div>
+          <div className="form-group">
+            <label>Temporary Password</label>
+            <input type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder="Min. 6 characters" />
+          </div>
+          <div className="form-group">
+            <label>Role</label>
+            <select value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}>
+              {ROLES.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }

@@ -86,7 +86,7 @@ export const userRepo = {
 
   async update(
     id: string,
-    fields: { fullName?: string; email?: string; passwordHash?: string },
+    fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role },
   ): Promise<User | undefined> {
     if (!supabase) return store.updateUser(id, fields);
 
@@ -94,6 +94,7 @@ export const userRepo = {
     if (fields.fullName !== undefined) row.full_name = fields.fullName;
     if (fields.email !== undefined) row.email = fields.email.toLowerCase();
     if (fields.passwordHash !== undefined) row.password_hash = fields.passwordHash;
+    if (fields.role !== undefined) row.role = fields.role;
 
     const { data, error } = await supabase
       .from(TABLE)
