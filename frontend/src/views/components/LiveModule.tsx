@@ -49,6 +49,8 @@ export interface RowActionCtx {
   archive: () => void;
   restore: () => void;
   edit: () => void;
+  /** Reload this module's rows + the shared stats snapshot. */
+  reload: () => Promise<void>;
 }
 
 export interface LiveModuleProps {
@@ -229,6 +231,7 @@ export function LiveModule({
           archive: () => runUpdate(row.id, { archived: true }),
           restore: () => runUpdate(row.id, { archived: false }),
           edit: () => openEdit(row),
+          reload: refreshAll,
         });
       }
     : undefined;

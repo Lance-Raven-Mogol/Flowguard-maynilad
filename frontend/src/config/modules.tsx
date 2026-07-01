@@ -388,7 +388,7 @@ function IncidentViewButton({
   canEditRemarks: boolean;
   canCreateJobOrder?: boolean;
 }) {
-  const { reload: reloadStats } = useStats();
+  const { stats } = useStats();
   const [open, setOpen] = useState(false);
   const [showJobForm, setShowJobForm] = useState(false);
   const [remarks, setRemarks] = useState('');
@@ -396,9 +396,20 @@ function IncidentViewButton({
   const editable = canEditRemarks && !c.archived;
 
   const hasRemarks = String(c.row.remarks ?? '').trim() !== '';
-  // The general manager can dispatch a crew once a complaint has been triaged:
-  // it carries a zone-specialist remark and is actively in progress.
-  const canDispatch = canCreateJobOrder && !c.archived && hasRemarks && c.row.status === 'in_progress';
+  // A job order already exists for this incident — no second one may be created.
+  const hasJobOrder = stats.jobOrders.some(
+    (j) => String(j.incident_ref ?? '') === String(c.row.ref_code ?? ''),
+  );
+  // The general manager can dispatch a crew once, and only while a complaint is
+  // triaged (has a remark, still "in progress", and not yet scheduled/ordered).
+  const canDispatch =
+    canCreateJobOrder && !c.archived && hasRemarks && c.row.status === 'in_progress' && !hasJobOrder;
+
+  const afterCreate = async () => {
+    setShowJobForm(false);
+    setOpen(false);
+    await c.reload();
+  };
 
   const openModal = () => {
     setRemarks(String(c.row.remarks ?? ''));
@@ -451,18 +462,15 @@ function IncidentViewButton({
           )}
           {canCreateJobOrder && !canDispatch && !editable && (
             <p style={{ marginTop: 16, color: 'var(--muted)', fontSize: 13 }}>
-              A job order can be created once this complaint has a zone-specialist remark and its status is
-              “In Progress”.
+              {hasJobOrder
+                ? 'A job order has already been created for this complaint.'
+                : 'A job order can be created once this complaint has a zone-specialist remark and its status is “In Progress”.'}
             </p>
           )}
         </Modal>
       )}
       {showJobForm && (
-        <JobOrderForm
-          incident={c.row}
-          onClose={() => setShowJobForm(false)}
-          onCreated={reloadStats}
-        />
+        <JobOrderForm incident={c.row} onClose={() => setShowJobForm(false)} onCreated={afterCreate} />
       )}
     </>
   );
@@ -595,6 +603,42 @@ function JobOrderDetail({ row }: { row: EntityRow }) {
   );
 }
 
+/**
+ * "View" action for a job order. Shows the full detail and — for anyone who can
+ * file material requests (technical team, inventory, GM) — a "Request Materials"
+ * button that opens the shared MRF modal pre-linked to this job order.
+ */
+function JobOrderViewButton({ row, onReload }: { row: EntityRow; onReload: () => Promise<void> }) {
+  const { user } = useAuth();
+  const canRequest = WRITE['material-requests'].includes(user!.role);
+  const [open, setOpen] = useState(false);
+  const [reqOpen, setReqOpen] = useState(false);
+  return (
+    <>
+      <button className="btn-action" onClick={() => setOpen(true)}>
+        View
+      </button>
+      {open && (
+        <Modal title={`Job Order ${row.ref_code}`} open wide onClose={() => setOpen(false)} closeText="Close">
+          <JobOrderDetail row={row} />
+          {canRequest && (
+            <div style={{ marginTop: 18 }}>
+              <ActionButton label="Request Materials" icon="hammer" onClick={() => setReqOpen(true)} />
+            </div>
+          )}
+        </Modal>
+      )}
+      {reqOpen && (
+        <MaterialRequestForm
+          lockedJobOrderRef={String(row.ref_code)}
+          onClose={() => setReqOpen(false)}
+          onCreated={onReload}
+        />
+      )}
+    </>
+  );
+}
+
 export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps & { readOnly?: boolean; title?: string }) {
   const { user } = useAuth();
   const role = user!.role;
@@ -637,12 +681,8 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
   ];
 
   // The technical team's tab is view-only: every row exposes a full-detail View
-  // (job order + linked complaint + remarks) needed for material allocation.
-  const viewAction = (c: RowActionCtx) => (
-    <ViewAction title={`Job Order ${c.row.ref_code}`} wide>
-      <JobOrderDetail row={c.row} />
-    </ViewAction>
-  );
+  // (job order + linked complaint + remarks) plus a "Request Materials" action.
+  const viewAction = (c: RowActionCtx) => <JobOrderViewButton row={c.row} onReload={c.reload} />;
 
   return (
     <LiveModule
@@ -779,6 +819,115 @@ function MrfDetail({ row }: { row: EntityRow }) {
   );
 }
 
+/**
+ * The Material Request (MRF) create modal — the single source of truth for
+ * filing a request, reused by the "New Request" button on the Material Requests
+ * tab and the "Request Materials" button inside a Job Order. When opened from a
+ * job order, `lockedJobOrderRef` pre-fills and locks the Job Order Ref field.
+ */
+function MaterialRequestForm({
+  lockedJobOrderRef,
+  onClose,
+  onCreated,
+}: {
+  lockedJobOrderRef?: string;
+  onClose: () => void;
+  onCreated: () => Promise<void> | void;
+}) {
+  const { user } = useAuth();
+  const { notify } = useToast();
+  const role = user!.role;
+  const [form, setForm] = useState({
+    material_name: '',
+    material_sku: '',
+    quantity: '1',
+    job_order_ref: lockedJobOrderRef ?? '',
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const save = async () => {
+    if (!form.material_name.trim()) return notify('Material name is required.', 'error');
+    setSaving(true);
+    try {
+      await resourceService.create('material-requests', { ...form, requested_by: user!.fullName });
+      notify('Record created successfully!');
+      await onCreated();
+      onClose();
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Something went wrong.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="New Request" open onClose={onClose} onSubmit={save} submitText="Create" submitting={saving}>
+      <div className="form-group">
+        <label>Material</label>
+        <input value={form.material_name} onChange={set('material_name')} placeholder="Material name" />
+      </div>
+      <div className="form-group">
+        <label>SKU</label>
+        <input value={form.material_sku} onChange={set('material_sku')} placeholder="SKU-XXXX (optional)" />
+      </div>
+      <div className="form-group">
+        <label>Quantity</label>
+        <input type="number" value={form.quantity} onChange={set('quantity')} />
+      </div>
+      <div className="form-group">
+        <label>Job Order Ref</label>
+        <input
+          value={form.job_order_ref}
+          onChange={set('job_order_ref')}
+          readOnly={Boolean(lockedJobOrderRef)}
+          placeholder="JO-XXXX (optional)"
+        />
+        {lockedJobOrderRef && (
+          <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>
+            Linked to this job order.
+          </small>
+        )}
+      </div>
+      <div className="form-group">
+        <label>Requested By</label>
+        <input value={user!.fullName} readOnly />
+        <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>
+          {user!.fullName} · {roleLabel(role)} (auto-filled from your account)
+        </small>
+      </div>
+    </Modal>
+  );
+}
+
+/** Trigger button that opens the shared Material Request modal. */
+function MaterialRequestButton({
+  onCreated,
+  lockedJobOrderRef,
+  label = 'New Request',
+  icon = 'plus-circle',
+}: {
+  onCreated: () => Promise<void> | void;
+  lockedJobOrderRef?: string;
+  label?: string;
+  icon?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <ActionButton label={label} icon={icon} onClick={() => setOpen(true)} />
+      {open && (
+        <MaterialRequestForm
+          lockedJobOrderRef={lockedJobOrderRef}
+          onClose={() => setOpen(false)}
+          onCreated={onCreated}
+        />
+      )}
+    </>
+  );
+}
+
 export function MaterialRequestsModule({ filter, title }: ModuleProps & { title?: string }) {
   const { user } = useAuth();
   const role = user!.role;
@@ -817,6 +966,7 @@ export function MaterialRequestsModule({ filter, title }: ModuleProps & { title?
       fields={fields}
       canWrite={canWrite}
       filter={filter}
+      renderCreate={({ reload }) => <MaterialRequestButton onCreated={reload} />}
       metrics={(rows) => [
         metric('r1', 'Total Requests', String(rows.length), 'file-input', 'customers'),
         metric('r2', 'Pending', count(rows, (r) => r.status === 'pending'), 'clock', 'revenue'),

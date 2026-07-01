@@ -133,8 +133,31 @@ export const resourceService = {
       if (!values[key.column]) values[key.column] = `${key.prefix}-${randDigits(key.digits)}`;
     }
 
+    // One active job order per incident — reject duplicates even if the UI is
+    // bypassed. Checked before insert so no orphan row is ever created.
+    const incidentRef = entity === 'job-orders' ? String(values.incident_ref ?? '').trim() : '';
+    if (incidentRef) {
+      const existing = (await repo.findRowsBy('job_orders', 'incident_ref', incidentRef)).filter(
+        (r) => !r.archived,
+      );
+      if (existing.length) {
+        throw conflict('A job order already exists for this incident.');
+      }
+    }
+
     try {
       const row = await writeResilient(values, (v) => repo.insertRow(def.table, v), def.critical);
+      // A job order dispatched for an incident schedules that incident.
+      if (incidentRef) {
+        try {
+          await repo.updateRowsBy('incidents', 'ref_code', incidentRef, {
+            status: 'scheduled',
+            updated_at: new Date().toISOString(),
+          });
+        } catch (statusErr) {
+          console.warn('[resource] job order created but incident status update failed:', statusErr);
+        }
+      }
       return enrich(entity, row);
     } catch (err) {
       mapDbError(err);

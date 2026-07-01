@@ -43,6 +43,26 @@ export async function deleteRow(table: string, id: string): Promise<void> {
   if (error) throw error as DbError;
 }
 
+/** Fetch all rows where `column` equals `value` (e.g. job orders for an incident). */
+export async function findRowsBy(table: string, column: string, value: unknown): Promise<Row[]> {
+  const sb = requireSupabase();
+  const { data, error } = await sb.from(table).select('*').eq(column, value);
+  if (error) throw error as DbError;
+  return (data ?? []) as Row[];
+}
+
+/** Patch every row where `column` equals `value`. */
+export async function updateRowsBy(
+  table: string,
+  column: string,
+  value: unknown,
+  patch: Row,
+): Promise<void> {
+  const sb = requireSupabase();
+  const { error } = await sb.from(table).update(patch).eq(column, value);
+  if (error) throw error as DbError;
+}
+
 /** Keep a customer's complaints attached to them when their display name changes. */
 export async function renameIncidentReporter(from: string, to: string): Promise<void> {
   if (!supabase || from === to) return;
