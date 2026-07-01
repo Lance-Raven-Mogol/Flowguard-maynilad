@@ -836,7 +836,15 @@ function MaterialRequestForm({
 }) {
   const { user } = useAuth();
   const { notify } = useToast();
+  const { stats } = useStats();
   const role = user!.role;
+
+  // Only active, in-stock (non-defective) inventory can be requested by SKU.
+  const inventory = stats.materials.filter(
+    (m) => !m.archived && m.status !== 'defective' && Number(m.quantity ?? 0) > 0,
+  );
+
+  const [useExisting, setUseExisting] = useState(false);
   const [form, setForm] = useState({
     material_name: '',
     material_sku: '',
@@ -847,11 +855,29 @@ function MaterialRequestForm({
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  // Selecting an inventory item fills both the SKU and the material name from it.
+  const onSelectSku = (sku: string) => {
+    const m = inventory.find((x) => String(x.sku) === sku);
+    setForm((f) => ({ ...f, material_sku: sku, material_name: m ? String(m.name ?? '') : '' }));
+  };
+
   const save = async () => {
-    if (!form.material_name.trim()) return notify('Material name is required.', 'error');
+    if (useExisting && !form.material_sku) {
+      return notify('Select an inventory item (SKU), or uncheck "Use Existing Inventory".', 'error');
+    }
+    if (!useExisting && !form.material_name.trim()) {
+      return notify('Material name is required.', 'error');
+    }
     setSaving(true);
     try {
-      await resourceService.create('material-requests', { ...form, requested_by: user!.fullName });
+      await resourceService.create('material-requests', {
+        material_name: form.material_name.trim(),
+        // Only link a SKU when requesting from existing inventory.
+        material_sku: useExisting ? form.material_sku : '',
+        quantity: form.quantity,
+        job_order_ref: form.job_order_ref,
+        requested_by: user!.fullName,
+      });
       notify('Record created successfully!');
       await onCreated();
       onClose();
@@ -865,16 +891,51 @@ function MaterialRequestForm({
   return (
     <Modal title="New Request" open onClose={onClose} onSubmit={save} submitText="Create" submitting={saving}>
       <div className="form-group">
-        <label>Material</label>
-        <input value={form.material_name} onChange={set('material_name')} placeholder="Material name" />
+        <label className="checkbox-row" style={{ padding: 0 }}>
+          <span className="checkbox-row-name">Use Existing Inventory</span>
+          <input
+            type="checkbox"
+            checked={useExisting}
+            onChange={(e) => {
+              const on = e.target.checked;
+              setUseExisting(on);
+              // Clear any SKU link when switching to external procurement.
+              if (!on) setForm((f) => ({ ...f, material_sku: '' }));
+            }}
+          />
+        </label>
+        <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>
+          Check to request from stock; leave unchecked to procure a material externally.
+        </small>
       </div>
-      <div className="form-group">
-        <label>SKU</label>
-        <input value={form.material_sku} onChange={set('material_sku')} placeholder="SKU-XXXX (optional)" />
-      </div>
+
+      {useExisting ? (
+        <div className="form-group">
+          <label>Inventory Item (SKU)</label>
+          <select value={form.material_sku} onChange={(e) => onSelectSku(e.target.value)}>
+            <option value="">Select inventory item…</option>
+            {inventory.map((m) => (
+              <option key={String(m.id)} value={String(m.sku)}>
+                {String(m.sku)} - {String(m.name ?? '')}
+              </option>
+            ))}
+          </select>
+          {inventory.length === 0 && (
+            <small style={{ display: 'block', marginTop: 6, color: '#e25577' }}>
+              No inventory items are currently available.
+            </small>
+          )}
+        </div>
+      ) : (
+        <div className="form-group">
+          <label>Material</label>
+          <input value={form.material_name} onChange={set('material_name')} placeholder="Material name" />
+        </div>
+      )}
+
       <div className="form-group">
         <label>Quantity</label>
-        <input type="number" value={form.quantity} onChange={set('quantity')} />
+        <input type="number" min={1} value={form.quantity} onChange={set('quantity')} />
       </div>
       <div className="form-group">
         <label>Job Order Ref</label>

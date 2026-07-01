@@ -105,6 +105,48 @@ function enrich(entity: string, row: Row): Row {
   return entity === 'assets' ? withAssetHealth(row) : row;
 }
 
+/**
+ * Deduct an approved material request's quantity from its linked inventory item
+ * — exactly once. Idempotent via the `stock_deducted` flag, so re-approving or
+ * editing an already-settled request never double-deducts. Requests with no SKU
+ * (external procurement) settle without touching inventory. Throws when the
+ * requested quantity exceeds available stock, blocking the approval.
+ */
+async function settleStockDeduction(mrfId: string): Promise<void> {
+  const current = await repo.getRowById('material_requests', mrfId);
+  if (!current) throw notFound('Material request not found.');
+  if (current.stock_deducted) return; // already settled — no double deduction
+
+  const sku = String(current.material_sku ?? '').trim();
+  const qty = Number(current.quantity ?? 0);
+
+  // External procurement (no inventory link) or a zero quantity: settle, no-op.
+  if (!sku || !(qty > 0)) {
+    await repo.updateRow('material_requests', mrfId, { stock_deducted: true });
+    return;
+  }
+
+  const materials = await repo.findRowsBy('materials', 'sku', sku);
+  const material = materials.find((m) => !m.archived) ?? materials[0];
+  if (!material) throw badRequest(`No inventory item found for SKU "${sku}".`);
+
+  const available = Number(material.quantity ?? 0);
+  if (available < qty) {
+    throw conflict(
+      `Insufficient stock for "${material.name}" (${sku}): ${available} in stock, ${qty} requested.`,
+    );
+  }
+
+  const remaining = available - qty;
+  const patch: Row = { quantity: remaining };
+  // Keep the stock status honest after the deduction (never override defective).
+  if (material.status !== 'defective') {
+    patch.status = remaining <= Number(material.min_level ?? 0) ? 'low_stock' : 'in_stock';
+  }
+  await repo.updateRow('materials', String(material.id), patch);
+  await repo.updateRow('material_requests', mrfId, { stock_deducted: true });
+}
+
 export const resourceService = {
   async list(entity: string, archived?: 'only' | 'all'): Promise<Row[]> {
     const def = getDef(entity);
@@ -171,6 +213,12 @@ export const resourceService = {
     const values = sanitize(def, body);
     if (def.touch) values[def.touch] = new Date().toISOString();
     if (Object.keys(values).length === 0) throw badRequest('No valid fields to update.');
+
+    // Approving/releasing a material request deducts its quantity from stock —
+    // once. Runs before the status write so insufficient stock blocks approval.
+    if (entity === 'material-requests' && (values.status === 'approved' || values.status === 'released')) {
+      await settleStockDeduction(id);
+    }
 
     try {
       const row = await writeResilient(values, (v) => repo.updateRow(def.table, id, v), def.critical);

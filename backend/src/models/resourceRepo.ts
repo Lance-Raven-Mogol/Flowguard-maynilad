@@ -43,6 +43,14 @@ export async function deleteRow(table: string, id: string): Promise<void> {
   if (error) throw error as DbError;
 }
 
+/** Fetch a single row by id, or null when it doesn't exist. */
+export async function getRowById(table: string, id: string): Promise<Row | null> {
+  const sb = requireSupabase();
+  const { data, error } = await sb.from(table).select('*').eq('id', id).maybeSingle();
+  if (error) throw error as DbError;
+  return (data ?? null) as Row | null;
+}
+
 /** Fetch all rows where `column` equals `value` (e.g. job orders for an incident). */
 export async function findRowsBy(table: string, column: string, value: unknown): Promise<Row[]> {
   const sb = requireSupabase();
