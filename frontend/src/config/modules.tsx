@@ -3,7 +3,7 @@
  * each FlowGuard module from the paper (incidents, job orders, inventory,
  * material requests, assets + health scoring, advisories, users) to live data.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { BadgeTone, Metric, StatusTone, TableCell } from '../models/types';
 import { ROLES } from '../models/types';
 import { useAuth } from '../controllers/AuthContext';
@@ -820,6 +820,135 @@ function MrfDetail({ row }: { row: EntityRow }) {
 }
 
 /**
+ * Searchable Material field — a combobox that lets the user either pick an
+ * existing inventory item (linking its SKU) or type a brand-new custom material
+ * (no SKU). Selecting from the list links the SKU; typing anything clears the
+ * link and treats the text as a custom material.
+ */
+function MaterialCombobox({
+  inventory,
+  value,
+  onChange,
+}: {
+  inventory: EntityRow[];
+  value: { name: string; sku: string };
+  onChange: (next: { name: string; sku: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(-1);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const filtered = useMemo(() => {
+    const q = value.name.trim().toLowerCase();
+    const list = q
+      ? inventory.filter((m) => `${m.sku} ${m.name}`.toLowerCase().includes(q))
+      : inventory;
+    return list.slice(0, 50);
+  }, [inventory, value.name]);
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  const pick = (m: EntityRow) => {
+    onChange({ name: String(m.name ?? ''), sku: String(m.sku ?? '') });
+    setOpen(false);
+    setHighlight(-1);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) return setOpen(true);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlight((h) => Math.min(h + 1, filtered.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlight((h) => Math.max(h - 1, 0));
+    } else if (e.key === 'Enter' && open && highlight >= 0 && filtered[highlight]) {
+      e.preventDefault();
+      pick(filtered[highlight]);
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div className="combobox" ref={wrapRef}>
+      <div className={`combobox-control${value.sku ? ' is-linked' : ''}`}>
+        <input
+          role="combobox"
+          aria-expanded={open}
+          value={value.name}
+          onChange={(e) => {
+            // Typing = a custom material; drop any previously linked SKU.
+            onChange({ name: e.target.value, sku: '' });
+            setOpen(true);
+            setHighlight(-1);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={onKeyDown}
+          placeholder="Search inventory or type a new material…"
+        />
+        {value.sku && <span className="combobox-chip">{value.sku}</span>}
+        <button
+          type="button"
+          className="combobox-caret"
+          tabIndex={-1}
+          aria-label="Toggle inventory list"
+          onClick={() => setOpen((o) => !o)}
+        >
+          ▾
+        </button>
+      </div>
+
+      {value.sku ? (
+        <small className="combobox-hint is-linked">✓ Linked to inventory — stock will be deducted on approval.</small>
+      ) : value.name.trim() ? (
+        <small className="combobox-hint is-custom">New custom material — not linked to inventory, no stock deducted.</small>
+      ) : (
+        <small className="combobox-hint">Pick an item to link its SKU, or just type a name.</small>
+      )}
+
+      {open && (
+        <ul className="combobox-list" role="listbox">
+          {filtered.length === 0 ? (
+            <li className="combobox-empty">
+              No inventory match — “{value.name.trim()}” will be saved as a custom material.
+            </li>
+          ) : (
+            filtered.map((m, i) => (
+              <li
+                key={String(m.id)}
+                role="option"
+                aria-selected={value.sku === String(m.sku)}
+                className={`combobox-option${i === highlight ? ' is-active' : ''}${
+                  value.sku === String(m.sku) ? ' is-selected' : ''
+                }`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  pick(m);
+                }}
+                onMouseEnter={() => setHighlight(i)}
+              >
+                <span className="combobox-sku">{String(m.sku)}</span>
+                <span className="combobox-name">{String(m.name ?? '')}</span>
+                <span className="combobox-stock">
+                  {Number(m.quantity ?? 0)} {String(m.unit ?? 'units')}
+                </span>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
  * The Material Request (MRF) create modal — the single source of truth for
  * filing a request, reused by the "New Request" button on the Material Requests
  * tab and the "Request Materials" button inside a Job Order. When opened from a
@@ -844,7 +973,6 @@ function MaterialRequestForm({
     (m) => !m.archived && m.status !== 'defective' && Number(m.quantity ?? 0) > 0,
   );
 
-  const [useExisting, setUseExisting] = useState(false);
   const [form, setForm] = useState({
     material_name: '',
     material_sku: '',
@@ -855,25 +983,14 @@ function MaterialRequestForm({
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  // Selecting an inventory item fills both the SKU and the material name from it.
-  const onSelectSku = (sku: string) => {
-    const m = inventory.find((x) => String(x.sku) === sku);
-    setForm((f) => ({ ...f, material_sku: sku, material_name: m ? String(m.name ?? '') : '' }));
-  };
-
   const save = async () => {
-    if (useExisting && !form.material_sku) {
-      return notify('Select an inventory item (SKU), or uncheck "Use Existing Inventory".', 'error');
-    }
-    if (!useExisting && !form.material_name.trim()) {
-      return notify('Material name is required.', 'error');
-    }
+    if (!form.material_name.trim()) return notify('Material name is required.', 'error');
     setSaving(true);
     try {
       await resourceService.create('material-requests', {
         material_name: form.material_name.trim(),
-        // Only link a SKU when requesting from existing inventory.
-        material_sku: useExisting ? form.material_sku : '',
+        // SKU is set only when an inventory item was picked from the combobox.
+        material_sku: form.material_sku,
         quantity: form.quantity,
         job_order_ref: form.job_order_ref,
         requested_by: user!.fullName,
@@ -891,47 +1008,13 @@ function MaterialRequestForm({
   return (
     <Modal title="New Request" open onClose={onClose} onSubmit={save} submitText="Create" submitting={saving}>
       <div className="form-group">
-        <label className="checkbox-row" style={{ padding: 0 }}>
-          <span className="checkbox-row-name">Use Existing Inventory</span>
-          <input
-            type="checkbox"
-            checked={useExisting}
-            onChange={(e) => {
-              const on = e.target.checked;
-              setUseExisting(on);
-              // Clear any SKU link when switching to external procurement.
-              if (!on) setForm((f) => ({ ...f, material_sku: '' }));
-            }}
-          />
-        </label>
-        <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>
-          Check to request from stock; leave unchecked to procure a material externally.
-        </small>
+        <label>Material</label>
+        <MaterialCombobox
+          inventory={inventory}
+          value={{ name: form.material_name, sku: form.material_sku }}
+          onChange={(next) => setForm((f) => ({ ...f, material_name: next.name, material_sku: next.sku }))}
+        />
       </div>
-
-      {useExisting ? (
-        <div className="form-group">
-          <label>Inventory Item (SKU)</label>
-          <select value={form.material_sku} onChange={(e) => onSelectSku(e.target.value)}>
-            <option value="">Select inventory item…</option>
-            {inventory.map((m) => (
-              <option key={String(m.id)} value={String(m.sku)}>
-                {String(m.sku)} - {String(m.name ?? '')}
-              </option>
-            ))}
-          </select>
-          {inventory.length === 0 && (
-            <small style={{ display: 'block', marginTop: 6, color: '#e25577' }}>
-              No inventory items are currently available.
-            </small>
-          )}
-        </div>
-      ) : (
-        <div className="form-group">
-          <label>Material</label>
-          <input value={form.material_name} onChange={set('material_name')} placeholder="Material name" />
-        </div>
-      )}
 
       <div className="form-group">
         <label>Quantity</label>
