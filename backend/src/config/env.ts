@@ -18,6 +18,9 @@ export const env = {
     // Prefer the service-role JWT for the admin client; fall back to the
     // new-style secret key. Either bypasses RLS for trusted server access.
     serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? '',
+    // Personal access token (sbp_…) — enables automatic schema migration on
+    // boot via the Management API. Optional; omit to disable auto-migrate.
+    accessToken: process.env.SUPABASE_ACCESS_TOKEN ?? '',
   },
 } as const;
 
