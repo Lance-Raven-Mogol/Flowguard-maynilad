@@ -30,6 +30,12 @@ export interface ResourceDef {
   autoKeys?: AutoKey[];
   /** Column bumped to "now" on every update (e.g. updated_at). */
   touch?: string;
+  /**
+   * Columns that MUST persist. If one is missing from the database (schema not
+   * migrated), the write fails loudly with a clear error instead of silently
+   * dropping the value and reporting a false success.
+   */
+  critical?: string[];
 }
 
 export const RESOURCES: Record<string, ResourceDef> = {
@@ -38,6 +44,9 @@ export const RESOURCES: Record<string, ResourceDef> = {
     writeRoles: ['customer', 'zone-specialist', 'technical-team'],
     allowed: ['type', 'description', 'location', 'urgency', 'status', 'reported_by', 'remarks', 'images', 'archived'],
     required: ['description'],
+    // Zone-specialist remarks have no fallback column — they must be stored, or
+    // the save is a lie. Fail loudly (prompt a migration) rather than silently.
+    critical: ['remarks'],
     autoKeys: [{ column: 'ref_code', prefix: 'INC', digits: 4 }],
     touch: 'updated_at',
   },

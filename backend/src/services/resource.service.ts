@@ -8,7 +8,7 @@ import * as repo from '../models/resourceRepo.js';
 import type { Row, DbError } from '../models/resourceRepo.js';
 import type { PublicUser, Role } from '../models/types.js';
 import { withAssetHealth } from './assetHealth.js';
-import { badRequest, conflict, forbidden, notFound } from '../utils/httpError.js';
+import { badRequest, conflict, forbidden, notFound, serviceUnavailable } from '../utils/httpError.js';
 
 function getDef(entity: string): ResourceDef {
   const def = RESOURCES[entity];
@@ -72,8 +72,12 @@ function missingColumn(err: unknown): string | null {
   return null;
 }
 
-/** Run a write, dropping any not-yet-migrated columns and retrying. */
-async function writeResilient<T>(values: Row, run: (v: Row) => Promise<T>): Promise<T> {
+/**
+ * Run a write, dropping any not-yet-migrated OPTIONAL columns and retrying.
+ * A missing *critical* column instead raises a clear 503 — never a silent,
+ * false-success write that discards the caller's data.
+ */
+async function writeResilient<T>(values: Row, run: (v: Row) => Promise<T>, critical: string[] = []): Promise<T> {
   const v: Row = { ...values };
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
@@ -81,6 +85,12 @@ async function writeResilient<T>(values: Row, run: (v: Row) => Promise<T>): Prom
     } catch (err) {
       const col = missingColumn(err);
       if (col && col in v) {
+        if (critical.includes(col)) {
+          throw serviceUnavailable(
+            `The database is missing the "${col}" column, so it could not be saved. ` +
+              'Apply the schema migration (backend/supabase/schema.sql) and try again.',
+          );
+        }
         delete v[col];
         console.warn(`[resource] column "${col}" not found — dropping it. Run the schema migration to enable it.`);
         continue;
@@ -124,7 +134,7 @@ export const resourceService = {
     }
 
     try {
-      const row = await writeResilient(values, (v) => repo.insertRow(def.table, v));
+      const row = await writeResilient(values, (v) => repo.insertRow(def.table, v), def.critical);
       return enrich(entity, row);
     } catch (err) {
       mapDbError(err);
@@ -140,7 +150,7 @@ export const resourceService = {
     if (Object.keys(values).length === 0) throw badRequest('No valid fields to update.');
 
     try {
-      const row = await writeResilient(values, (v) => repo.updateRow(def.table, id, v));
+      const row = await writeResilient(values, (v) => repo.updateRow(def.table, id, v), def.critical);
       if (!row) throw notFound('Record not found.');
       return enrich(entity, row);
     } catch (err) {
