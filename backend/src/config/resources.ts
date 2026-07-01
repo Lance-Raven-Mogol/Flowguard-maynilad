@@ -45,7 +45,11 @@ export const RESOURCES: Record<string, ResourceDef> = {
   'job-orders': {
     table: 'job_orders',
     writeRoles: ['technical-team'],
-    allowed: ['incident_ref', 'title', 'scope', 'team', 'assigned_to', 'estimated_cost', 'scheduled_date', 'status', 'archived'],
+    allowed: [
+      'incident_ref', 'title', 'scope', 'team', 'assigned_to',
+      'team_name', 'team_leader', 'team_members',
+      'estimated_cost', 'scheduled_date', 'status', 'archived',
+    ],
     required: ['title'],
     numeric: ['estimated_cost'],
     nullable: ['scheduled_date'],

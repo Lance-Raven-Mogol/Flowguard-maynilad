@@ -121,6 +121,10 @@ alter table public.incidents         add column if not exists archived boolean n
 alter table public.incidents         add column if not exists remarks text;
 alter table public.incidents         add column if not exists images  jsonb not null default '[]'::jsonb;
 alter table public.job_orders        add column if not exists archived boolean not null default false;
+-- Team assignment for a job order (general manager assigns a tech-team crew).
+alter table public.job_orders        add column if not exists team_name    text;
+alter table public.job_orders        add column if not exists team_leader  text;
+alter table public.job_orders        add column if not exists team_members jsonb not null default '[]'::jsonb;
 alter table public.materials         add column if not exists archived boolean not null default false;
 alter table public.material_requests add column if not exists archived boolean not null default false;
 alter table public.assets            add column if not exists archived boolean not null default false;

@@ -10,7 +10,7 @@ import { useAuth } from '../controllers/AuthContext';
 import { useToast } from '../controllers/ToastContext';
 import { useStats } from '../controllers/StatsContext';
 import { api, ApiError } from '../services/apiClient';
-import type { EntityRow } from '../services/resourceService';
+import { resourceService, type EntityRow } from '../services/resourceService';
 import { LiveModule, StatusSelect, type ModuleColumn, type ModuleField, type RowActionCtx } from '../views/components/LiveModule';
 import { DataTable } from '../views/components/DataTable';
 import { Modal } from '../views/components/Modal';
@@ -139,6 +139,194 @@ function ViewAction({ title, children, wide }: { title: string; children: ReactN
 }
 
 
+/* ------------------------------------------------ Tech-team assignment */
+interface UserLite {
+  id: string;
+  fullName: string;
+  role: string;
+}
+
+/**
+ * Registered technical-team members, for job-order assignment. Only the general
+ * manager can read the user directory (`/users`), so this is used solely inside
+ * general-manager views.
+ */
+function useTechTeam(): { members: UserLite[]; loading: boolean; error: string | null } {
+  const [members, setMembers] = useState<UserLite[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api
+      .get<{ data: UserLite[] }>('/users')
+      .then((r) => {
+        if (alive) setMembers(r.data.filter((u) => u.role === 'technical-team'));
+      })
+      .catch(() => alive && setError('Could not load technical-team members.'))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return { members, loading, error };
+}
+
+/**
+ * Create-and-assign a job order. The general manager names the crew, picks a
+ * team leader and any number of member(s) — restricted to technical-team users
+ * registered in the system — then dispatches the work. When opened from a
+ * complaint the title, scope and linked reference are pre-filled.
+ */
+function JobOrderForm({
+  incident,
+  onClose,
+  onCreated,
+}: {
+  incident?: EntityRow;
+  onClose: () => void;
+  onCreated: () => Promise<void> | void;
+}) {
+  const { notify } = useToast();
+  const { members, loading, error } = useTechTeam();
+
+  const [teamName, setTeamName] = useState('');
+  const [leader, setLeader] = useState('');
+  const [picked, setPicked] = useState<string[]>([]);
+  const [title, setTitle] = useState(
+    incident ? `${titleCase(incident.type)} — ${String(incident.location ?? '')}`.trim().replace(/—\s*$/, '').trim() : '',
+  );
+  const [scope, setScope] = useState(incident ? String(incident.remarks || incident.description || '') : '');
+  const [cost, setCost] = useState('');
+  const [scheduled, setScheduled] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const toggleMember = (name: string) =>
+    setPicked((m) => (m.includes(name) ? m.filter((x) => x !== name) : [...m, name]));
+
+  const save = async () => {
+    if (!title.trim()) return notify('A job title is required.', 'error');
+    if (!leader) return notify('Select a team leader.', 'error');
+    // Members list = leader first, then any additional picked members (deduped).
+    const membersList = [leader, ...picked.filter((m) => m !== leader)];
+    setSaving(true);
+    try {
+      await resourceService.create('job-orders', {
+        title: title.trim(),
+        incident_ref: incident ? String(incident.ref_code ?? '') : '',
+        scope: scope.trim(),
+        team: 'in-house',
+        team_name: teamName.trim(),
+        team_leader: leader,
+        team_members: membersList,
+        assigned_to: membersList.join(', '),
+        estimated_cost: cost || 0,
+        scheduled_date: scheduled,
+        status: 'in_progress',
+      });
+      notify('Job order created and assigned to the team!');
+      await onCreated();
+      onClose();
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not create the job order.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={incident ? `Create Job Order — Complaint ${incident.ref_code}` : 'Create Job Order'}
+      open
+      wide
+      onClose={onClose}
+      onSubmit={save}
+      submitText="Create & Assign"
+      submitting={saving}
+    >
+      <div className="form-group">
+        <label>Job Title</label>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Repair main line leak" />
+      </div>
+      <div className="form-group">
+        <label>Scope of Work</label>
+        <textarea value={scope} onChange={(e) => setScope(e.target.value)} placeholder="What needs to be done…" />
+      </div>
+
+      <p className="detail-section-title">Team Assignment</p>
+      <div className="form-group">
+        <label>Team Name</label>
+        <input value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder="e.g. Alpha Crew" />
+      </div>
+
+      {loading ? (
+        <p style={{ color: 'var(--muted)' }}>Loading technical-team members…</p>
+      ) : error ? (
+        <p style={{ color: '#e25577' }}>{error}</p>
+      ) : members.length === 0 ? (
+        <p style={{ color: '#e25577' }}>
+          No technical-team members are registered yet. Add them in User Management first.
+        </p>
+      ) : (
+        <>
+          <div className="form-group">
+            <label>Team Leader</label>
+            <select value={leader} onChange={(e) => setLeader(e.target.value)}>
+              <option value="">Select a team leader…</option>
+              {members.map((m) => (
+                <option key={m.id} value={m.fullName}>
+                  {m.fullName}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Team Members (optional — select any number)</label>
+            <div className="checkbox-list">
+              {members.map((m) => {
+                const isLeader = m.fullName === leader;
+                return (
+                  <label key={m.id} className="checkbox-row" style={isLeader ? { opacity: 0.6 } : undefined}>
+                    <input
+                      type="checkbox"
+                      checked={isLeader || picked.includes(m.fullName)}
+                      disabled={isLeader}
+                      onChange={() => toggleMember(m.fullName)}
+                    />
+                    <span>
+                      {m.fullName}
+                      {isLeader && ' (leader)'}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      <div className="form-group">
+        <label>Estimated Cost (₱)</label>
+        <input type="number" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="0" />
+      </div>
+      <div className="form-group">
+        <label>Scheduled Date</label>
+        <input type="date" value={scheduled} onChange={(e) => setScheduled(e.target.value)} />
+      </div>
+    </Modal>
+  );
+}
+
+/** Panel-head "Create Job Order" button that opens the team-assignment form. */
+function CreateJobOrderButton({ onCreated }: { onCreated: () => Promise<void> | void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <ActionButton label="Create Job Order" icon="plus-circle" onClick={() => setOpen(true)} />
+      {open && <JobOrderForm onClose={() => setOpen(false)} onCreated={onCreated} />}
+    </>
+  );
+}
+
 /* --------------------------------------------------------------- Incidents */
 const INCIDENT_STATUS = [
   { value: 'under_verification', label: 'Under Verification' },
@@ -180,11 +368,26 @@ function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRema
  * "View" action for incidents. Opens a detail modal; zone specialists can also
  * add/edit the remarks forwarded to the technical team directly inside it.
  */
-function IncidentViewButton({ c, canEditRemarks }: { c: RowActionCtx; canEditRemarks: boolean }) {
+function IncidentViewButton({
+  c,
+  canEditRemarks,
+  canCreateJobOrder = false,
+}: {
+  c: RowActionCtx;
+  canEditRemarks: boolean;
+  canCreateJobOrder?: boolean;
+}) {
+  const { reload: reloadStats } = useStats();
   const [open, setOpen] = useState(false);
+  const [showJobForm, setShowJobForm] = useState(false);
   const [remarks, setRemarks] = useState('');
   const [saving, setSaving] = useState(false);
   const editable = canEditRemarks && !c.archived;
+
+  const hasRemarks = String(c.row.remarks ?? '').trim() !== '';
+  // The general manager can dispatch a crew once a complaint has been triaged:
+  // it carries a zone-specialist remark and is actively in progress.
+  const canDispatch = canCreateJobOrder && !c.archived && hasRemarks && c.row.status === 'in_progress';
 
   const openModal = () => {
     setRemarks(String(c.row.remarks ?? ''));
@@ -193,7 +396,11 @@ function IncidentViewButton({ c, canEditRemarks }: { c: RowActionCtx; canEditRem
   const save = async () => {
     setSaving(true);
     try {
-      await c.update({ remarks: remarks.trim() });
+      const patch: Record<string, unknown> = { remarks: remarks.trim() };
+      // Adding a remark advances a freshly-reported complaint to "in progress"
+      // so the general manager can act on it (and create a job order).
+      if (c.row.status === 'under_verification') patch.status = 'in_progress';
+      await c.update(patch);
       setOpen(false);
     } finally {
       setSaving(false);
@@ -226,7 +433,25 @@ function IncidentViewButton({ c, canEditRemarks }: { c: RowActionCtx; canEditRem
               />
             </div>
           )}
+          {canDispatch && (
+            <div style={{ marginTop: 18 }}>
+              <ActionButton label="Create Job Order" icon="clipboard-list" onClick={() => setShowJobForm(true)} />
+            </div>
+          )}
+          {canCreateJobOrder && !canDispatch && !editable && (
+            <p style={{ marginTop: 16, color: 'var(--muted)', fontSize: 13 }}>
+              A job order can be created once this complaint has a zone-specialist remark and its status is
+              “In Progress”.
+            </p>
+          )}
         </Modal>
+      )}
+      {showJobForm && (
+        <JobOrderForm
+          incident={c.row}
+          onClose={() => setShowJobForm(false)}
+          onCreated={reloadStats}
+        />
       )}
     </>
   );
@@ -266,7 +491,13 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
   const actions = canWrite
     ? (c: RowActionCtx) => (
         <>
-          {manage && <IncidentViewButton c={c} canEditRemarks={role === 'zone-specialist'} />}
+          {manage && (
+            <IncidentViewButton
+              c={c}
+              canEditRemarks={role === 'zone-specialist'}
+              canCreateJobOrder={role === 'general-manager'}
+            />
+          )}
           {manage && !c.archived && (
             <StatusSelect value={String(c.row.status)} options={INCIDENT_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />
           )}
@@ -322,7 +553,11 @@ function JobOrderDetail({ row }: { row: EntityRow }) {
         <DetailRow label="Title">{String(row.title ?? '')}</DetailRow>
         <DetailRow label="Status">{titleCase(row.status)}</DetailRow>
         <DetailRow label="Team">{titleCase(row.team)}</DetailRow>
-        <DetailRow label="Assigned To">{String(row.assigned_to ?? '')}</DetailRow>
+        <DetailRow label="Team Name">{String(row.team_name ?? '')}</DetailRow>
+        <DetailRow label="Team Leader">{String(row.team_leader ?? '')}</DetailRow>
+        <DetailRow label="Team Members">
+          {Array.isArray(row.team_members) ? (row.team_members as string[]).join(', ') : String(row.assigned_to ?? '')}
+        </DetailRow>
         <DetailRow label="Estimated Cost">{money(row.estimated_cost)}</DetailRow>
         <DetailRow label="Scheduled">{dateShort(row.scheduled_date)}</DetailRow>
         <DetailRow label="Scope of Work">{String(row.scope ?? '')}</DetailRow>
@@ -353,11 +588,26 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
   const { user } = useAuth();
   const role = user!.role;
   const canWrite = !readOnly && WRITE['job-orders'].includes(role);
+  // The general manager creates + assigns job orders through the team form.
+  const canAssign = role === 'general-manager';
+  // Technical-team members only see the job orders their crew is assigned to.
+  const me = user!.fullName.toLowerCase();
+  const rowFilter =
+    role === 'technical-team'
+      ? (r: EntityRow) => {
+          const leader = String(r.team_leader ?? '').toLowerCase();
+          const members = Array.isArray(r.team_members)
+            ? (r.team_members as string[]).map((s) => String(s).toLowerCase())
+            : [];
+          const assigned = String(r.assigned_to ?? '').toLowerCase();
+          return leader === me || members.includes(me) || assigned.includes(me);
+        }
+      : undefined;
 
   const columns: ModuleColumn[] = [
     { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
     { header: 'Title', cell: (r) => String(r.title ?? '') },
-    { header: 'Team', cell: (r) => titleCase(r.team) || '—' },
+    { header: 'Team', cell: (r) => String(r.team_name || titleCase(r.team) || '—') },
     { header: 'Assigned To', cell: (r) => String(r.assigned_to ?? '—') },
     { header: 'Est. Cost', cell: (r) => money(r.estimated_cost) },
     { header: 'Schedule', cell: (r) => dateShort(r.scheduled_date) },
@@ -392,8 +642,14 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
       fields={fields}
       canWrite={canWrite}
       filter={filter}
+      rowFilter={rowFilter}
       actionLabel={readOnly ? 'Details' : 'Action'}
       archivable={!readOnly}
+      renderCreate={
+        canAssign
+          ? ({ reload }) => <CreateJobOrderButton onCreated={reload} />
+          : undefined
+      }
       metrics={(rows) => [
         metric('j1', 'Total Job Orders', String(rows.length), 'clipboard-list', 'customers'),
         metric('j2', 'In Progress', count(rows, (r) => r.status === 'in_progress'), 'wrench', 'revenue'),

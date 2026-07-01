@@ -57,11 +57,19 @@ export interface LiveModuleProps {
   /** Restrict visible rows to those where row[mineField] === mineValue. */
   mineField?: string;
   mineValue?: string;
+  /** Arbitrary per-row visibility predicate (e.g. "assigned to me"). */
+  rowFilter?: (row: EntityRow) => boolean;
   metrics?: (rows: EntityRow[]) => Metric[];
   actions?: (ctx: RowActionCtx) => ReactNode;
   actionLabel?: string;
   /** Show the "Show archived" toggle (defaults to on when the user can write). */
   archivable?: boolean;
+  /**
+   * Replace the default create button + modal with a custom control (e.g. the
+   * job-order team-assignment form). Rendered in the panel head when the user
+   * can write and is viewing active records. `reload` refreshes the table.
+   */
+  renderCreate?: (ctx: { reload: () => Promise<void> }) => ReactNode;
 }
 
 export function LiveModule({
@@ -74,10 +82,12 @@ export function LiveModule({
   canWrite,
   mineField,
   mineValue,
+  rowFilter,
   metrics,
   actions,
   actionLabel = 'Action',
   archivable,
+  renderCreate,
 }: LiveModuleProps) {
   const { notify } = useToast();
   const { reload: reloadStats } = useStats();
@@ -110,9 +120,13 @@ export function LiveModule({
   }, [load]);
 
   const visibleRows = useMemo(() => {
-    if (!mineField || !mineValue) return rows;
-    return rows.filter((r) => String(r[mineField] ?? '').toLowerCase() === mineValue.toLowerCase());
-  }, [rows, mineField, mineValue]);
+    let out = rows;
+    if (mineField && mineValue) {
+      out = out.filter((r) => String(r[mineField] ?? '').toLowerCase() === mineValue.toLowerCase());
+    }
+    if (rowFilter) out = out.filter(rowFilter);
+    return out;
+  }, [rows, mineField, mineValue, rowFilter]);
 
   const table: ResourceTable = useMemo(
     () => ({
@@ -166,6 +180,10 @@ export function LiveModule({
       setSubmitting(false);
     }
   };
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([load(), reloadStats()]);
+  }, [load, reloadStats]);
 
   const runUpdate = async (id: string, vals: Record<string, unknown>) => {
     setBusyId(id);
@@ -222,9 +240,10 @@ export function LiveModule({
                 {showArchived ? 'View Active' : 'View Archived'}
               </button>
             )}
-            {canWrite && fields && !showArchived && (
-              <ActionButton label={createLabel ?? 'Add New'} icon="plus-circle" onClick={openCreate} />
-            )}
+            {canWrite && !showArchived &&
+              (renderCreate
+                ? renderCreate({ reload: refreshAll })
+                : fields && <ActionButton label={createLabel ?? 'Add New'} icon="plus-circle" onClick={openCreate} />)}
           </div>
         }
       />
