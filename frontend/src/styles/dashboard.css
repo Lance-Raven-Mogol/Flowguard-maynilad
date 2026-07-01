@@ -1859,7 +1859,8 @@ td strong {
 .checkbox-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
   padding: 8px 10px;
   border-radius: 8px;
   cursor: pointer;
@@ -1870,7 +1871,17 @@ td strong {
   background: rgba(0, 0, 0, 0.03);
 }
 
+/* Name on the left; may scroll horizontally if very long. */
+.checkbox-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+/* Checkbox pinned to the right. */
 .checkbox-row input {
+  flex: none;
   width: 16px;
   height: 16px;
   cursor: pointer;

@@ -28,7 +28,12 @@ export interface ModuleField {
   readOnly?: boolean;
   /** Helper text shown under the field (e.g. the reporter's role). */
   hint?: string;
+  /** For date fields: allow selecting past dates (defaults to future-only). */
+  allowPast?: boolean;
 }
+
+/** Today's date as YYYY-MM-DD — used as the min for scheduling date pickers. */
+const todayISO = (): string => new Date().toISOString().slice(0, 10);
 
 export interface ModuleColumn {
   header: string;
@@ -296,6 +301,7 @@ export function LiveModule({
                   type={f.kind === 'number' ? 'number' : f.kind === 'date' ? 'date' : 'text'}
                   placeholder={f.placeholder}
                   readOnly={f.readOnly}
+                  min={f.kind === 'date' && !f.allowPast ? todayISO() : undefined}
                   value={String(values[f.name] ?? '')}
                   onChange={(e) => setValues((p) => ({ ...p, [f.name]: e.target.value }))}
                 />

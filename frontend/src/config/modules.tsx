@@ -41,6 +41,8 @@ const dateShort = (v: unknown): string => {
   return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('en-GB');
 };
 const count = (rows: EntityRow[], pred: (r: EntityRow) => boolean) => String(rows.filter(pred).length);
+/** Today's date as YYYY-MM-DD — used as the min for scheduling date pickers. */
+const todayISO = (): string => new Date().toISOString().slice(0, 10);
 
 const metric = (id: string, label: string, value: string, icon: string, accent: Metric['accent']): Metric => ({
   id, label, value, icon, accent,
@@ -243,6 +245,15 @@ function JobOrderForm({
       submitText="Create & Assign"
       submitting={saving}
     >
+      {incident && (
+        <div className="form-group">
+          <label>Linked Complaint</label>
+          <input value={`${incident.ref_code} — ${titleCase(incident.type)}`} readOnly />
+          <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>
+            Automatically associated with the complaint you opened.
+          </small>
+        </div>
+      )}
       <div className="form-group">
         <label>Job Title</label>
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Repair main line leak" />
@@ -286,16 +297,16 @@ function JobOrderForm({
                 const isLeader = m.fullName === leader;
                 return (
                   <label key={m.id} className="checkbox-row" style={isLeader ? { opacity: 0.6 } : undefined}>
+                    <span className="checkbox-row-name">
+                      {m.fullName}
+                      {isLeader && ' (leader)'}
+                    </span>
                     <input
                       type="checkbox"
                       checked={isLeader || picked.includes(m.fullName)}
                       disabled={isLeader}
                       onChange={() => toggleMember(m.fullName)}
                     />
-                    <span>
-                      {m.fullName}
-                      {isLeader && ' (leader)'}
-                    </span>
                   </label>
                 );
               })}
@@ -310,7 +321,7 @@ function JobOrderForm({
       </div>
       <div className="form-group">
         <label>Scheduled Date</label>
-        <input type="date" value={scheduled} onChange={(e) => setScheduled(e.target.value)} />
+        <input type="date" min={todayISO()} value={scheduled} onChange={(e) => setScheduled(e.target.value)} />
       </div>
     </Modal>
   );
@@ -425,7 +436,7 @@ function IncidentViewButton({
           <IncidentDetail row={c.row} hideRemarks={editable} />
           {editable && (
             <div className="form-group" style={{ marginTop: 18, marginBottom: 0 }}>
-              <label>Remarks for Technical Team</label>
+              <label>Zone Specialist Remarks</label>
               <textarea
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
@@ -858,9 +869,9 @@ export function AssetsModule({ filter, title }: ModuleProps & { title?: string }
     { name: 'name', label: 'Asset Name', placeholder: 'e.g. Distribution Main A' },
     { name: 'type', label: 'Type', placeholder: 'Pipe / Pump / Meter / Valve' },
     { name: 'location', label: 'Location', placeholder: 'Brgy., Boac' },
-    { name: 'install_date', label: 'Installation Date', kind: 'date' },
+    { name: 'install_date', label: 'Installation Date', kind: 'date', allowPast: true },
     { name: 'expected_lifespan_years', label: 'Expected Lifespan (years)', kind: 'number', default: '10' },
-    { name: 'last_maintenance', label: 'Last Maintenance', kind: 'date' },
+    { name: 'last_maintenance', label: 'Last Maintenance', kind: 'date', allowPast: true },
     { name: 'condition', label: 'Condition', kind: 'select', optionList: CONDITION },
   ];
 
