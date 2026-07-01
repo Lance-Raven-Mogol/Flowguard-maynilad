@@ -291,23 +291,27 @@ function JobOrderForm({
             </select>
           </div>
           <div className="form-group">
-            <label>Team Members (optional — select any number)</label>
-            <div className="checkbox-list">
+            <label>Team Members (optional — click to select any number)</label>
+            <div className="member-list">
               {members.map((m) => {
                 const isLeader = m.fullName === leader;
+                const selected = isLeader || picked.includes(m.fullName);
                 return (
-                  <label key={m.id} className="checkbox-row" style={isLeader ? { opacity: 0.6 } : undefined}>
-                    <span className="checkbox-row-name">
-                      {m.fullName}
-                      {isLeader && ' (leader)'}
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={isLeader || picked.includes(m.fullName)}
-                      disabled={isLeader}
-                      onChange={() => toggleMember(m.fullName)}
-                    />
-                  </label>
+                  <button
+                    type="button"
+                    key={m.id}
+                    className={`member-card${selected ? ' is-selected' : ''}${isLeader ? ' is-leader' : ''}`}
+                    aria-pressed={selected}
+                    disabled={isLeader}
+                    onClick={() => !isLeader && toggleMember(m.fullName)}
+                  >
+                    <span className="member-name">{m.fullName}</span>
+                    {isLeader ? (
+                      <span className="member-tag is-leader">Leader</span>
+                    ) : (
+                      selected && <span className="member-tag">Selected</span>
+                    )}
+                  </button>
                 );
               })}
             </div>
@@ -949,6 +953,157 @@ function MaterialCombobox({
 }
 
 /**
+ * Searchable Job Order field — an optional combobox over active job orders.
+ * Selecting one links its reference to the request; it can be cleared back to
+ * "no job order". Typing filters by reference, title or linked complaint; free
+ * text is never stored (only a real selection or blank is committed).
+ */
+function JobOrderCombobox({
+  jobOrders,
+  value,
+  onChange,
+}: {
+  jobOrders: EntityRow[];
+  value: string;
+  onChange: (ref: string) => void;
+}) {
+  const labelOf = (j: EntityRow) => `${String(j.ref_code)} — ${String(j.title || 'Untitled')}`;
+  const selected = jobOrders.find((j) => String(j.ref_code) === value) ?? null;
+
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [highlight, setHighlight] = useState(-1);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Reflect the committed selection in the input whenever it changes.
+  useEffect(() => {
+    const s = jobOrders.find((j) => String(j.ref_code) === value) ?? null;
+    setQuery(s ? labelOf(s) : '');
+  }, [value, jobOrders]);
+
+  const close = () => {
+    setOpen(false);
+    setHighlight(-1);
+    setQuery(selected ? labelOf(selected) : ''); // discard un-committed typing
+  };
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) close();
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  });
+
+  const q = query.trim().toLowerCase();
+  const showingSelected = selected && q === labelOf(selected).toLowerCase();
+  const filtered = useMemo(() => {
+    const list =
+      !q || showingSelected
+        ? jobOrders
+        : jobOrders.filter((j) =>
+            `${j.ref_code} ${j.title ?? ''} ${j.incident_ref ?? ''}`.toLowerCase().includes(q),
+          );
+    return list.slice(0, 50);
+  }, [jobOrders, q, showingSelected]);
+
+  const pick = (j: EntityRow) => {
+    onChange(String(j.ref_code));
+    setOpen(false);
+    setHighlight(-1);
+  };
+  const clear = () => {
+    onChange('');
+    setQuery('');
+    setOpen(false);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) return setOpen(true);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlight((h) => Math.min(h + 1, filtered.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlight((h) => Math.max(h - 1, 0));
+    } else if (e.key === 'Enter' && open && highlight >= 0 && filtered[highlight]) {
+      e.preventDefault();
+      pick(filtered[highlight]);
+    } else if (e.key === 'Escape') {
+      close();
+    }
+  };
+
+  return (
+    <div className="combobox" ref={wrapRef}>
+      <div className={`combobox-control${value ? ' is-linked' : ''}`}>
+        <input
+          role="combobox"
+          aria-expanded={open}
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+            setHighlight(-1);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={onKeyDown}
+          placeholder="Search a job order (optional)…"
+        />
+        {value && (
+          <button type="button" className="combobox-caret" tabIndex={-1} aria-label="Clear job order" onClick={clear}>
+            ✕
+          </button>
+        )}
+        <button
+          type="button"
+          className="combobox-caret"
+          tabIndex={-1}
+          aria-label="Toggle job order list"
+          onClick={() => setOpen((o) => !o)}
+        >
+          ▾
+        </button>
+      </div>
+
+      {value ? (
+        <small className="combobox-hint is-linked">✓ Linked to {value}.</small>
+      ) : (
+        <small className="combobox-hint">Optional — leave blank to file without a job order.</small>
+      )}
+
+      {open && (
+        <ul className="combobox-list" role="listbox">
+          {filtered.length === 0 ? (
+            <li className="combobox-empty">No matching job order.</li>
+          ) : (
+            filtered.map((j, i) => (
+              <li
+                key={String(j.id)}
+                role="option"
+                aria-selected={value === String(j.ref_code)}
+                className={`combobox-option${i === highlight ? ' is-active' : ''}${
+                  value === String(j.ref_code) ? ' is-selected' : ''
+                }`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  pick(j);
+                }}
+                onMouseEnter={() => setHighlight(i)}
+              >
+                <span className="combobox-sku">{String(j.ref_code)}</span>
+                <span className="combobox-name">{String(j.title || 'Untitled')}</span>
+                <span className="combobox-stock">{j.incident_ref ? String(j.incident_ref) : ''}</span>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
  * The Material Request (MRF) create modal — the single source of truth for
  * filing a request, reused by the "New Request" button on the Material Requests
  * tab and the "Request Materials" button inside a Job Order. When opened from a
@@ -971,6 +1126,10 @@ function MaterialRequestForm({
   // Only active, in-stock (non-defective) inventory can be requested by SKU.
   const inventory = stats.materials.filter(
     (m) => !m.archived && m.status !== 'defective' && Number(m.quantity ?? 0) > 0,
+  );
+  // Active (open) job orders available to link a request to.
+  const activeJobOrders = stats.jobOrders.filter((j) =>
+    ['pending', 'in_progress'].includes(String(j.status)),
   );
 
   const [form, setForm] = useState({
@@ -1021,17 +1180,20 @@ function MaterialRequestForm({
         <input type="number" min={1} value={form.quantity} onChange={set('quantity')} />
       </div>
       <div className="form-group">
-        <label>Job Order Ref</label>
-        <input
-          value={form.job_order_ref}
-          onChange={set('job_order_ref')}
-          readOnly={Boolean(lockedJobOrderRef)}
-          placeholder="JO-XXXX (optional)"
-        />
-        {lockedJobOrderRef && (
-          <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>
-            Linked to this job order.
-          </small>
+        <label>Job Order Ref (optional)</label>
+        {lockedJobOrderRef ? (
+          <>
+            <input value={form.job_order_ref} readOnly />
+            <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>
+              Linked to this job order.
+            </small>
+          </>
+        ) : (
+          <JobOrderCombobox
+            jobOrders={activeJobOrders}
+            value={form.job_order_ref}
+            onChange={(ref) => setForm((f) => ({ ...f, job_order_ref: ref }))}
+          />
         )}
       </div>
       <div className="form-group">

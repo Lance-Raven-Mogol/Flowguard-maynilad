@@ -1887,6 +1887,73 @@ td strong {
   cursor: pointer;
 }
 
+/* Team-member picker — clickable cards (no checkboxes) in the job-order form. */
+.member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.member-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1.5px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+  color: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+
+.member-card:hover:not(:disabled):not(.is-selected) {
+  border-color: rgba(42, 111, 176, 0.45);
+  background: rgba(42, 111, 176, 0.04);
+}
+
+.member-card.is-selected {
+  border-color: var(--blue, #2a6fb0);
+  background: rgba(42, 111, 176, 0.12);
+  box-shadow: 0 0 0 1px var(--blue, #2a6fb0) inset;
+}
+
+.member-card.is-leader {
+  cursor: default;
+}
+
+.member-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.member-tag {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--blue, #2a6fb0);
+  background: rgba(42, 111, 176, 0.14);
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+
+.member-tag.is-leader {
+  color: #fff;
+  background: var(--blue, #2a6fb0);
+}
+
 /* Material combobox — searchable inventory picker in the MRF modal. */
 .combobox {
   position: relative;
