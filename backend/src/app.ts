@@ -9,7 +9,10 @@ import { errorHandler, notFoundHandler } from './middleware/error.middleware.js'
 export function createApp() {
   const app = express();
 
-  app.use(cors({ origin: env.corsOrigin }));
+  // A single "*" entry means allow any origin; otherwise match the list.
+  // (The cors package treats "*" literally inside an array, not as a wildcard.)
+  const corsOrigin = env.corsOrigin.includes('*') ? true : env.corsOrigin;
+  app.use(cors({ origin: corsOrigin }));
   // Generous limit: complaint photos travel as base64 (downscaled client-side).
   app.use(express.json({ limit: '12mb' }));
 
