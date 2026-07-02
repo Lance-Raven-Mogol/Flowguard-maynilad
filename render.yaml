@@ -1,0 +1,34 @@
+# Render blueprint for the FlowGuard API (Express + TypeScript backend).
+# Deploy: New → Blueprint, point Render at this repo. Then fill in the
+# environment variables marked `sync: false` in the Render dashboard.
+services:
+  - type: web
+    name: flowguard-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Render provides PORT automatically; the app reads it.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      # Comma-separated list of allowed frontend origins (no trailing slash).
+      # e.g. https://flowguard.vercel.app,https://flowguard-preview.vercel.app
+      - key: CORS_ORIGIN
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # Optional: personal access token (sbp_…) to auto-apply schema on boot.
+      - key: SUPABASE_ACCESS_TOKEN
+        sync: false

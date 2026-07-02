@@ -8,7 +8,7 @@ const app = createApp();
 
 app.listen(env.port, async () => {
   console.log(`FlowGuard API listening on http://localhost:${env.port}`);
-  console.log(`CORS origin: ${env.corsOrigin}`);
+  console.log(`CORS origin: ${env.corsOrigin.join(', ')}`);
   console.log(`Data store: ${isSupabaseConfigured ? 'Supabase' : 'in-memory'}`);
 
   if (isSupabaseConfigured) {

@@ -2,7 +2,13 @@
  * Low-level HTTP client. The only place that knows about fetch, base URLs,
  * auth headers and error envelopes — every service builds on this.
  */
-const BASE_URL = '/api';
+/**
+ * API base URL. In production, set VITE_API_URL to the backend origin
+ * (e.g. https://flowguard-api.onrender.com). Empty in dev so requests hit
+ * `/api` and are proxied to the local backend by Vite.
+ */
+const API_ROOT = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+const BASE_URL = `${API_ROOT}/api`;
 const TOKEN_KEY = 'flowguard.token';
 
 export const tokenStore = {

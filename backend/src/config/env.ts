@@ -9,7 +9,12 @@ export const env = {
   port: Number(process.env.PORT ?? 4000),
   jwtSecret: process.env.JWT_SECRET ?? 'flowguard-dev-secret-change-me',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
-  corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+  // One or more allowed origins (comma-separated). Supports the Vercel
+  // production URL plus preview deployments.
+  corsOrigin: (process.env.CORS_ORIGIN ?? 'http://localhost:5173')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean),
   isProduction: process.env.NODE_ENV === 'production',
 
   supabase: {

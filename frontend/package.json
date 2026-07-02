@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "FlowGuard — React + TypeScript frontend for the water utility management system.",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

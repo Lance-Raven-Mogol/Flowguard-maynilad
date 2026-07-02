@@ -426,13 +426,61 @@ Log in with the [admin account](#-admin-account), or create a new account from *
 | `PORT` | — | `4000` | API port |
 | `JWT_SECRET` | ✅ (prod) | dev fallback | Secret for signing JWTs |
 | `JWT_EXPIRES_IN` | — | `7d` | Token lifetime |
-| `CORS_ORIGIN` | — | `http://localhost:5173` | Allowed web origin |
+| `CORS_ORIGIN` | — | `http://localhost:5173` | Allowed web origin(s), comma‑separated, no trailing slash |
 | `SUPABASE_URL` | ✅ | — | Project URL |
 | `SUPABASE_ANON_KEY` | ✅ | — | Public anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅ | — | Service‑role key (server only) |
 | `SUPABASE_SECRET_KEY` | — | — | New‑style secret key (alternative) |
 
+**Frontend** (build‑time, prefixed `VITE_`):
+
+| Variable | Required | Default | Description |
+| --- | :---: | --- | --- |
+| `VITE_API_URL` | ✅ (prod) | `` (same‑origin `/api`) | Backend origin, e.g. `https://flowguard-api.onrender.com` — no trailing slash, no `/api` |
+
 > If Supabase isn't configured, the backend **falls back to an in‑memory store** so it still runs (data resets on restart).
+
+---
+
+## ☁️ Deployment (Render + Vercel)
+
+The backend deploys to **Render** and the frontend to **Vercel**. Deploy the
+backend first so you have its URL for the frontend.
+
+### 1. Backend → Render
+
+Uses the checked‑in [`render.yaml`](render.yaml) blueprint.
+
+1. **New → Blueprint** in Render and point it at this repo. It creates a
+   `flowguard-api` web service (root `backend`, build `npm install && npm run build`,
+   start `npm run start`, health check `/api/health`).
+2. Set the env vars marked *sync: false* in the dashboard:
+   `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and
+   `CORS_ORIGIN` (your Vercel URL — you can fill this in after step 2).
+   `JWT_SECRET` is auto‑generated; `PORT` is provided by Render.
+3. Deploy and note the URL, e.g. `https://flowguard-api.onrender.com`.
+
+> Run [`backend/supabase/schema.sql`](backend/supabase/schema.sql) in the Supabase
+> SQL editor once (or set `SUPABASE_ACCESS_TOKEN` to auto‑apply it on boot).
+
+### 2. Frontend → Vercel
+
+Uses the checked‑in [`frontend/vercel.json`](frontend/vercel.json).
+
+1. **Add New → Project** in Vercel, import this repo, and set **Root Directory**
+   to `frontend`. Framework (Vite), build, and output are auto‑detected.
+2. Add an env var **`VITE_API_URL`** = your Render URL (e.g.
+   `https://flowguard-api.onrender.com`) — no trailing slash, no `/api`.
+3. Deploy and note the URL, e.g. `https://flowguard.vercel.app`.
+
+### 3. Wire CORS
+
+Back in Render, set **`CORS_ORIGIN`** to your Vercel URL(s) (comma‑separated
+for preview deployments) and redeploy:
+
+```
+CORS_ORIGIN=https://flowguard.vercel.app
+```
 
 ---
 
