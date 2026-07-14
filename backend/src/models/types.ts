@@ -27,6 +27,11 @@ export interface User {
   passwordHash: string;
   avatarUrl?: string | null;
   createdAt: string;
+  startDate?: string | null;
+  isArchived?: boolean;
+  barangay?: string;
+  otpSecret?: string;
+  otpEnabled?: boolean;
 }
 
 /** Safe projection of a user for API responses. */
@@ -37,6 +42,9 @@ export interface PublicUser {
   role: Role;
   avatarUrl?: string | null;
   createdAt: string;
+  startDate?: string | null;
+  isArchived?: boolean;
+  barangay?: string;
 }
 
 /** Visual status pill variants reused across every table. */

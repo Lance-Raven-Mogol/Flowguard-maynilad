@@ -45,6 +45,22 @@ export const authService = {
     return res.user;
   },
 
+  async generateOtp(): Promise<{ code: string }> {
+    return api.post<{ code: string }>('/auth/otp/generate', {});
+  },
+
+  async verifyOtp(code: string): Promise<{ valid: boolean }> {
+    return api.post<{ valid: boolean }>('/auth/otp/verify', { code });
+  },
+
+  async enableOtp(): Promise<void> {
+    await api.post<{ ok: true }>('/auth/otp/enable', {});
+  },
+
+  async disableOtp(): Promise<void> {
+    await api.post<{ ok: true }>('/auth/otp/disable', {});
+  },
+
   logout(): void {
     tokenStore.clear();
   },

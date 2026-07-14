@@ -39,7 +39,29 @@ userRoutes.patch(
   requireAuth,
   asyncHandler(async (req, res) => {
     assertAdmin(req);
-    const user = await authService.adminUpdateRole(req.params.id, req.body?.role);
+    const user = await authService.adminUpdateRole(req.params.id, req.body?.role, req.user);
     res.json({ data: user });
+  }),
+);
+
+// Archive (soft-delete) a user — preserves audit trail.
+userRoutes.patch(
+  '/:id/archive',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    assertAdmin(req);
+    await userRepo.archive(req.params.id);
+    res.json({ ok: true });
+  }),
+);
+
+// Restore an archived user.
+userRoutes.patch(
+  '/:id/restore',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    assertAdmin(req);
+    await userRepo.restore(req.params.id);
+    res.json({ ok: true });
   }),
 );

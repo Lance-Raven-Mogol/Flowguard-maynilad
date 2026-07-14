@@ -22,6 +22,11 @@ interface UserRow {
   password_hash: string;
   avatar_url: string | null;
   created_at: string;
+  start_date: string | null;
+  is_archived: boolean;
+  barangay: string | null;
+  otp_secret: string | null;
+  otp_enabled: boolean;
 }
 
 function fromRow(row: UserRow): User {
@@ -33,6 +38,11 @@ function fromRow(row: UserRow): User {
     passwordHash: row.password_hash,
     avatarUrl: row.avatar_url,
     createdAt: row.created_at,
+    startDate: row.start_date,
+    isArchived: row.is_archived ?? false,
+    barangay: row.barangay ?? 'Boac',
+    otpSecret: row.otp_secret ?? undefined,
+    otpEnabled: row.otp_enabled ?? false,
   };
 }
 
@@ -41,6 +51,7 @@ export interface NewUser {
   email: string;
   role: Role;
   passwordHash: string;
+  startDate?: string;
 }
 
 export const userRepo = {
@@ -79,6 +90,7 @@ export const userRepo = {
         email: input.email.toLowerCase(),
         role: input.role,
         password_hash: input.passwordHash,
+        start_date: input.startDate ?? new Date().toISOString().slice(0, 10),
       })
       .select('*')
       .single<UserRow>();
@@ -88,7 +100,7 @@ export const userRepo = {
 
   async update(
     id: string,
-    fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string },
+    fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string; startDate?: string; isArchived?: boolean; barangay?: string; otpSecret?: string; otpEnabled?: boolean },
   ): Promise<User | undefined> {
     if (!supabase) return store.updateUser(id, fields);
 
@@ -98,6 +110,11 @@ export const userRepo = {
     if (fields.passwordHash !== undefined) row.password_hash = fields.passwordHash;
     if (fields.role !== undefined) row.role = fields.role;
     if (fields.avatarUrl !== undefined) row.avatar_url = fields.avatarUrl;
+    if (fields.startDate !== undefined) row.start_date = fields.startDate;
+    if (fields.isArchived !== undefined) row.is_archived = fields.isArchived;
+    if (fields.barangay !== undefined) row.barangay = fields.barangay;
+    if (fields.otpSecret !== undefined) row.otp_secret = fields.otpSecret;
+    if (fields.otpEnabled !== undefined) row.otp_enabled = fields.otpEnabled;
 
     const { data, error } = await supabase
       .from(TABLE)
@@ -114,17 +131,34 @@ export const userRepo = {
     if (!supabase) return [];
     const { data, error } = await supabase
       .from(TABLE)
-      .select('id, full_name, email, role, created_at, avatar_url')
+      .select('id, full_name, email, role, created_at, avatar_url, start_date, is_archived, barangay')
       .order('created_at', { ascending: true });
     if (error) throw new Error(`Supabase listPublic failed: ${error.message}`);
-    return (data ?? []).map((r: Omit<UserRow, 'password_hash'>) => ({
-      id: r.id,
-      fullName: r.full_name,
-      email: r.email,
-      role: r.role,
-      avatarUrl: r.avatar_url,
-      createdAt: r.created_at,
+    return (data ?? []).map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      fullName: r.full_name as string,
+      email: r.email as string,
+      role: r.role as Role,
+      avatarUrl: r.avatar_url as string | null,
+      createdAt: r.created_at as string,
+      startDate: r.start_date as string | null,
+      isArchived: (r.is_archived as boolean) ?? false,
+      barangay: (r.barangay as string) ?? 'Boac',
     }));
+  },
+
+  /** Archive (soft-delete) a user instead of hard deleting. */
+  async archive(id: string): Promise<void> {
+    if (!supabase) return;
+    const { error } = await supabase.from(TABLE).update({ is_archived: true }).eq('id', id);
+    if (error) throw new Error(`Supabase archive user failed: ${error.message}`);
+  },
+
+  /** Restore an archived user. */
+  async restore(id: string): Promise<void> {
+    if (!supabase) return;
+    const { error } = await supabase.from(TABLE).update({ is_archived: false }).eq('id', id);
+    if (error) throw new Error(`Supabase restore user failed: ${error.message}`);
   },
 
   /**

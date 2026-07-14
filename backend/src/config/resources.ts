@@ -68,9 +68,9 @@ export const RESOURCES: Record<string, ResourceDef> = {
   materials: {
     table: 'materials',
     writeRoles: ['inventory-officer'],
-    allowed: ['sku', 'name', 'category', 'description', 'quantity', 'unit', 'unit_price', 'supplier', 'source', 'min_level', 'status', 'archived'],
+    allowed: ['sku', 'name', 'category', 'description', 'quantity', 'unit', 'unit_price', 'supplier', 'source', 'min_level', 'status', 'archived', 'weight_kg', 'size', 'color'],
     required: ['name'],
-    numeric: ['quantity', 'unit_price', 'min_level'],
+    numeric: ['quantity', 'unit_price', 'min_level', 'weight_kg'],
     autoKeys: [{ column: 'sku', prefix: 'SKU', digits: 5 }],
   },
 
@@ -99,6 +99,41 @@ export const RESOURCES: Record<string, ResourceDef> = {
     allowed: ['title', 'body', 'area', 'type', 'status', 'published_at', 'archived'],
     required: ['title'],
     nullable: ['published_at'],
+  },
+
+  'audit-logs': {
+    table: 'audit_logs',
+    writeRoles: [],
+    allowed: ['entity', 'entity_id', 'action', 'actor', 'actor_role', 'details', 'archived'],
+    required: ['entity', 'action'],
+  },
+
+  'purchase-requests': {
+    table: 'purchase_requests',
+    writeRoles: ['inventory-officer'],
+    allowed: ['material_name', 'material_sku', 'quantity', 'unit', 'unit_price', 'total_cost', 'supplier', 'justification', 'requested_by', 'status', 'archived'],
+    required: ['material_name'],
+    numeric: ['quantity', 'unit_price', 'total_cost'],
+    autoKeys: [{ column: 'ref_code', prefix: 'PR', digits: 4 }],
+  },
+
+  payments: {
+    table: 'payments',
+    writeRoles: ['general-manager'],
+    allowed: ['customer_name', 'customer_email', 'amount', 'due_date', 'paid_date', 'status', 'notes', 'archived'],
+    required: ['customer_name', 'amount'],
+    numeric: ['amount'],
+    nullable: ['due_date', 'paid_date'],
+    autoKeys: [{ column: 'ref_code', prefix: 'PAY', digits: 5 }],
+  },
+
+  'supply-requests': {
+    table: 'supply_requests',
+    writeRoles: ['customer', 'zone-specialist', 'technical-team', 'inventory-officer'],
+    allowed: ['item_name', 'quantity', 'reason', 'requested_by', 'requested_by_id', 'status', 'archived'],
+    required: ['item_name'],
+    numeric: ['quantity'],
+    autoKeys: [{ column: 'ref_code', prefix: 'SR', digits: 4 }],
   },
 };
 

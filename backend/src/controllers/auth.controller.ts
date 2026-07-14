@@ -35,4 +35,29 @@ export const authController = {
     const user = await authService.updateAvatar(req.user.id, req.body?.dataUrl);
     res.json({ user });
   },
+
+  async generateOtp(req: Request, res: Response): Promise<void> {
+    if (!req.user) throw unauthorized();
+    const code = await authService.generateOtp(req.user.id);
+    // In production, send via email/SMS. For now, return in response for dev/testing.
+    res.json({ code, message: 'OTP generated. In production, this would be sent via email.' });
+  },
+
+  async verifyOtp(req: Request, res: Response): Promise<void> {
+    if (!req.user) throw unauthorized();
+    const valid = await authService.verifyOtp(req.user.id, req.body?.code ?? '');
+    res.json({ valid });
+  },
+
+  async enableOtp(req: Request, res: Response): Promise<void> {
+    if (!req.user) throw unauthorized();
+    await authService.enableOtp(req.user.id);
+    res.json({ ok: true });
+  },
+
+  async disableOtp(req: Request, res: Response): Promise<void> {
+    if (!req.user) throw unauthorized();
+    await authService.disableOtp(req.user.id);
+    res.json({ ok: true });
+  },
 };

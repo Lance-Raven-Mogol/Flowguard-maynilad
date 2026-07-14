@@ -25,6 +25,9 @@ export interface User {
   role: Role;
   avatarUrl?: string | null;
   createdAt: string;
+  startDate?: string | null;
+  isArchived?: boolean;
+  barangay?: string;
 }
 
 export type StatusTone = 'paid' | 'pending' | 'overdue';

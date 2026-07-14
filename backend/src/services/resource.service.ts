@@ -10,6 +10,29 @@ import type { PublicUser, Role } from '../models/types.js';
 import { withAssetHealth } from './assetHealth.js';
 import { badRequest, conflict, forbidden, notFound, serviceUnavailable } from '../utils/httpError.js';
 
+/* ---------------------------------------------------------- Audit logging */
+async function logAudit(
+  entity: string,
+  entityId: string | undefined,
+  action: string,
+  actor: string | undefined,
+  actorRole: string | undefined,
+  details: Record<string, unknown> = {},
+): Promise<void> {
+  try {
+    await repo.insertRow('audit_logs', {
+      entity,
+      entity_id: entityId ?? null,
+      action,
+      actor: actor ?? null,
+      actor_role: actorRole ?? null,
+      details,
+    });
+  } catch (err) {
+    console.warn('[audit] failed to write audit log:', err);
+  }
+}
+
 function getDef(entity: string): ResourceDef {
   const def = RESOURCES[entity];
   if (!def) throw notFound(`Unknown resource "${entity}".`);
@@ -189,6 +212,7 @@ export const resourceService = {
 
     try {
       const row = await writeResilient(values, (v) => repo.insertRow(def.table, v), def.critical);
+      await logAudit(entity, String(row.id ?? ''), 'create', user.fullName, user.role, values);
       // A job order dispatched for an incident schedules that incident.
       if (incidentRef) {
         try {
@@ -223,6 +247,7 @@ export const resourceService = {
     try {
       const row = await writeResilient(values, (v) => repo.updateRow(def.table, id, v), def.critical);
       if (!row) throw notFound('Record not found.');
+      await logAudit(entity, id, 'update', undefined, role, values);
       return enrich(entity, row);
     } catch (err) {
       if (err instanceof Error && err.name === 'HttpError') throw err;
@@ -234,5 +259,6 @@ export const resourceService = {
     const def = getDef(entity);
     if (!canWrite(def, role)) throw forbidden('You do not have permission to delete this record.');
     await repo.deleteRow(def.table, id);
+    await logAudit(entity, id, 'delete', undefined, role, {});
   },
 };

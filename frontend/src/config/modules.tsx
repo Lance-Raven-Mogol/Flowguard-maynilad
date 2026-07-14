@@ -55,6 +55,9 @@ const WRITE: Record<string, string[]> = {
   'material-requests': ['technical-team', 'inventory-officer', 'general-manager'],
   assets: ['technical-team', 'zone-specialist', 'general-manager'],
   advisories: ['technical-team', 'general-manager'],
+  'purchase-requests': ['inventory-officer', 'general-manager'],
+  payments: ['general-manager'],
+  'supply-requests': ['customer', 'zone-specialist', 'technical-team', 'inventory-officer', 'general-manager'],
 };
 
 interface ModuleProps {
@@ -746,8 +749,9 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
     { header: 'Material', cell: (r) => String(r.name ?? '') },
     { header: 'Category', cell: (r) => String(r.category ?? '—') },
     { header: 'Stock', cell: (r) => `${r.quantity ?? 0} ${r.unit ?? ''}`.trim() },
+    { header: 'Weight', cell: (r) => r.weight_kg ? `${r.weight_kg} kg` : '—' },
+    { header: 'Size', cell: (r) => String(r.size ?? '—') },
     { header: 'Unit Price', cell: (r) => money(r.unit_price) },
-    { header: 'Supplier', cell: (r) => String(r.supplier ?? '—') },
     { header: 'Status', cell: (r) => statusCell(r.status) },
   ];
 
@@ -757,6 +761,9 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
     { name: 'description', label: 'Description', kind: 'textarea' },
     { name: 'quantity', label: 'Quantity', kind: 'number', default: '0' },
     { name: 'unit', label: 'Unit', default: 'units' },
+    { name: 'weight_kg', label: 'Weight (kg)', kind: 'number' },
+    { name: 'size', label: 'Size', placeholder: 'e.g. 50mm, 4 inches' },
+    { name: 'color', label: 'Color', placeholder: 'e.g. Blue, Red' },
     { name: 'unit_price', label: 'Unit Price (₱)', kind: 'number' },
     { name: 'supplier', label: 'Supplier', placeholder: 'Supplier name' },
     { name: 'source', label: 'Source', kind: 'select', optionList: [{ value: 'mother-company', label: 'Mother Company' }, { value: 'external', label: 'External Supplier' }] },
@@ -1424,8 +1431,11 @@ interface UserRow {
   email: string;
   role: string;
   createdAt: string;
+  startDate?: string | null;
+  isArchived?: boolean;
+  barangay?: string;
 }
-const BLANK_USER = { fullName: '', email: '', password: '', role: 'customer' };
+const BLANK_USER = { fullName: '', email: '', password: '', role: 'customer', startDate: '' };
 
 export function UsersPanel({ filter }: ModuleProps) {
   const { notify } = useToast();
@@ -1435,6 +1445,7 @@ export function UsersPanel({ filter }: ModuleProps) {
   const [submitting, setSubmitting] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [form, setForm] = useState(BLANK_USER);
+  const [showArchived, setShowArchived] = useState(false);
 
   const load = () =>
     api
@@ -1465,7 +1476,7 @@ export function UsersPanel({ filter }: ModuleProps) {
     setBusyId(id);
     try {
       await api.patch(`/users/${id}/role`, { role });
-      notify('Role updated successfully!');
+      notify('Role updated! Email confirmation will be sent.');
       await load();
     } catch (e) {
       notify(e instanceof ApiError ? e.message : 'Could not update role.', 'error');
@@ -1474,39 +1485,87 @@ export function UsersPanel({ filter }: ModuleProps) {
     }
   };
 
+  const archiveUser = async (id: string) => {
+    setBusyId(id);
+    try {
+      await api.patch(`/users/${id}/archive`, {});
+      notify('User archived (resigned). Account preserved in audit trail.');
+      await load();
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not archive user.', 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const restoreUser = async (id: string) => {
+    setBusyId(id);
+    try {
+      await api.patch(`/users/${id}/restore`, {});
+      notify('User restored successfully!');
+      await load();
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not restore user.', 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const roleOptions = ROLES.map((r) => ({ value: r.value, label: r.label }));
+  const filteredRows = showArchived ? rows : rows.filter((u) => !u.isArchived);
 
   const table = useMemo(
     () => ({
       id: 'users',
-      columns: ['Name', 'Email', 'Role', 'Joined'],
-      rows: rows.map((u) => ({
+      columns: ['Name', 'Email', 'Role', 'Start Date', 'Status'],
+      rows: filteredRows.map((u) => ({
         id: u.id,
         cells: [
           { text: u.fullName, strong: true } as TableCell,
           { text: u.email },
           badgeCell(titleCase(u.role), 'low'),
-          { text: dateShort(u.createdAt) },
+          { text: u.startDate ? dateShort(u.startDate) : '—' },
+          u.isArchived ? badgeCell('Archived', 'high') : { text: 'Active', status: 'paid' as StatusTone },
         ],
       })),
     }),
-    [rows],
+    [filteredRows],
   );
 
   return (
     <>
-      <PanelHead title="User Management" action={<ActionButton label="Add User" icon="user-plus" onClick={() => setOpen(true)} />} />
+      <PanelHead
+        title="User Management"
+        action={
+          <div style={{ display: 'flex', gap: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+              <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+              Show Archived
+            </label>
+            <ActionButton label="Add User" icon="user-plus" onClick={() => setOpen(true)} />
+          </div>
+        }
+      />
       {error ? (
         <p style={{ color: '#e25577' }}>{error}</p>
       ) : (
         <DataTable
           table={table}
           filter={filter}
-          actionLabel="Assign Role"
+          actionLabel="Action"
           renderActions={(id) => {
             const u = rows.find((x) => x.id === id);
             if (!u) return null;
-            return <StatusSelect value={u.role} options={roleOptions} disabled={busyId === id} onChange={(role) => changeRole(id, role)} />;
+            return (
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                <StatusSelect value={u.role} options={roleOptions} disabled={busyId === id} onChange={(role) => changeRole(id, role)} />
+                {u.isArchived ? (
+                  <button className="btn-action" disabled={busyId === id} onClick={() => restoreUser(id)}>Restore</button>
+                ) : (
+                  <button className="btn-action btn-archive" disabled={busyId === id} onClick={() => archiveUser(id)}>Resign</button>
+                )}
+              </div>
+            );
           }}
         />
       )}
@@ -1526,6 +1585,10 @@ export function UsersPanel({ filter }: ModuleProps) {
             <input type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder="Min. 6 characters" />
           </div>
           <div className="form-group">
+            <label>Start Date (Join Date)</label>
+            <input type="date" value={form.startDate} onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))} />
+          </div>
+          <div className="form-group">
             <label>Role</label>
             <select value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}>
               {ROLES.map((r) => (
@@ -1535,8 +1598,268 @@ export function UsersPanel({ filter }: ModuleProps) {
               ))}
             </select>
           </div>
+          <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
+            A confirmation email will be sent to the user upon account creation and role changes.
+          </p>
         </Modal>
       )}
     </>
+  );
+}
+
+/* ------------------------------------------------------- Audit Log (read-only) */
+export function AuditLogsModule({ filter }: ModuleProps) {
+  const columns: ModuleColumn[] = [
+    { header: 'Timestamp', cell: (r) => dateShort(r.created_at) },
+    { header: 'Entity', cell: (r) => titleCase(r.entity) },
+    { header: 'Action', cell: (r) => badgeCell(titleCase(r.action), r.action === 'delete' ? 'high' : r.action === 'create' ? 'low' : 'medium') },
+    { header: 'Actor', cell: (r) => String(r.actor ?? 'System') },
+    { header: 'Details', cell: (r) => {
+      const d = r.details;
+      if (!d || typeof d !== 'object') return '—';
+      const keys = Object.keys(d as Record<string, unknown>).slice(0, 2);
+      return keys.map((k) => `${k}: ${String((d as Record<string, unknown>)[k])}`).join(', ') || '—';
+    }},
+  ];
+
+  return (
+    <LiveModule
+      entity="audit-logs"
+      title="Audit Log"
+      columns={columns}
+      fields={[]}
+      canWrite={false}
+      filter={filter}
+      metrics={(rows) => [
+        metric('al1', 'Total Entries', String(rows.length), 'scroll', 'customers'),
+        metric('al2', 'Creates', count(rows, (r) => r.action === 'create'), 'plus-circle', 'revenue'),
+        metric('al3', 'Updates', count(rows, (r) => r.action === 'update'), 'edit', 'profit'),
+        metric('al4', 'Deletes', count(rows, (r) => r.action === 'delete'), 'trash-2', 'invoices'),
+      ]}
+    />
+  );
+}
+
+/* --------------------------------------------------- Purchase Requests */
+const PR_STATUS = [
+  { value: 'pending', label: 'Pending' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'ordered', label: 'Ordered' },
+  { value: 'received', label: 'Received' },
+  { value: 'rejected', label: 'Rejected' },
+];
+
+export function PurchaseRequestsModule({ filter }: ModuleProps) {
+  const { user } = useAuth();
+  const role = user!.role;
+  const canWrite = WRITE['purchase-requests'].includes(role);
+  const canApprove = role === 'general-manager';
+
+  const columns: ModuleColumn[] = [
+    { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
+    { header: 'Material', cell: (r) => String(r.material_name ?? '') },
+    { header: 'Qty', cell: (r) => `${r.quantity ?? 0} ${r.unit ?? ''}`.trim() },
+    { header: 'Unit Price', cell: (r) => money(r.unit_price) },
+    { header: 'Total', cell: (r) => money(r.total_cost) },
+    { header: 'Supplier', cell: (r) => String(r.supplier ?? '—') },
+    { header: 'Requested By', cell: (r) => String(r.requested_by ?? '—') },
+    { header: 'Status', cell: (r) => statusCell(r.status) },
+  ];
+
+  const fields: ModuleField[] = [
+    { name: 'material_name', label: 'Material Name', placeholder: 'Material to purchase' },
+    { name: 'quantity', label: 'Quantity', kind: 'number', default: '1' },
+    { name: 'unit', label: 'Unit', default: 'units' },
+    { name: 'unit_price', label: 'Unit Price (₱)', kind: 'number' },
+    { name: 'total_cost', label: 'Total Cost (₱)', kind: 'number' },
+    { name: 'supplier', label: 'Supplier', placeholder: 'Supplier name' },
+    { name: 'justification', label: 'Justification', kind: 'textarea', placeholder: 'Why is this purchase needed?' },
+    { name: 'requested_by', label: 'Requested By', default: user!.fullName, readOnly: true },
+  ];
+
+  return (
+    <LiveModule
+      entity="purchase-requests"
+      title="Purchase Requests"
+      createLabel="New Purchase Request"
+      columns={columns}
+      fields={fields}
+      canWrite={canWrite}
+      filter={filter}
+      metrics={(rows) => [
+        metric('pr1', 'Total Requests', String(rows.length), 'shopping-cart', 'customers'),
+        metric('pr2', 'Pending', count(rows, (r) => r.status === 'pending'), 'clock', 'revenue'),
+        metric('pr3', 'Approved', count(rows, (r) => r.status === 'approved'), 'check-circle', 'profit'),
+        metric('pr4', 'Total Value', money(rows.reduce((s, r) => s + Number(r.total_cost || 0), 0)), 'wallet', 'invoices'),
+      ]}
+      actions={(c) => (
+        <>
+          <ViewAction title={`Purchase Request ${c.row.ref_code}`} wide>
+            <dl className="detail-list">
+              <DetailRow label="Reference">{String(c.row.ref_code ?? '')}</DetailRow>
+              <DetailRow label="Material">{String(c.row.material_name ?? '')}</DetailRow>
+              <DetailRow label="Quantity">{`${c.row.quantity ?? 0} ${c.row.unit ?? ''}`}</DetailRow>
+              <DetailRow label="Unit Price">{money(c.row.unit_price)}</DetailRow>
+              <DetailRow label="Total Cost">{money(c.row.total_cost)}</DetailRow>
+              <DetailRow label="Supplier">{String(c.row.supplier ?? '—')}</DetailRow>
+              <DetailRow label="Justification">{String(c.row.justification ?? '—')}</DetailRow>
+              <DetailRow label="Requested By">{String(c.row.requested_by ?? '—')}</DetailRow>
+              <DetailRow label="Status">{titleCase(c.row.status)}</DetailRow>
+            </dl>
+          </ViewAction>
+          {canWrite && (
+            <>
+              {canApprove && !c.archived && <StatusSelect value={String(c.row.status)} options={PR_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />}
+              <EditBtn c={c} />
+              <ArchiveBtn c={c} />
+            </>
+          )}
+        </>
+      )}
+    />
+  );
+}
+
+/* ------------------------------------------------------- E-Billing / Payments */
+const PAYMENT_STATUS = [
+  { value: 'pending', label: 'Pending' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'late', label: 'Late' },
+  { value: 'overdue', label: 'Overdue' },
+];
+
+export function PaymentsModule({ filter }: ModuleProps) {
+  const { user } = useAuth();
+  const role = user!.role;
+  const canWrite = WRITE.payments.includes(role);
+
+  const columns: ModuleColumn[] = [
+    { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
+    { header: 'Customer', cell: (r) => String(r.customer_name ?? '') },
+    { header: 'Amount', cell: (r) => money(r.amount) },
+    { header: 'Due Date', cell: (r) => dateShort(r.due_date) },
+    { header: 'Paid Date', cell: (r) => dateShort(r.paid_date) },
+    { header: 'Status', cell: (r) => statusCell(r.status) },
+  ];
+
+  const fields: ModuleField[] = [
+    { name: 'customer_name', label: 'Customer Name' },
+    { name: 'customer_email', label: 'Customer Email', placeholder: 'email@example.com' },
+    { name: 'amount', label: 'Amount (₱)', kind: 'number' },
+    { name: 'due_date', label: 'Due Date', kind: 'date' },
+    { name: 'paid_date', label: 'Paid Date', kind: 'date' },
+    { name: 'status', label: 'Status', kind: 'select', optionList: PAYMENT_STATUS },
+    { name: 'notes', label: 'Notes', kind: 'textarea' },
+  ];
+
+  return (
+    <LiveModule
+      entity="payments"
+      title="E-Billing & Payments"
+      createLabel="Record Payment"
+      columns={columns}
+      fields={fields}
+      canWrite={canWrite}
+      filter={filter}
+      metrics={(rows) => [
+        metric('pay1', 'Total Records', String(rows.length), 'credit-card', 'customers'),
+        metric('pay2', 'Paid', count(rows, (r) => r.status === 'paid'), 'check-circle', 'revenue'),
+        metric('pay3', 'Late', count(rows, (r) => r.status === 'late'), 'clock', 'profit'),
+        metric('pay4', 'Overdue', count(rows, (r) => r.status === 'overdue'), 'alert-triangle', 'invoices'),
+      ]}
+      actions={(c) => (
+        <>
+          <ViewAction title={`Payment ${c.row.ref_code}`} wide>
+            <dl className="detail-list">
+              <DetailRow label="Reference">{String(c.row.ref_code ?? '')}</DetailRow>
+              <DetailRow label="Customer">{String(c.row.customer_name ?? '')}</DetailRow>
+              <DetailRow label="Email">{String(c.row.customer_email ?? '—')}</DetailRow>
+              <DetailRow label="Amount">{money(c.row.amount)}</DetailRow>
+              <DetailRow label="Due Date">{dateShort(c.row.due_date)}</DetailRow>
+              <DetailRow label="Paid Date">{dateShort(c.row.paid_date)}</DetailRow>
+              <DetailRow label="Status">{titleCase(c.row.status)}</DetailRow>
+              <DetailRow label="Notes">{String(c.row.notes ?? '—')}</DetailRow>
+            </dl>
+          </ViewAction>
+          {canWrite && (
+            <>
+              {!c.archived && <StatusSelect value={String(c.row.status)} options={PAYMENT_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />}
+              <EditBtn c={c} />
+              <ArchiveBtn c={c} />
+            </>
+          )}
+        </>
+      )}
+    />
+  );
+}
+
+/* --------------------------------------------------- Supply Requests */
+const SR_STATUS = [
+  { value: 'pending', label: 'Pending' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'fulfilled', label: 'Fulfilled' },
+  { value: 'rejected', label: 'Rejected' },
+];
+
+export function SupplyRequestsModule({ filter }: ModuleProps) {
+  const { user } = useAuth();
+  const role = user!.role;
+  const canWrite = WRITE['supply-requests'].includes(role);
+  const canApprove = role === 'inventory-officer' || role === 'general-manager';
+
+  const columns: ModuleColumn[] = [
+    { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
+    { header: 'Item', cell: (r) => String(r.item_name ?? '') },
+    { header: 'Qty', cell: (r) => String(r.quantity ?? 0) },
+    { header: 'Reason', cell: (r) => String(r.reason ?? '—') },
+    { header: 'Requested By', cell: (r) => String(r.requested_by ?? '—') },
+    { header: 'Status', cell: (r) => statusCell(r.status) },
+  ];
+
+  const fields: ModuleField[] = [
+    { name: 'item_name', label: 'Item Name', placeholder: 'What do you need?' },
+    { name: 'quantity', label: 'Quantity', kind: 'number', default: '1' },
+    { name: 'reason', label: 'Reason', kind: 'textarea', placeholder: 'Why do you need this?' },
+    { name: 'requested_by', label: 'Requested By', default: user!.fullName, readOnly: true },
+  ];
+
+  return (
+    <LiveModule
+      entity="supply-requests"
+      title="Supplies Request"
+      createLabel="New Supply Request"
+      columns={columns}
+      fields={fields}
+      canWrite={canWrite}
+      filter={filter}
+      metrics={(rows) => [
+        metric('sr1', 'Total Requests', String(rows.length), 'package', 'customers'),
+        metric('sr2', 'Pending', count(rows, (r) => r.status === 'pending'), 'clock', 'revenue'),
+        metric('sr3', 'Fulfilled', count(rows, (r) => r.status === 'fulfilled'), 'check-circle', 'profit'),
+        metric('sr4', 'Rejected', count(rows, (r) => r.status === 'rejected'), 'x-circle', 'invoices'),
+      ]}
+      actions={(c) => (
+        <>
+          <ViewAction title={`Supply Request ${c.row.ref_code}`}>
+            <dl className="detail-list">
+              <DetailRow label="Reference">{String(c.row.ref_code ?? '')}</DetailRow>
+              <DetailRow label="Item">{String(c.row.item_name ?? '')}</DetailRow>
+              <DetailRow label="Quantity">{String(c.row.quantity ?? 0)}</DetailRow>
+              <DetailRow label="Reason">{String(c.row.reason ?? '—')}</DetailRow>
+              <DetailRow label="Requested By">{String(c.row.requested_by ?? '—')}</DetailRow>
+              <DetailRow label="Status">{titleCase(c.row.status)}</DetailRow>
+            </dl>
+          </ViewAction>
+          {canWrite && (
+            <>
+              {canApprove && !c.archived && <StatusSelect value={String(c.row.status)} options={SR_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />}
+              <EditBtn c={c} />
+              <ArchiveBtn c={c} />
+            </>
+          )}
+        </>
+      )}
+    />
   );
 }

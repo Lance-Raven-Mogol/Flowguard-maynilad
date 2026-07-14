@@ -115,14 +115,19 @@ function CustomerOverview({ stats, fullName }: { stats: DashboardStats; fullName
 /* ------------------------------------------------------------------ Manager */
 function ManagerOverview({ stats }: { stats: DashboardStats }) {
   const inv = stats.materials.reduce((s, m) => s + Number(m.quantity || 0) * Number(m.unit_price || 0), 0);
+  const pendingJobs = stats.jobOrders.filter((j) => j.status === 'pending');
+  const ongoingJobs = stats.jobOrders.filter((j) => j.status === 'in_progress');
+  const pendingIncidents = stats.incidents.filter((i) => i.status === 'under_verification');
+  const ongoingIncidents = stats.incidents.filter((i) => i.status === 'in_progress');
+
   return (
     <>
       <MetricsGrid
         metrics={[
-          metric('g1', 'Open Incidents', n(stats.incidents, (i) => i.status !== 'resolved'), 'message-square', 'customers'),
-          metric('g2', 'Active Job Orders', n(stats.jobOrders, (j) => j.status === 'pending' || j.status === 'in_progress'), 'clipboard-list', 'revenue'),
+          metric('g1', 'Pending Incidents', pendingIncidents.length, 'clock', 'customers'),
+          metric('g2', 'Ongoing Job Orders', ongoingJobs.length, 'wrench', 'revenue'),
           metric('g3', 'Low Stock Items', n(stats.materials, (m) => m.status === 'low_stock'), 'alert-triangle', 'profit'),
-          metric('g4', 'Critical Assets', n(stats.assets, (a) => Number(a.health_score) < 15 || a.condition === 'dispose'), 'wrench', 'invoices'),
+          metric('g4', 'Pending Payments', n(stats.payments, (p) => p.status === 'pending' || p.status === 'overdue'), 'credit-card', 'invoices'),
         ]}
       />
       <section className="analytics-grid" style={{ marginTop: 22 }}>
@@ -132,8 +137,8 @@ function ManagerOverview({ stats }: { stats: DashboardStats }) {
             value={String(stats.incidents.length)}
             label="Incidents"
             legend={[
-              { label: 'Under Verification', value: String(n(stats.incidents, (i) => i.status === 'under_verification')), dot: 'dark' },
-              { label: 'In Progress / Scheduled', value: String(n(stats.incidents, (i) => i.status === 'in_progress' || i.status === 'scheduled')), dot: 'blue' },
+              { label: 'Pending Verification', value: String(pendingIncidents.length), dot: 'dark' },
+              { label: 'Ongoing', value: String(ongoingIncidents.length), dot: 'blue' },
               { label: 'Resolved', value: String(n(stats.incidents, (i) => i.status === 'resolved')), dot: 'pale' },
             ]}
           />
@@ -141,27 +146,32 @@ function ManagerOverview({ stats }: { stats: DashboardStats }) {
         <StatList
           title="Operations Snapshot"
           items={[
-            { icon: 'clipboard-list', color: 'var(--blue)', label: 'Job Orders', value: String(stats.jobOrders.length) },
-            { icon: 'box', color: '#16a34a', label: 'Registered Assets', value: String(stats.assets.length) },
-            { icon: 'file-input', color: '#f59e0b', label: 'Pending Requests', value: String(n(stats.materialRequests, (r) => r.status === 'pending')) },
-            { icon: 'megaphone', color: 'var(--pink)', label: 'Published Advisories', value: String(n(stats.advisories, (a) => a.status === 'published')) },
+            { icon: 'clipboard-list', color: 'var(--blue)', label: 'Pending Job Orders', value: String(pendingJobs.length) },
+            { icon: 'wrench', color: '#16a34a', label: 'Ongoing Job Orders', value: String(ongoingJobs.length) },
+            { icon: 'file-input', color: '#f59e0b', label: 'Pending MRFs', value: String(n(stats.materialRequests, (r) => r.status === 'pending')) },
+            { icon: 'shopping-cart', color: 'var(--pink)', label: 'Pending Purchases', value: String(n(stats.purchaseRequests, (r) => r.status === 'pending')) },
           ]}
         />
       </section>
       <div style={{ marginTop: 22 }}>
-        <PanelHead title="Latest Incidents" />
+        <PanelHead title="Pending & Ongoing" />
         <DataTable
           table={recent(
-            ['Ref', 'Type', 'Location', 'Urgency', 'Status'],
-            stats.incidents.slice(0, 6).map((i) => [{ text: String(i.ref_code), strong: true }, { text: title(i.type) }, { text: String(i.location ?? '—') }, bCell(title(i.urgency), String(i.urgency) as BadgeTone), sCell(i.status)]),
+            ['Ref', 'Type', 'Title/Location', 'Status'],
+            [
+              ...pendingIncidents.slice(0, 3).map((i) => [{ text: String(i.ref_code), strong: true }, { text: 'Incident' }, { text: String(i.location ?? i.description ?? '—') }, sCell(i.status)]),
+              ...ongoingIncidents.slice(0, 3).map((i) => [{ text: String(i.ref_code), strong: true }, { text: 'Incident' }, { text: String(i.location ?? i.description ?? '—') }, sCell(i.status)]),
+              ...pendingJobs.slice(0, 3).map((j) => [{ text: String(j.ref_code), strong: true }, { text: 'Job Order' }, { text: String(j.title ?? '—') }, sCell(j.status)]),
+              ...ongoingJobs.slice(0, 3).map((j) => [{ text: String(j.ref_code), strong: true }, { text: 'Job Order' }, { text: String(j.title ?? '—') }, sCell(j.status)]),
+            ].slice(0, 8),
           )}
         />
       </div>
       <InfoCardGrid
         cards={[
           { icon: 'box', tint: '#f0f7ff', color: 'var(--blue)', label: 'Inventory Value', value: money(inv), note: `${stats.materials.length} SKUs tracked` },
-          { icon: 'users', tint: '#f0fdf4', color: '#16a34a', label: 'Job Orders Completed', value: String(n(stats.jobOrders, (j) => j.status === 'completed')), note: 'All time' },
-          { icon: 'shield-check', tint: '#fff8f1', color: '#f59e0b', label: 'Healthy Assets', value: String(n(stats.assets, (a) => Number(a.health_score) >= 70)), note: 'Health score ≥ 70' },
+          { icon: 'users', tint: '#f0fdf4', color: '#16a34a', label: 'Completed', value: String(n(stats.jobOrders, (j) => j.status === 'completed')), note: 'All time' },
+          { icon: 'credit-card', tint: '#fff8f1', color: '#f59e0b', label: 'Late Payments', value: String(n(stats.payments, (p) => p.status === 'late' || p.status === 'overdue')), note: 'Needs attention' },
         ]}
       />
     </>

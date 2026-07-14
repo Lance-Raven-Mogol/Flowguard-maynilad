@@ -116,6 +116,11 @@ create table if not exists public.advisories (
 
 -- Incremental columns (safe to re-run).
 alter table public.app_users         add column if not exists avatar_url text;
+alter table public.app_users         add column if not exists start_date date;
+alter table public.app_users         add column if not exists is_archived boolean not null default false;
+alter table public.app_users         add column if not exists barangay text default 'Boac';
+alter table public.app_users         add column if not exists otp_secret text;
+alter table public.app_users         add column if not exists otp_enabled boolean not null default false;
 alter table public.incidents         add column if not exists archived boolean not null default false;
 -- Zone-specialist remarks forwarded to the technical team + customer photo evidence.
 alter table public.incidents         add column if not exists remarks text;
@@ -126,6 +131,9 @@ alter table public.job_orders        add column if not exists team_name    text;
 alter table public.job_orders        add column if not exists team_leader  text;
 alter table public.job_orders        add column if not exists team_members jsonb not null default '[]'::jsonb;
 alter table public.materials         add column if not exists archived boolean not null default false;
+alter table public.materials         add column if not exists weight_kg numeric(10,2) default 0;
+alter table public.materials         add column if not exists size text;
+alter table public.materials         add column if not exists color text;
 alter table public.material_requests add column if not exists archived boolean not null default false;
 -- Set once, server-side, when an approved request's stock has been deducted
 -- from inventory — guarantees the deduction happens exactly once.
@@ -133,14 +141,81 @@ alter table public.material_requests add column if not exists stock_deducted boo
 alter table public.assets            add column if not exists archived boolean not null default false;
 alter table public.advisories        add column if not exists archived boolean not null default false;
 
+-- ----------------------------------------------- Audit log -----------------
+create table if not exists public.audit_logs (
+  id          uuid primary key default gen_random_uuid(),
+  entity      text        not null,
+  entity_id   text,
+  action      text        not null,
+  actor       text,
+  actor_role  text,
+  details     jsonb       not null default '{}'::jsonb,
+  created_at  timestamptz not null default now()
+);
+alter table public.audit_logs add column if not exists archived boolean not null default false;
+
+-- --------------------------------------------- Purchase requests -----------
+create table if not exists public.purchase_requests (
+  id              uuid primary key default gen_random_uuid(),
+  ref_code        text unique not null,
+  material_name   text not null,
+  material_sku    text,
+  quantity        integer not null default 1,
+  unit            text default 'units',
+  unit_price      numeric(12,2) default 0,
+  total_cost      numeric(12,2) default 0,
+  supplier        text,
+  justification   text,
+  requested_by    text,
+  status          text not null default 'pending'
+                  check (status in ('pending','approved','ordered','received','rejected')),
+  created_at      timestamptz not null default now()
+);
+alter table public.purchase_requests add column if not exists archived boolean not null default false;
+
+-- --------------------------------------------- E-Billing -------------------
+create table if not exists public.payments (
+  id              uuid primary key default gen_random_uuid(),
+  ref_code        text unique not null,
+  customer_name   text,
+  customer_email  text,
+  amount          numeric(12,2) not null default 0,
+  due_date        date,
+  paid_date       date,
+  status          text not null default 'pending'
+                  check (status in ('pending','paid','late','overdue')),
+  notes           text,
+  created_at      timestamptz not null default now()
+);
+alter table public.payments add column if not exists archived boolean not null default false;
+
+-- --------------------------------------------- Supply requests --------------
+create table if not exists public.supply_requests (
+  id              uuid primary key default gen_random_uuid(),
+  ref_code        text unique not null,
+  item_name       text not null,
+  quantity        integer not null default 1,
+  reason          text,
+  requested_by    text,
+  requested_by_id uuid,
+  status          text not null default 'pending'
+                  check (status in ('pending','approved','fulfilled','rejected')),
+  created_at      timestamptz not null default now()
+);
+alter table public.supply_requests add column if not exists archived boolean not null default false;
+
 -- RLS on (backend uses the service-role key, which bypasses it).
-alter table public.app_users         enable row level security;
-alter table public.incidents         enable row level security;
-alter table public.job_orders        enable row level security;
-alter table public.materials         enable row level security;
-alter table public.material_requests enable row level security;
-alter table public.assets            enable row level security;
-alter table public.advisories        enable row level security;
+alter table public.app_users          enable row level security;
+alter table public.incidents          enable row level security;
+alter table public.job_orders         enable row level security;
+alter table public.materials          enable row level security;
+alter table public.material_requests  enable row level security;
+alter table public.assets             enable row level security;
+alter table public.advisories         enable row level security;
+alter table public.audit_logs         enable row level security;
+alter table public.purchase_requests  enable row level security;
+alter table public.payments           enable row level security;
+alter table public.supply_requests    enable row level security;
 
 -- ============================================================================
 -- No seed business data. Tables start empty; the only account created is the

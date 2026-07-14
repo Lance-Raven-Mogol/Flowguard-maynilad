@@ -12,10 +12,14 @@ import { AccountSettings } from '../views/dashboard/AccountSettings';
 import {
   AdvisoriesModule,
   AssetsModule,
+  AuditLogsModule,
   IncidentsModule,
   JobOrdersModule,
   MaterialRequestsModule,
   MaterialsModule,
+  PaymentsModule,
+  PurchaseRequestsModule,
+  SupplyRequestsModule,
   UsersPanel,
 } from './modules';
 
@@ -83,6 +87,10 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter }) => <IncidentsModule filter={filter} mine />,
       },
       {
+        id: 'supply-requests', label: 'Supply Requests', icon: 'package', group: 'main',
+        render: ({ filter }) => <SupplyRequestsModule filter={filter} />,
+      },
+      {
         id: 'advisories', label: 'Service Advisories', icon: 'megaphone', group: 'main',
         render: ({ filter }) => <AdvisoriesModule filter={filter} readOnly title="Service Advisories" />,
       },
@@ -124,12 +132,28 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter }) => <MaterialRequestsModule filter={filter} />,
       },
       {
+        id: 'purchase', label: 'Purchase Requests', icon: 'shopping-cart', group: 'main',
+        render: ({ filter }) => <PurchaseRequestsModule filter={filter} />,
+      },
+      {
+        id: 'payments', label: 'E-Billing', icon: 'credit-card', group: 'main',
+        render: ({ filter }) => <PaymentsModule filter={filter} />,
+      },
+      {
+        id: 'supply-requests', label: 'Supply Requests', icon: 'package', group: 'main',
+        render: ({ filter }) => <SupplyRequestsModule filter={filter} />,
+      },
+      {
         id: 'assets', label: 'Asset Lifecycle', icon: 'box', group: 'main',
         render: ({ filter }) => <AssetsModule filter={filter} />,
       },
       {
         id: 'advisories', label: 'Service Advisories', icon: 'megaphone', group: 'main',
         render: ({ filter }) => <AdvisoriesModule filter={filter} />,
+      },
+      {
+        id: 'audit', label: 'Audit Log', icon: 'scroll', group: 'support',
+        render: ({ filter }) => <AuditLogsModule filter={filter} />,
       },
       settings('System Settings'),
     ],

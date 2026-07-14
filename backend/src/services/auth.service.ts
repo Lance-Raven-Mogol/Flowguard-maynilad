@@ -4,18 +4,46 @@
  */
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 import { userRepo } from '../models/userRepo.js';
-import { renameIncidentReporter } from '../models/resourceRepo.js';
+import { renameIncidentReporter, insertRow as auditInsert } from '../models/resourceRepo.js';
 import { uploadAvatar } from '../models/supabase.js';
 import { ROLES, type PublicUser, type Role, type User } from '../models/types.js';
 import { badRequest, conflict, notFound, unauthorized } from '../utils/httpError.js';
+
+/* ---------------------------------------------------------- Audit logging */
+async function logUserAudit(
+  action: string,
+  actor: string | undefined,
+  actorRole: string | undefined,
+  targetUserId: string | undefined,
+  details: Record<string, unknown> = {},
+): Promise<void> {
+  try {
+    await auditInsert('audit_logs', {
+      entity: 'users',
+      entity_id: targetUserId ?? null,
+      action,
+      actor: actor ?? null,
+      actor_role: actorRole ?? null,
+      details,
+    });
+  } catch (err) {
+    console.warn('[audit] failed to write user audit log:', err);
+  }
+}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function toPublicUser(user: User): PublicUser {
   const { passwordHash, ...pub } = user;
-  return pub;
+  return {
+    ...pub,
+    startDate: user.startDate,
+    isArchived: user.isArchived,
+    barangay: user.barangay,
+  };
 }
 
 function signToken(user: User): string {
@@ -50,6 +78,7 @@ export const authService = {
       role: 'customer',
       passwordHash: bcrypt.hashSync(password, 10),
     });
+    await logUserAudit('register', fullName, 'customer', user.id, { email, role: 'customer' });
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
@@ -68,7 +97,7 @@ export const authService = {
   },
 
   /** Admin (GM) — create a staff account with an explicit role. */
-  async adminCreateUser(input: { fullName?: string; email?: string; password?: string; role?: string }): Promise<PublicUser> {
+  async adminCreateUser(input: { fullName?: string; email?: string; password?: string; role?: string; startDate?: string }): Promise<PublicUser> {
     const fullName = input.fullName?.trim();
     const email = input.email?.trim().toLowerCase();
     const password = input.password ?? '';
@@ -80,15 +109,27 @@ export const authService = {
     if (!ROLES.includes(role)) throw badRequest('A valid role is required.');
     if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
 
-    const user = await userRepo.create({ fullName, email, role, passwordHash: bcrypt.hashSync(password, 10) });
+    const user = await userRepo.create({
+      fullName,
+      email,
+      role,
+      passwordHash: bcrypt.hashSync(password, 10),
+      startDate: input.startDate,
+    });
+    await logUserAudit('admin_create_user', undefined, 'general-manager', user.id, { fullName, email, role });
     return toPublicUser(user);
   },
 
   /** Admin (GM) — reassign a user's role. */
-  async adminUpdateRole(userId: string, role?: string): Promise<PublicUser> {
+  async adminUpdateRole(userId: string, role?: string, actorUser?: PublicUser): Promise<PublicUser> {
     if (!ROLES.includes(role as Role)) throw badRequest('A valid role is required.');
+    const before = await userRepo.findById(userId);
     const updated = await userRepo.update(userId, { role: role as Role });
     if (!updated) throw notFound('User not found.');
+    await logUserAudit('role_change', actorUser?.fullName, 'general-manager', userId, {
+      from: before?.role,
+      to: role,
+    });
     return toPublicUser(updated);
   },
 
@@ -147,5 +188,41 @@ export const authService = {
     } catch {
       throw unauthorized('Invalid or expired session.');
     }
+  },
+
+  /** Generate and store a 6-digit OTP for the user. Returns the code (to be sent via email/SMS). */
+  async generateOtp(userId: string): Promise<string> {
+    const code = crypto.randomInt(100000, 999999).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes
+    await userRepo.update(userId, { otpSecret: `${code}:${expiresAt}` });
+    return code;
+  },
+
+  /** Verify a 6-digit OTP code for a user. */
+  async verifyOtp(userId: string, code: string): Promise<boolean> {
+    const user = await userRepo.findById(userId);
+    if (!user || !user.otpSecret) return false;
+    const [stored, expiresAt] = user.otpSecret.split(':');
+    if (stored !== code) return false;
+    if (new Date(expiresAt) < new Date()) return false;
+    // Clear the OTP after successful verification
+    await userRepo.update(userId, { otpSecret: undefined });
+    return true;
+  },
+
+  /** Enable OTP for a user. */
+  async enableOtp(userId: string): Promise<void> {
+    await userRepo.update(userId, { otpEnabled: true });
+  },
+
+  /** Disable OTP for a user. */
+  async disableOtp(userId: string): Promise<void> {
+    await userRepo.update(userId, { otpEnabled: false, otpSecret: undefined });
+  },
+
+  /** Check if a user has OTP enabled. */
+  async isOtpEnabled(userId: string): Promise<boolean> {
+    const user = await userRepo.findById(userId);
+    return user?.otpEnabled ?? false;
   },
 };
