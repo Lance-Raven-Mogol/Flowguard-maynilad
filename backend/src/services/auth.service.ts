@@ -1,98 +1,86 @@
 /**
- * Auth service — OTP via Supabase Auth with fallback to screen-displayed code.
- *
- * When Supabase Auth email fails (SMTP not configured properly), the OTP
- * code is returned in the API response so it appears on the user's screen.
+ * Auth service — OTP via Resend API (direct, not through Supabase Auth).
  */
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 import { userRepo } from '../models/userRepo.js';
-import { supabase, supabaseAuth } from '../models/supabase.js';
+import { supabase } from '../models/supabase.js';
 import { renameIncidentReporter, insertRow as auditInsert } from '../models/resourceRepo.js';
 import { uploadAvatar } from '../models/supabase.js';
 import { ROLES, type PublicUser, type Role, type User } from '../models/types.js';
 import { badRequest, conflict, notFound, unauthorized } from '../utils/httpError.js';
 
-/* ---------------------------------------------------------- Email */
-async function sendOtpEmail(email: string): Promise<boolean> {
-  if (!supabaseAuth) {
-    console.warn(`[email] Supabase Auth not configured. OTP will be shown on screen.`);
-    return false;
-  }
+/* ---------------------------------------------------------- Email via Resend API */
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const RESEND_FROM = 'onboarding@resend.dev';
+const VERIFIED_EMAIL = 'xyze0001@gmail.com';
+
+async function sendOtpEmail(toEmail: string, otpCode: string): Promise<boolean> {
+  const html = `<!DOCTYPE html><html><head><style>body{font-family:'Segoe UI',sans-serif;background:#f5f8fe;margin:0;padding:20px}.c{max-width:480px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(31,60,120,.08)}.h{background:linear-gradient(135deg,#2f6bff,#5965f0);padding:32px;text-align:center}.h h1{color:#fff;margin:0;font-size:24px}.h p{color:rgba(255,255,255,.8);margin:8px 0 0;font-size:14px}.b{padding:32px;text-align:center}.o{font-size:48px;font-weight:700;color:#2f6bff;letter-spacing:12px;margin:24px 0;padding:16px;background:#eaf1ff;border-radius:12px}.m{color:#3a4d70;font-size:14px;line-height:1.6;margin:0 0 16px}.f{color:#7d8aa6;font-size:12px;padding:0 32px 24px}.w{color:#e25577;font-size:13px;font-weight:500}</style></head><body><div class="c"><div class="h"><h1>FlowGuard</h1><p>Water Utility Management System</p></div><div class="b"><p class="m">Your verification code is:</p><div class="o">${otpCode}</div><p class="m">This code expires in <strong>5 minutes</strong>.</p><p class="w">If you didn't request this, ignore this email.</p></div><div class="f"><p>&copy; ${new Date().getFullYear()} FlowGuard</p></div></div></body></html>`;
 
   try {
-    console.log(`[email] Sending OTP to ${email}...`);
-    const { error } = await supabaseAuth.auth.signInWithOtp({ email });
-
-    if (error) {
-      console.warn(`[email] Supabase Auth error: ${error.message}. OTP will be shown on screen.`);
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: RESEND_FROM, to: toEmail, subject: 'Your FlowGuard OTP Code', html }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      console.warn(`[email] Resend error: ${JSON.stringify(data)}`);
       return false;
     }
-
-    console.log(`[email] OTP sent to ${email}`);
+    console.log(`[email] OTP sent to ${toEmail}`);
     return true;
   } catch (err) {
-    console.warn(`[email] Exception: ${err}. OTP will be shown on screen.`);
+    console.warn(`[email] Resend exception: ${err}`);
     return false;
   }
 }
 
-/* ---------------------------------------------------------- Audit logging */
-function formatRoleName(role?: string): string {
-  if (!role) return 'User';
-  const map: Record<string, string> = {
-    'general-manager': 'Manager', 'inventory-officer': 'Inventory Officer',
-    'zone-specialist': 'Zone Specialist', 'technical-team': 'Technical Team', 'customer': 'Customer',
-  };
-  return map[role] || role;
+/* ---------------------------------------------------------- Audit */
+function fmtRole(r?: string): string {
+  const m: Record<string, string> = { 'general-manager': 'Manager', 'inventory-officer': 'Inventory Officer', 'zone-specialist': 'Zone Specialist', 'technical-team': 'Technical Team', 'customer': 'Customer' };
+  return m[r || ''] || r || 'User';
 }
 
-async function logUserAudit(action: string, actor: string | undefined, actorRole: string | undefined, targetUserId: string | undefined, targetEmail: string | undefined, details: Record<string, unknown> = {}): Promise<void> {
+async function audit(action: string, actor: string | undefined, actorRole: string | undefined, userId: string | undefined, email: string | undefined, details: Record<string, unknown> = {}): Promise<void> {
   try {
-    const actorName = actor || 'System';
-    const targetName = (details.target_name as string) || targetEmail || 'Unknown';
-    let description = '';
-
+    const name = (details.target_name as string) || email || 'Unknown';
+    let desc = '';
     switch (action) {
-      case 'register': description = `New account created for "${targetName}" as ${formatRoleName(details.role as string)}`; break;
-      case 'admin_create_user': description = `Manager created account "${targetName}" as ${formatRoleName(details.role as string)}`; break;
-      case 'role_change': description = `Manager changed "${targetName}"'s role from ${formatRoleName(details.from as string)} to ${formatRoleName(details.to as string)}`; break;
-      case 'resign': description = `Manager ${actorName} resigned the account "${targetName}"`; break;
-      case 'reactivate': description = `Manager ${actorName} reactivated the account "${targetName}"`; break;
-      case 'profile_update': description = `${actorName} updated profile information`; break;
-      case 'password_change': description = `${actorName} changed their password`; break;
-      case 'otp_enabled': description = `${actorName} enabled two-factor authentication`; break;
-      case 'otp_disabled': description = `${actorName} disabled two-factor authentication`; break;
-      default: description = `${action} performed on "${targetName}"`;
+      case 'register': desc = `New account created for "${name}" as ${fmtRole(details.role as string)}`; break;
+      case 'admin_create_user': desc = `Manager created account "${name}" as ${fmtRole(details.role as string)}`; break;
+      case 'role_change': desc = `Manager changed "${name}"'s role from ${fmtRole(details.from as string)} to ${fmtRole(details.to as string)}`; break;
+      case 'resign': desc = `Manager resigned the account "${name}"`; break;
+      case 'reactivate': desc = `Manager reactivated the account "${name}"`; break;
+      case 'profile_update': desc = `Updated profile information`; break;
+      case 'password_change': desc = `Changed password`; break;
+      case 'otp_enabled': desc = `Enabled two-factor authentication`; break;
+      case 'otp_disabled': desc = `Disabled two-factor authentication`; break;
+      default: desc = action;
     }
-
-    await auditInsert('audit_logs', { entity: 'users', entity_id: targetUserId ?? null, action, actor: actor ?? null, actor_role: actorRole ?? null, details: { ...details, target_email: targetEmail, description } });
-  } catch (err) { console.warn('[audit] failed:', err); }
+    await auditInsert('audit_logs', { entity: 'users', entity_id: userId ?? null, action, actor: actor ?? null, actor_role: actorRole ?? null, details: { ...details, target_email: email, description: desc } });
+  } catch {}
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function toPublicUser(user: User): PublicUser {
-  const { passwordHash, otpSecret, ...pub } = user;
-  return { ...pub, startDate: user.startDate, isArchived: user.isArchived, barangay: user.barangay, otpEnabled: user.otpEnabled };
+export function toPublicUser(u: User): PublicUser {
+  const { passwordHash: _, otpSecret: __, ...pub } = u;
+  return { ...pub, startDate: u.startDate, isArchived: u.isArchived, barangay: u.barangay, otpEnabled: u.otpEnabled };
 }
 
-function signToken(user: User): string {
-  return jwt.sign({ sub: user.id, role: user.role }, env.jwtSecret, { expiresIn: env.jwtExpiresIn } as jwt.SignOptions);
+function signToken(u: User): string {
+  return jwt.sign({ sub: u.id, role: u.role }, env.jwtSecret, { expiresIn: env.jwtExpiresIn } as jwt.SignOptions);
 }
 
 export interface AuthResult { token: string; user: PublicUser; }
 
-const pendingRegistrations = new Map<string, {
-  fullName: string; email: string; passwordHash: string; barangay: string;
-  otpCode: string; expiresAt: number; attempts: number; emailSent: boolean;
-}>();
+const pending = new Map<string, { fullName: string; email: string; passwordHash: string; barangay: string; otpCode: string; expiresAt: number; attempts: number; emailSent: boolean }>();
 
-function generateOtpCode(): string {
-  return crypto.randomInt(100000, 999999).toString();
-}
+function genOtp(): string { return crypto.randomInt(100000, 999999).toString(); }
 
 export const authService = {
   async initiateRegistration(input: { fullName?: string; email?: string; password?: string; barangay?: string }): Promise<{ message: string; email: string; otp: string }> {
@@ -106,26 +94,19 @@ export const authService = {
     if (password.length < 6) throw badRequest('Password must be at least 6 characters.');
     if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
 
-    // Handle existing pending registration
-    const existing = pendingRegistrations.get(email);
+    const existing = pending.get(email);
     if (existing && existing.expiresAt > Date.now()) {
-      const otpCode = existing.emailSent ? existing.otpCode : generateOtpCode();
-      if (!existing.emailSent) await sendOtpEmail(email);
-      pendingRegistrations.set(email, { ...existing, otpCode, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0, emailSent: true });
-      return { message: 'OTP sent to your email.', email, otp: otpCode };
+      const otpCode = existing.emailSent ? existing.otpCode : genOtp();
+      let emailSent = existing.emailSent;
+      if (!emailSent) emailSent = await sendOtpEmail(email, otpCode);
+      pending.set(email, { ...existing, otpCode, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0, emailSent });
+      return { message: emailSent ? 'OTP sent to your email.' : 'OTP shown on screen.', email, otp: otpCode };
     }
 
-    // New registration
-    const otpCode = generateOtpCode();
-    const emailSent = await sendOtpEmail(email);
-
-    pendingRegistrations.set(email, {
-      fullName, email, passwordHash: bcrypt.hashSync(password, 10), barangay,
-      otpCode, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0, emailSent,
-    });
-
-    // Always return OTP in response for now (until email is properly configured)
-    return { message: emailSent ? 'OTP sent to your email.' : 'OTP displayed on screen.', email, otp: otpCode };
+    const otpCode = genOtp();
+    const emailSent = await sendOtpEmail(email, otpCode);
+    pending.set(email, { fullName, email, passwordHash: bcrypt.hashSync(password, 10), barangay, otpCode, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0, emailSent });
+    return { message: emailSent ? 'OTP sent to your email.' : 'OTP shown on screen.', email, otp: otpCode };
   },
 
   async completeRegistration(input: { email?: string; otpCode?: string }): Promise<AuthResult> {
@@ -133,29 +114,28 @@ export const authService = {
     const otpCode = input.otpCode ?? '';
     if (!email || !otpCode) throw badRequest('Email and OTP code are required.');
 
-    const pending = pendingRegistrations.get(email);
-    if (!pending) throw badRequest('No pending registration found. Please start over.');
-    if (pending.expiresAt < Date.now()) { pendingRegistrations.delete(email); throw badRequest('OTP has expired. Please request a new code.'); }
-    if (pending.attempts >= 5) { pendingRegistrations.delete(email); throw badRequest('Too many failed attempts. Please start over.'); }
-    if (pending.otpCode !== otpCode) { pending.attempts++; throw badRequest(`Invalid OTP code. ${5 - pending.attempts} attempts remaining.`); }
+    const p = pending.get(email);
+    if (!p) throw badRequest('No pending registration found.');
+    if (p.expiresAt < Date.now()) { pending.delete(email); throw badRequest('OTP expired.'); }
+    if (p.attempts >= 5) { pending.delete(email); throw badRequest('Too many failed attempts.'); }
+    if (p.otpCode !== otpCode) { p.attempts++; throw badRequest(`Invalid OTP. ${5 - p.attempts} attempts remaining.`); }
 
-    const user = await userRepo.create({ fullName: pending.fullName, email: pending.email, role: 'customer', passwordHash: pending.passwordHash, barangay: pending.barangay });
-    pendingRegistrations.delete(email);
-    await logUserAudit('register', pending.fullName, 'customer', user.id, pending.email, { email: pending.email, role: 'customer', barangay: pending.barangay });
+    const user = await userRepo.create({ fullName: p.fullName, email: p.email, role: 'customer', passwordHash: p.passwordHash, barangay: p.barangay });
+    pending.delete(email);
+    await audit('register', p.fullName, 'customer', user.id, p.email, { email: p.email, role: 'customer', barangay: p.barangay });
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
   async resendOtp(input: { email?: string }): Promise<{ message: string; otp: string }> {
     const email = input.email?.trim().toLowerCase();
     if (!email || !EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
+    const p = pending.get(email);
+    if (!p) throw badRequest('No pending registration found.');
 
-    const pending = pendingRegistrations.get(email);
-    if (!pending) throw badRequest('No pending registration found. Please start over.');
-
-    const otpCode = pending.emailSent ? pending.otpCode : generateOtpCode();
-    if (!pending.emailSent) await sendOtpEmail(email);
-
-    pendingRegistrations.set(email, { ...pending, otpCode, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0, emailSent: true });
+    const otpCode = p.emailSent ? p.otpCode : genOtp();
+    let emailSent = p.emailSent;
+    if (!emailSent) emailSent = await sendOtpEmail(email, otpCode);
+    pending.set(email, { ...p, otpCode, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0, emailSent });
     return { message: 'OTP resent.', otp: otpCode };
   },
 
@@ -168,7 +148,7 @@ export const authService = {
     if (password.length < 6) throw badRequest('Password must be at least 6 characters.');
     if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
     const user = await userRepo.create({ fullName, email, role: 'customer', passwordHash: bcrypt.hashSync(password, 10) });
-    await logUserAudit('register', fullName, 'customer', user.id, email, { email, role: 'customer' });
+    await audit('register', fullName, 'customer', user.id, email, { email, role: 'customer' });
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
@@ -193,7 +173,7 @@ export const authService = {
     if (!ROLES.includes(role)) throw badRequest('A valid role is required.');
     if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
     const user = await userRepo.create({ fullName, email, role, passwordHash: bcrypt.hashSync(password, 10), startDate: input.startDate, barangay: input.barangay });
-    await logUserAudit('admin_create_user', undefined, 'general-manager', user.id, email, { fullName, email, role });
+    await audit('admin_create_user', undefined, 'general-manager', user.id, email, { fullName, email, role });
     return toPublicUser(user);
   },
 
@@ -202,7 +182,7 @@ export const authService = {
     const before = await userRepo.findById(userId);
     const updated = await userRepo.update(userId, { role: role as Role });
     if (!updated) throw notFound('User not found.');
-    await logUserAudit('role_change', actorUser?.fullName, 'general-manager', userId, updated.email, { from: before?.role, to: role, target_name: updated.fullName });
+    await audit('role_change', actorUser?.fullName, 'general-manager', userId, updated.email, { from: before?.role, to: role, target_name: updated.fullName });
     return toPublicUser(updated);
   },
 
@@ -210,14 +190,14 @@ export const authService = {
     const user = await userRepo.findById(userId);
     if (!user) throw notFound('User not found.');
     await userRepo.archive(userId);
-    await logUserAudit('resign', actorUser?.fullName, 'general-manager', userId, user.email, { target_name: user.fullName, target_role: user.role, reason });
+    await audit('resign', actorUser?.fullName, 'general-manager', userId, user.email, { target_name: user.fullName, target_role: user.role, reason });
   },
 
   async restoreUser(userId: string, actorUser?: PublicUser): Promise<void> {
     const user = await userRepo.findById(userId);
     if (!user) throw notFound('User not found.');
     await userRepo.restore(userId);
-    await logUserAudit('reactivate', actorUser?.fullName, 'general-manager', userId, user.email, { target_name: user.fullName, target_role: user.role });
+    await audit('reactivate', actorUser?.fullName, 'general-manager', userId, user.email, { target_name: user.fullName, target_role: user.role });
   },
 
   async updateProfile(userId: string, input: { fullName?: string; email?: string }): Promise<PublicUser> {
@@ -230,7 +210,7 @@ export const authService = {
     const updated = await userRepo.update(userId, { fullName, email });
     if (!updated) throw unauthorized('Account no longer exists.');
     if (before && fullName && before.fullName !== fullName) await renameIncidentReporter(before.fullName, fullName);
-    await logUserAudit('profile_update', updated.fullName, updated.role, userId, updated.email, { fields_changed: Object.keys(input) });
+    await audit('profile_update', updated.fullName, updated.role, userId, updated.email, { fields_changed: Object.keys(input) });
     return toPublicUser(updated);
   },
 
@@ -253,7 +233,7 @@ export const authService = {
     if (!user) throw unauthorized('Account no longer exists.');
     if (!bcrypt.compareSync(current, user.passwordHash)) throw badRequest('Current password is incorrect.');
     await userRepo.update(userId, { passwordHash: bcrypt.hashSync(next, 10) });
-    await logUserAudit('password_change', user.fullName, user.role, userId, user.email, {});
+    await audit('password_change', user.fullName, user.role, userId, user.email, {});
   },
 
   verifyToken(token: string): { sub: string; role: Role } {
@@ -266,7 +246,7 @@ export const authService = {
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
     await userRepo.update(userId, { otpSecret: `${code}:${expiresAt}` });
     const user = await userRepo.findById(userId);
-    if (user) await sendOtpEmail(user.email);
+    if (user) await sendOtpEmail(user.email, code);
     return code;
   },
 
@@ -283,14 +263,14 @@ export const authService = {
     const user = await userRepo.findById(userId);
     if (!user) throw notFound('User not found.');
     await userRepo.update(userId, { otpEnabled: true });
-    await logUserAudit('otp_enabled', user.fullName, user.role, userId, user.email, {});
+    await audit('otp_enabled', user.fullName, user.role, userId, user.email, {});
   },
 
   async disableOtp(userId: string): Promise<void> {
     const user = await userRepo.findById(userId);
     if (!user) throw notFound('User not found.');
     await userRepo.update(userId, { otpEnabled: false, otpSecret: undefined });
-    await logUserAudit('otp_disabled', user.fullName, user.role, userId, user.email, {});
+    await audit('otp_disabled', user.fullName, user.role, userId, user.email, {});
   },
 
   async isOtpEnabled(userId: string): Promise<boolean> {
