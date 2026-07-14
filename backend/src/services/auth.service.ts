@@ -1,44 +1,139 @@
 /**
- * Auth service — uses Supabase Auth for OTP emails (SMTP already configured in Supabase Dashboard).
+ * Auth service — uses Supabase Auth for OTP emails.
+ *
+ * Flow:
+ * 1. User submits registration form
+ * 2. Backend calls Supabase Auth signInWithOtp (sends 6-digit code via email)
+ * 3. User enters the 6-digit code
+ * 4. Backend verifies OTP and creates account
+ *
+ * Requirements:
+ * - SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set
+ * - SUPABASE_ANON_KEY must be set (for signInWithOtp)
+ * - Email provider must be configured in Supabase Dashboard → Authentication → Email
  */
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 import { userRepo } from '../models/userRepo.js';
-import { supabase } from '../models/supabase.js';
+import { supabase, supabaseAuth } from '../models/supabase.js';
 import { renameIncidentReporter, insertRow as auditInsert } from '../models/resourceRepo.js';
 import { uploadAvatar } from '../models/supabase.js';
 import { ROLES, type PublicUser, type Role, type User } from '../models/types.js';
 import { badRequest, conflict, notFound, unauthorized } from '../utils/httpError.js';
 
-/* ---------------------------------------------------------- Email via Supabase Auth Admin API */
-async function sendOtpEmail(email: string, otpCode: string): Promise<boolean> {
-  if (!supabase) {
-    console.warn(`[email] Supabase not configured. OTP for ${email}: ${otpCode}`);
+/* ---------------------------------------------------------- Email via Supabase Auth */
+
+/**
+ * Check if email sending is configured.
+ */
+function isEmailConfigured(): boolean {
+  if (!supabaseAuth) {
+    console.error('[email] SUPABASE_ANON_KEY not configured. Cannot send OTP emails.');
+    console.error('[email] Please add SUPABASE_ANON_KEY to your environment variables.');
     return false;
+  }
+  return true;
+}
+
+/**
+ * Send OTP email via Supabase Auth.
+ *
+ * This calls signInWithOtp which:
+ * 1. Creates a temporary session for the email
+ * 2. Generates a 6-digit OTP code
+ * 3. Sends the code via the configured email provider (SMTP in Supabase Dashboard)
+ *
+ * The OTP code is returned in the response for fallback purposes.
+ */
+async function sendOtpEmail(email: string): Promise<{ success: boolean; otp?: string; error?: string }> {
+  // Check if email is configured
+  if (!isEmailConfigured()) {
+    return {
+      success: false,
+      error: 'Email delivery is not configured. Please set SUPABASE_ANON_KEY in your environment variables and configure an email provider in Supabase Dashboard.',
+    };
   }
 
   try {
-    // Use Supabase Auth admin API to generate magic link (which sends email)
-    // The SMTP is already configured in Supabase Dashboard
-    const { data, error } = await supabase.auth.admin.generateLink({
-      type: 'magiclink',
-      email: email,
+    console.log(`[email] Sending OTP to ${email} via Supabase Auth...`);
+
+    // Call signInWithOtp - this sends a 6-digit code to the email
+    const { data, error } = await supabaseAuth!.auth.signInWithOtp({
+      email,
       options: {
-        redirectTo: 'http://localhost:5173/dashboard',
+        // The data object can store custom metadata
+        data: {
+          purpose: 'registration_verification',
+        },
       },
     });
 
     if (error) {
       console.error(`[email] Supabase Auth error for ${email}:`, error.message);
+
+      // Provide helpful error messages
+      if (error.message.includes('Email provider')) {
+        return {
+          success: false,
+          error: 'Email provider not configured. Please set up SMTP in Supabase Dashboard → Authentication → Email.',
+        };
+      }
+      if (error.message.includes('rate limit')) {
+        return {
+          success: false,
+          error: 'Too many email requests. Please wait a few minutes and try again.',
+        };
+      }
+
+      return {
+        success: false,
+        error: `Failed to send OTP email: ${error.message}`,
+      };
+    }
+
+    console.log(`[email] OTP email sent successfully to ${email}`);
+
+    // signInWithOtp doesn't return the OTP code directly
+    // The user will receive it via email
+    return {
+      success: true,
+    };
+  } catch (err) {
+    console.error(`[email] Exception sending OTP to ${email}:`, err);
+    return {
+      success: false,
+      error: 'An unexpected error occurred while sending the OTP email.',
+    };
+  }
+}
+
+/**
+ * Verify OTP code via Supabase Auth.
+ */
+async function verifyOtpCode(email: string, token: string): Promise<boolean> {
+  if (!supabaseAuth) {
+    console.error('[email] Cannot verify OTP - SUPABASE_ANON_KEY not configured');
+    return false;
+  }
+
+  try {
+    const { data, error } = await supabaseAuth.auth.verifyOtp({
+      email,
+      token,
+      type: 'email',
+    });
+
+    if (error) {
+      console.error(`[email] OTP verification failed for ${email}:`, error.message);
       return false;
     }
 
-    console.log(`[email] Magic link sent to ${email} via Supabase Auth`);
+    console.log(`[email] OTP verified successfully for ${email}`);
     return true;
   } catch (err) {
-    console.error(`[email] Exception for ${email}:`, err);
+    console.error(`[email] OTP verification exception for ${email}:`, err);
     return false;
   }
 }
@@ -151,6 +246,7 @@ const pendingRegistrations = new Map<string, {
   otpCode: string;
   expiresAt: number;
   attempts: number;
+  supabaseOtpSent: boolean;
 }>();
 
 function generateOtpCode(): string {
@@ -158,39 +254,68 @@ function generateOtpCode(): string {
 }
 
 export const authService = {
+  /**
+   * Step 1: Initiate registration with OTP verification.
+   * Sends OTP email via Supabase Auth.
+   */
   async initiateRegistration(input: {
     fullName?: string;
     email?: string;
     password?: string;
     barangay?: string;
-  }): Promise<{ message: string; email: string; otp?: string }> {
+  }): Promise<{ message: string; email: string; otp?: string; emailConfigured?: boolean }> {
     const fullName = input.fullName?.trim();
     const email = input.email?.trim().toLowerCase();
     const password = input.password ?? '';
     const barangay = input.barangay?.trim() || 'Boac';
 
+    // Validate inputs
     if (!fullName || fullName.length < 2) throw badRequest('Full name is required.');
     if (!email || !EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
     if (password.length < 6) throw badRequest('Password must be at least 6 characters.');
     if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
 
+    // Check if email is configured
+    const emailConfigured = isEmailConfigured();
+
+    // Handle existing pending registration (resend)
     const existing = pendingRegistrations.get(email);
     if (existing && existing.expiresAt > Date.now()) {
-      const otpCode = generateOtpCode();
+      const otpCode = existing.supabaseOtpSent ? existing.otpCode : generateOtpCode();
+
+      if (!existing.supabaseOtpSent) {
+        // Try to send via Supabase Auth
+        const result = await sendOtpEmail(email);
+        if (result.success) {
+          existing.supabaseOtpSent = true;
+        }
+      }
+
       pendingRegistrations.set(email, {
-        fullName,
-        email,
-        passwordHash: bcrypt.hashSync(password, 10),
-        barangay,
+        ...existing,
         otpCode,
         expiresAt: Date.now() + 5 * 60 * 1000,
         attempts: 0,
       });
-      await sendOtpEmail(email, otpCode);
-      return { message: 'OTP sent to your email.', email, otp: otpCode };
+
+      return {
+        message: 'OTP sent to your email.',
+        email,
+        otp: emailConfigured ? undefined : otpCode,
+        emailConfigured,
+      };
     }
 
+    // Generate new OTP
     const otpCode = generateOtpCode();
+    let supabaseOtpSent = false;
+
+    // Try to send via Supabase Auth
+    const result = await sendOtpEmail(email);
+    if (result.success) {
+      supabaseOtpSent = true;
+    }
+
     pendingRegistrations.set(email, {
       fullName,
       email,
@@ -199,18 +324,21 @@ export const authService = {
       otpCode,
       expiresAt: Date.now() + 5 * 60 * 1000,
       attempts: 0,
+      supabaseOtpSent,
     });
 
-    const emailSent = await sendOtpEmail(email, otpCode);
-
-    // Always return OTP in response for now
     return {
       message: 'OTP sent to your email.',
       email,
-      otp: otpCode,
+      // Only return OTP in response if email is not configured (fallback)
+      otp: emailConfigured ? undefined : otpCode,
+      emailConfigured,
     };
   },
 
+  /**
+   * Step 2: Complete registration with OTP verification.
+   */
   async completeRegistration(input: {
     email?: string;
     otpCode?: string;
@@ -222,19 +350,35 @@ export const authService = {
 
     const pending = pendingRegistrations.get(email);
     if (!pending) throw badRequest('No pending registration found. Please start over.');
+
     if (pending.expiresAt < Date.now()) {
       pendingRegistrations.delete(email);
       throw badRequest('OTP has expired. Please request a new code.');
     }
+
     if (pending.attempts >= 5) {
       pendingRegistrations.delete(email);
       throw badRequest('Too many failed attempts. Please start over.');
     }
-    if (pending.otpCode !== otpCode) {
+
+    // Try Supabase Auth verification first if OTP was sent via Supabase
+    let otpValid = false;
+
+    if (pending.supabaseOtpSent) {
+      otpValid = await verifyOtpCode(email, otpCode);
+    }
+
+    // Fallback to local verification if Supabase verification failed or wasn't used
+    if (!otpValid) {
+      otpValid = pending.otpCode === otpCode;
+    }
+
+    if (!otpValid) {
       pending.attempts++;
       throw badRequest(`Invalid OTP code. ${5 - pending.attempts} attempts remaining.`);
     }
 
+    // OTP verified - create the account
     const user = await userRepo.create({
       fullName: pending.fullName,
       email: pending.email,
@@ -255,14 +399,26 @@ export const authService = {
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
-  async resendOtp(input: { email?: string }): Promise<{ message: string; otp?: string }> {
+  /**
+   * Resend OTP for a pending registration.
+   */
+  async resendOtp(input: { email?: string }): Promise<{ message: string; otp?: string; emailConfigured?: boolean }> {
     const email = input.email?.trim().toLowerCase();
     if (!email || !EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
 
     const pending = pendingRegistrations.get(email);
     if (!pending) throw badRequest('No pending registration found. Please start over.');
 
-    const otpCode = generateOtpCode();
+    const emailConfigured = isEmailConfigured();
+    const otpCode = pending.supabaseOtpSent ? pending.otpCode : generateOtpCode();
+
+    if (!pending.supabaseOtpSent) {
+      const result = await sendOtpEmail(email);
+      if (result.success) {
+        pending.supabaseOtpSent = true;
+      }
+    }
+
     pendingRegistrations.set(email, {
       ...pending,
       otpCode,
@@ -270,14 +426,14 @@ export const authService = {
       attempts: 0,
     });
 
-    await sendOtpEmail(email, otpCode);
-
     return {
       message: 'OTP resent to your email.',
-      otp: otpCode,
+      otp: emailConfigured ? undefined : otpCode,
+      emailConfigured,
     };
   },
 
+  // ... rest of the auth service methods remain the same
   async register(input: { fullName?: string; email?: string; password?: string }): Promise<AuthResult> {
     const fullName = input.fullName?.trim();
     const email = input.email?.trim().toLowerCase();
@@ -459,7 +615,7 @@ export const authService = {
 
     const user = await userRepo.findById(userId);
     if (user) {
-      await sendOtpEmail(user.email, code);
+      await sendOtpEmail(user.email);
     }
 
     return code;
