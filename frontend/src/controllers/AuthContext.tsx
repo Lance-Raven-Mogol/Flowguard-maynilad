@@ -12,9 +12,9 @@ interface AuthContextValue {
   loading: boolean;
   login: (input: LoginInput) => Promise<{ user: User; otpRequired?: boolean }>;
   register: (input: RegisterInput) => Promise<User>;
-  initiateRegistration: (input: InitiateRegistrationInput) => Promise<{ message: string; email: string }>;
+  initiateRegistration: (input: InitiateRegistrationInput) => Promise<{ message: string; email: string; otp?: string }>;
   completeRegistration: (email: string, otpCode: string) => Promise<User>;
-  resendOtp: (email: string) => Promise<{ message: string }>;
+  resendOtp: (email: string) => Promise<{ message: string; otp?: string }>;
   updateProfile: (input: { fullName?: string; email?: string }) => Promise<User>;
   changePassword: (input: { currentPassword: string; newPassword: string }) => Promise<void>;
   updateAvatar: (dataUrl: string) => Promise<User>;
@@ -27,7 +27,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore session from a stored token on first load.
   useEffect(() => {
     if (!tokenStore.get()) {
       setLoading(false);
@@ -41,12 +40,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (input: LoginInput) => {
-    const res = await authService.login(input);
-    // Don't set user yet if OTP is required
-    if (!res.otpRequired) {
-      setUser(res.user);
-    }
-    return { user: res.user, otpRequired: res.otpRequired };
+    const u = await authService.login(input);
+    setUser(u);
+    return { user: u, otpRequired: false };
   }, []);
 
   const register = useCallback(async (input: RegisterInput) => {
@@ -60,9 +56,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const completeRegistration = useCallback(async (email: string, otpCode: string) => {
-    const u = await authService.completeRegistration(email, otpCode);
-    setUser(u);
-    return u;
+    const result = await authService.completeRegistration(email, otpCode);
+    setUser(result.user);
+    return result.user;
   }, []);
 
   const resendOtp = useCallback(async (email: string) => {
