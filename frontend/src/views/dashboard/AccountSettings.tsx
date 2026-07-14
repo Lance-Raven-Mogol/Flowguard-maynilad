@@ -10,6 +10,7 @@ import { useToast } from '../../controllers/ToastContext';
 import { ApiError } from '../../services/apiClient';
 import { ROLES } from '../../models/types';
 import { avatarFor } from './Topbar';
+import { ToggleSwitch } from '../components/ToggleSwitch';
 
 const BARANGAYS = [
   'Boac', 'Bagsangan', 'Buenavista', 'Buhangin', 'Burnay', 'Buyabod',
@@ -98,21 +99,18 @@ export function AccountSettings() {
     }
   };
 
-  const toggleOtp = async () => {
+  const toggleOtp = async (enabled: boolean) => {
     setOtpLoading(true);
     try {
-      if (otpEnabled) {
-        // Disable OTP
-        const { authService } = await import('../../services/authService');
-        await authService.disableOtp();
-        setOtpEnabled(false);
-        notify('OTP disabled. You will no longer be asked for a code on sign-in.');
-      } else {
-        // Enable OTP - no re-enrollment needed, just toggle
-        const { authService } = await import('../../services/authService');
+      const { authService } = await import('../../services/authService');
+      if (enabled) {
         await authService.enableOtp();
         setOtpEnabled(true);
         notify('OTP enabled! You will be asked for a code on every sign-in.');
+      } else {
+        await authService.disableOtp();
+        setOtpEnabled(false);
+        notify('OTP disabled. You will no longer be asked for a code on sign-in.');
       }
     } catch (err) {
       notify(err instanceof ApiError ? err.message : 'Could not update OTP settings.', 'error');
@@ -209,29 +207,18 @@ export function AccountSettings() {
         <section className="panel account-section">
           <div className="account-section-head">
             <h3><Shield size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />Two-Factor Authentication (OTP)</h3>
-            <p>Add an extra layer of security. You'll be asked for a 6-digit code on every sign-in.</p>
+            <p>Add an extra layer of security to your account.</p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 0' }}>
-            <div>
-              <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>
-                {otpEnabled ? 'OTP is enabled' : 'OTP is disabled'}
-              </p>
-              <p style={{ fontSize: 12, color: 'var(--muted)' }}>
-                {otpEnabled
-                  ? 'You will be asked for a verification code when signing in.'
-                  : 'Enable OTP for additional security during sign-in.'
-                }
-              </p>
-            </div>
-            <button
-              className={`btn-${otpEnabled ? 'danger' : 'primary'}`}
-              onClick={toggleOtp}
-              disabled={otpLoading}
-              style={{ minWidth: 100 }}
-            >
-              {otpLoading ? 'Saving…' : otpEnabled ? 'Disable' : 'Enable'}
-            </button>
-          </div>
+          <ToggleSwitch
+            checked={otpEnabled}
+            onChange={toggleOtp}
+            disabled={otpLoading}
+            label={otpEnabled ? 'OTP is enabled' : 'OTP is disabled'}
+            description={otpEnabled
+              ? 'You will be asked for a verification code when signing in.'
+              : 'Enable OTP for additional security during sign-in.'
+            }
+          />
         </section>
       </div>
     </div>

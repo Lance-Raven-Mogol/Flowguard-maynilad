@@ -1609,17 +1609,37 @@ export function UsersPanel({ filter }: ModuleProps) {
 }
 
 /* ------------------------------------------------------- Audit Log (read-only) */
+const ACTION_BADGE: Record<string, BadgeTone> = {
+  register: 'low',
+  admin_create_user: 'low',
+  role_change: 'medium',
+  resign: 'high',
+  reactivate: 'low',
+  profile_update: 'medium',
+  password_change: 'medium',
+  otp_enabled: 'low',
+  otp_disabled: 'medium',
+  create: 'low',
+  update: 'medium',
+  delete: 'high',
+};
+
 export function AuditLogsModule({ filter }: ModuleProps) {
   const columns: ModuleColumn[] = [
     { header: 'Timestamp', cell: (r) => dateShort(r.created_at) },
-    { header: 'Entity', cell: (r) => titleCase(r.entity) },
-    { header: 'Action', cell: (r) => badgeCell(titleCase(r.action), r.action === 'delete' ? 'high' : r.action === 'create' ? 'low' : 'medium') },
-    { header: 'Actor', cell: (r) => String(r.actor ?? 'System') },
-    { header: 'Details', cell: (r) => {
-      const d = r.details;
-      if (!d || typeof d !== 'object') return '—';
-      const keys = Object.keys(d as Record<string, unknown>).slice(0, 2);
-      return keys.map((k) => `${k}: ${String((d as Record<string, unknown>)[k])}`).join(', ') || '—';
+    { header: 'Action', cell: (r) => badgeCell(titleCase(r.action), ACTION_BADGE[String(r.action)] ?? 'medium') },
+    { header: 'Description', cell: (r) => {
+      const d = r.details as Record<string, unknown> | null;
+      if (d?.description) return String(d.description);
+      // Fallback: construct from available data
+      const actor = String(r.actor ?? 'System');
+      const target = d?.target_name ? String(d.target_name) : '';
+      return target ? `${actor} performed ${titleCase(r.action)} on "${target}"` : `${actor} performed ${titleCase(r.action)}`;
+    }},
+    { header: 'Time', cell: (r) => {
+      if (!r.created_at) return '—';
+      const d = new Date(String(r.created_at));
+      return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     }},
   ];
 
@@ -1633,9 +1653,9 @@ export function AuditLogsModule({ filter }: ModuleProps) {
       filter={filter}
       metrics={(rows) => [
         metric('al1', 'Total Entries', String(rows.length), 'scroll', 'customers'),
-        metric('al2', 'Creates', count(rows, (r) => r.action === 'create'), 'plus-circle', 'revenue'),
-        metric('al3', 'Updates', count(rows, (r) => r.action === 'update'), 'edit', 'profit'),
-        metric('al4', 'Deletes', count(rows, (r) => r.action === 'delete'), 'trash-2', 'invoices'),
+        metric('al2', 'Account Events', count(rows, (r) => ['register', 'admin_create_user', 'resign', 'reactivate'].includes(String(r.action))), 'users', 'revenue'),
+        metric('al3', 'Security Events', count(rows, (r) => ['role_change', 'password_change', 'otp_enabled', 'otp_disabled'].includes(String(r.action))), 'shield', 'profit'),
+        metric('al4', 'Profile Updates', count(rows, (r) => r.action === 'profile_update'), 'edit', 'invoices'),
       ]}
     />
   );

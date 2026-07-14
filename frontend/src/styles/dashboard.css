@@ -76,17 +76,42 @@ input {
 
 /* Slim modern scrollbars */
 .main-panel::-webkit-scrollbar,
-.popover-body::-webkit-scrollbar {
-  width: 10px;
+.popover-body::-webkit-scrollbar,
+.sidebar .nav-list::-webkit-scrollbar {
+  width: 6px;
+}
+.main-panel::-webkit-scrollbar-track,
+.popover-body::-webkit-scrollbar-track,
+.sidebar .nav-list::-webkit-scrollbar-track {
+  background: transparent;
 }
 .main-panel::-webkit-scrollbar-thumb,
 .popover-body::-webkit-scrollbar-thumb {
   background: #c6d3ea;
-  border: 3px solid var(--page);
   border-radius: 999px;
 }
-.main-panel::-webkit-scrollbar-thumb:hover {
+.main-panel::-webkit-scrollbar-thumb:hover,
+.popover-body::-webkit-scrollbar-thumb:hover {
   background: #aebfe0;
+}
+
+/* Sidebar scrollbar - matches dark theme */
+.sidebar .nav-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+.sidebar .nav-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* Firefox scrollbar */
+.main-panel,
+.popover-body,
+.sidebar .nav-list {
+  scrollbar-width: thin;
+  scrollbar-color: #c6d3ea transparent;
+}
+.sidebar .nav-list {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 
 .dashboard {
@@ -229,25 +254,31 @@ input {
 }
 
 .nav-list {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 4px;
   padding: 0 16px;
 }
 
 .nav-list a,
 .logout {
-  min-height: 46px;
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 16px;
+  gap: 12px;
+  padding: 0 14px;
   color: #b7c6e4;
   text-decoration: none;
-  font-size: 14px;
+  font-size: 13px;
   position: relative;
-  border-radius: 12px;
+  border-radius: 10px;
   transition: background 0.22s ease, color 0.22s ease, transform 0.22s ease, box-shadow 0.22s ease;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .nav-list a.active {
