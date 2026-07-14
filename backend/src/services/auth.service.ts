@@ -14,10 +14,14 @@ import { badRequest, conflict, notFound, unauthorized } from '../utils/httpError
 
 /* ---------------------------------------------------------- Email via Resend API */
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
-const RESEND_FROM = 'onboarding@resend.dev';
-const VERIFIED_EMAIL = 'xyze0001@gmail.com';
+const RESEND_FROM = process.env.RESEND_FROM || 'onboarding@resend.dev';
 
 async function sendOtpEmail(toEmail: string, otpCode: string): Promise<boolean> {
+  if (!RESEND_API_KEY) {
+    console.warn('[email] RESEND_API_KEY not set. OTP will be shown on screen.');
+    return false;
+  }
+
   const html = `<!DOCTYPE html><html><head><style>body{font-family:'Segoe UI',sans-serif;background:#f5f8fe;margin:0;padding:20px}.c{max-width:480px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(31,60,120,.08)}.h{background:linear-gradient(135deg,#2f6bff,#5965f0);padding:32px;text-align:center}.h h1{color:#fff;margin:0;font-size:24px}.h p{color:rgba(255,255,255,.8);margin:8px 0 0;font-size:14px}.b{padding:32px;text-align:center}.o{font-size:48px;font-weight:700;color:#2f6bff;letter-spacing:12px;margin:24px 0;padding:16px;background:#eaf1ff;border-radius:12px}.m{color:#3a4d70;font-size:14px;line-height:1.6;margin:0 0 16px}.f{color:#7d8aa6;font-size:12px;padding:0 32px 24px}.w{color:#e25577;font-size:13px;font-weight:500}</style></head><body><div class="c"><div class="h"><h1>FlowGuard</h1><p>Water Utility Management System</p></div><div class="b"><p class="m">Your verification code is:</p><div class="o">${otpCode}</div><p class="m">This code expires in <strong>5 minutes</strong>.</p><p class="w">If you didn't request this, ignore this email.</p></div><div class="f"><p>&copy; ${new Date().getFullYear()} FlowGuard</p></div></div></body></html>`;
 
   try {
