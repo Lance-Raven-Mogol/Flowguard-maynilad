@@ -104,6 +104,7 @@ const aggKey = (tag: string, rows: EntityRow[]) => `${tag}:${rows.map((r) => r.i
 /** Role-aware notification feed derived from the live snapshot. */
 export function buildAlerts(stats: DashboardStats, role: string, fullName: string): Alert[] {
   const alerts: Alert[] = [];
+  const outOfStock = stats.materials.filter((m) => m.status === 'out_of_stock' || Number(m.quantity) === 0);
   const lowStock = stats.materials.filter((m) => m.status === 'low_stock');
   const defective = stats.materials.filter((m) => m.status === 'defective');
   const pendingMrf = stats.materialRequests.filter((r) => r.status === 'pending');
@@ -136,6 +137,7 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
   }
 
   if (['inventory-officer', 'general-manager'].includes(role)) {
+    if (outOfStock.length) alerts.push({ key: aggKey('outofstock', outOfStock), view: matView, icon: 'package-x', title: `${outOfStock.length} material(s) out of stock`, detail: outOfStock.map((m) => m.name).slice(0, 3).join(', '), tone: 'danger' });
     if (lowStock.length) alerts.push({ key: aggKey('lowstock', lowStock), view: matView, icon: 'alert-triangle', title: `${lowStock.length} material(s) low on stock`, detail: lowStock.map((m) => m.name).slice(0, 3).join(', '), tone: 'warn' });
     if (defective.length) alerts.push({ key: aggKey('defective', defective), view: matView, icon: 'package-x', title: `${defective.length} defective item(s)`, detail: 'Flagged for disposal / review', tone: 'danger' });
     if (pendingMrf.length) alerts.push({ key: aggKey('mrf', pendingMrf), view: mrfView, icon: 'file-input', title: `${pendingMrf.length} material request(s) pending`, detail: 'Awaiting approval / release', tone: 'warn' });
@@ -163,6 +165,7 @@ const ids = (rows: EntityRow[]) => rows.map((r) => String(r.id));
 export function buildBadgeItems(stats: DashboardStats, role: string, fullName: string): Record<string, string[]> {
   const open = ids(stats.incidents.filter(isOpen));
   const pendingMrf = ids(stats.materialRequests.filter((r) => r.status === 'pending'));
+  const outOfStock = ids(stats.materials.filter((m) => m.status === 'out_of_stock' || Number(m.quantity) === 0));
   const lowStock = ids(stats.materials.filter((m) => m.status === 'low_stock'));
   const activeJobs = ids(stats.jobOrders.filter((j) => j.status === 'pending' || j.status === 'in_progress'));
   const draftAdv = ids(stats.advisories.filter((a) => a.status !== 'published'));
@@ -181,9 +184,9 @@ export function buildBadgeItems(stats: DashboardStats, role: string, fullName: s
     case 'technical-team':
       return { joborders: activeJobs };
     case 'inventory-officer':
-      return { materials: lowStock, mrf: pendingMrf, purchase: pendingPurchases };
+      return { materials: [...outOfStock, ...lowStock], mrf: pendingMrf, purchase: pendingPurchases };
     case 'general-manager':
-      return { incidents: open, requests: pendingMrf, advisories: draftAdv, purchase: pendingPurchases, payments: overduePayments, 'supply-requests': pendingSupplies };
+      return { incidents: open, requests: pendingMrf, advisories: draftAdv, purchase: pendingPurchases, payments: overduePayments, 'supply-requests': pendingSupplies, inventory: [...outOfStock, ...lowStock] };
     default:
       return {};
   }

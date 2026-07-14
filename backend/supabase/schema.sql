@@ -68,7 +68,7 @@ create table if not exists public.materials (
   source      text default 'mother-company',
   min_level   integer not null default 10,
   status      text not null default 'in_stock'
-              check (status in ('in_stock','low_stock','defective')),
+              check (status in ('in_stock','low_stock','out_of_stock','defective')),
   created_at  timestamptz not null default now()
 );
 
@@ -114,13 +114,27 @@ create table if not exists public.advisories (
   published_at timestamptz
 );
 
+-- ------------------------------------------ Pending registrations (OTP) -----
+create table if not exists public.pending_registrations (
+  id            uuid primary key default gen_random_uuid(),
+  full_name     text        not null,
+  email         text        not null unique,
+  password_hash text        not null,
+  barangay      text        default 'Boac',
+  otp_code      text        not null,
+  otp_expires   timestamptz not null,
+  attempts      integer     not null default 0,
+  created_at    timestamptz not null default now()
+);
+create index if not exists pending_registrations_email_idx on public.pending_registrations (lower(email));
+
 -- Incremental columns (safe to re-run).
 alter table public.app_users         add column if not exists avatar_url text;
 alter table public.app_users         add column if not exists start_date date;
 alter table public.app_users         add column if not exists is_archived boolean not null default false;
 alter table public.app_users         add column if not exists barangay text default 'Boac';
 alter table public.app_users         add column if not exists otp_secret text;
-alter table public.app_users         add column if not exists otp_enabled boolean not null default false;
+alter table public.app_users         add column if not exists otp_enabled boolean not null default true;
 alter table public.incidents         add column if not exists archived boolean not null default false;
 -- Zone-specialist remarks forwarded to the technical team + customer photo evidence.
 alter table public.incidents         add column if not exists remarks text;
@@ -205,17 +219,18 @@ create table if not exists public.supply_requests (
 alter table public.supply_requests add column if not exists archived boolean not null default false;
 
 -- RLS on (backend uses the service-role key, which bypasses it).
-alter table public.app_users          enable row level security;
-alter table public.incidents          enable row level security;
-alter table public.job_orders         enable row level security;
-alter table public.materials          enable row level security;
-alter table public.material_requests  enable row level security;
-alter table public.assets             enable row level security;
-alter table public.advisories         enable row level security;
-alter table public.audit_logs         enable row level security;
-alter table public.purchase_requests  enable row level security;
-alter table public.payments           enable row level security;
-alter table public.supply_requests    enable row level security;
+alter table public.app_users            enable row level security;
+alter table public.incidents            enable row level security;
+alter table public.job_orders           enable row level security;
+alter table public.materials            enable row level security;
+alter table public.material_requests    enable row level security;
+alter table public.assets               enable row level security;
+alter table public.advisories           enable row level security;
+alter table public.audit_logs           enable row level security;
+alter table public.purchase_requests    enable row level security;
+alter table public.payments             enable row level security;
+alter table public.supply_requests      enable row level security;
+alter table public.pending_registrations enable row level security;
 
 -- ============================================================================
 -- No seed business data. Tables start empty; the only account created is the

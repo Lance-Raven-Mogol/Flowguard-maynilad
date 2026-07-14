@@ -13,11 +13,39 @@ export interface RegisterInput {
   password: string;
 }
 
+export interface InitiateRegistrationInput {
+  fullName: string;
+  email: string;
+  password: string;
+  barangay?: string;
+}
+
+export interface AuthResult extends AuthResponse {
+  otpRequired?: boolean;
+}
+
 export const authService = {
-  async login({ remember, ...input }: LoginInput): Promise<User> {
-    const res = await api.post<AuthResponse>('/auth/login', input);
-    tokenStore.set(res.token, remember ?? true);
+  /** Step 1: Initiate registration - sends OTP to email. */
+  async initiateRegistration(input: InitiateRegistrationInput): Promise<{ message: string; email: string }> {
+    return api.post<{ message: string; email: string }>('/auth/register/initiate', input);
+  },
+
+  /** Step 2: Complete registration with OTP verification. */
+  async completeRegistration(email: string, otpCode: string): Promise<User> {
+    const res = await api.post<AuthResponse>('/auth/register/complete', { email, otpCode });
+    tokenStore.set(res.token);
     return res.user;
+  },
+
+  /** Resend OTP for pending registration. */
+  async resendOtp(email: string): Promise<{ message: string }> {
+    return api.post<{ message: string }>('/auth/register/resend-otp', { email });
+  },
+
+  async login({ remember, ...input }: LoginInput): Promise<AuthResult> {
+    const res = await api.post<AuthResult>('/auth/login', input);
+    tokenStore.set(res.token, remember ?? true);
+    return res;
   },
 
   async register(input: RegisterInput): Promise<User> {

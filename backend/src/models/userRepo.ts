@@ -52,6 +52,7 @@ export interface NewUser {
   role: Role;
   passwordHash: string;
   startDate?: string;
+  barangay?: string;
 }
 
 export const userRepo = {

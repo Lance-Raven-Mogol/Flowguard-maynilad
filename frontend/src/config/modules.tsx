@@ -20,7 +20,7 @@ const roleLabel = (role: unknown): string => ROLES.find((r) => r.value === role)
 
 /* ------------------------------------------------------------------ helpers */
 const GREEN = new Set(['resolved', 'completed', 'released', 'published', 'approved', 'in_stock', 'good']);
-const RED = new Set(['rejected', 'cancelled', 'needs_replacement', 'dispose', 'defective', 'overdue', 'critical']);
+const RED = new Set(['rejected', 'cancelled', 'needs_replacement', 'dispose', 'defective', 'overdue', 'critical', 'out_of_stock']);
 
 function statusTone(v: unknown): StatusTone {
   const k = String(v ?? '').toLowerCase();
@@ -736,6 +736,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
 const MATERIAL_STATUS = [
   { value: 'in_stock', label: 'In Stock' },
   { value: 'low_stock', label: 'Low Stock' },
+  { value: 'out_of_stock', label: 'Out of Stock' },
   { value: 'defective', label: 'Defective' },
 ];
 
@@ -782,8 +783,8 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
       filter={filter}
       metrics={(rows) => [
         metric('m1', 'Total SKUs', String(rows.length), 'box', 'customers'),
-        metric('m2', 'Low Stock', count(rows, (r) => r.status === 'low_stock'), 'alert-triangle', 'revenue'),
-        metric('m3', 'Defective', count(rows, (r) => r.status === 'defective'), 'package-x', 'profit'),
+        metric('m2', 'Out of Stock', count(rows, (r) => r.status === 'out_of_stock' || Number(r.quantity) === 0), 'package-x', 'profit'),
+        metric('m3', 'Low Stock', count(rows, (r) => r.status === 'low_stock'), 'alert-triangle', 'revenue'),
         metric('m4', 'Inventory Value', money(rows.reduce((s, r) => s + Number(r.quantity || 0) * Number(r.unit_price || 0), 0)), 'wallet', 'invoices'),
       ]}
       actions={
@@ -1130,9 +1131,9 @@ function MaterialRequestForm({
   const { stats } = useStats();
   const role = user!.role;
 
-  // Only active, in-stock (non-defective) inventory can be requested by SKU.
+  // Only active, in-stock (non-defective, non-out-of-stock) inventory can be requested by SKU.
   const inventory = stats.materials.filter(
-    (m) => !m.archived && m.status !== 'defective' && Number(m.quantity ?? 0) > 0,
+    (m) => !m.archived && m.status !== 'defective' && m.status !== 'out_of_stock' && Number(m.quantity ?? 0) > 0,
   );
   // Active (open) job orders available to link a request to.
   const activeJobOrders = stats.jobOrders.filter((j) =>

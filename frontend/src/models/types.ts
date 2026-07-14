@@ -28,6 +28,7 @@ export interface User {
   startDate?: string | null;
   isArchived?: boolean;
   barangay?: string;
+  otpEnabled?: boolean;
 }
 
 export type StatusTone = 'paid' | 'pending' | 'overdue';

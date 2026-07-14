@@ -45,6 +45,7 @@ export interface PublicUser {
   startDate?: string | null;
   isArchived?: boolean;
   barangay?: string;
+  otpEnabled?: boolean;
 }
 
 /** Visual status pill variants reused across every table. */

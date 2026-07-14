@@ -164,7 +164,13 @@ async function settleStockDeduction(mrfId: string): Promise<void> {
   const patch: Row = { quantity: remaining };
   // Keep the stock status honest after the deduction (never override defective).
   if (material.status !== 'defective') {
-    patch.status = remaining <= Number(material.min_level ?? 0) ? 'low_stock' : 'in_stock';
+    if (remaining === 0) {
+      patch.status = 'out_of_stock';
+    } else if (remaining <= Number(material.min_level ?? 0)) {
+      patch.status = 'low_stock';
+    } else {
+      patch.status = 'in_stock';
+    }
   }
   await repo.updateRow('materials', String(material.id), patch);
   await repo.updateRow('material_requests', mrfId, { stock_deducted: true });

@@ -44,13 +44,13 @@ userRoutes.patch(
   }),
 );
 
-// Archive (soft-delete) a user — preserves audit trail.
+// Archive (resign) a user — preserves audit trail.
 userRoutes.patch(
   '/:id/archive',
   requireAuth,
   asyncHandler(async (req, res) => {
     assertAdmin(req);
-    await userRepo.archive(req.params.id);
+    await authService.archiveUser(req.params.id, req.user, req.body?.reason);
     res.json({ ok: true });
   }),
 );
@@ -61,7 +61,7 @@ userRoutes.patch(
   requireAuth,
   asyncHandler(async (req, res) => {
     assertAdmin(req);
-    await userRepo.restore(req.params.id);
+    await authService.restoreUser(req.params.id, req.user);
     res.json({ ok: true });
   }),
 );

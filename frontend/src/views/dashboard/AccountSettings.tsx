@@ -3,11 +3,11 @@
  * photo (Supabase Storage), update display name, change password, OTP settings,
  * and location (barangay). Sections are stacked so the page fills naturally.
  */
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { Camera, Shield, MapPin } from 'lucide-react';
 import { useAuth } from '../../controllers/AuthContext';
 import { useToast } from '../../controllers/ToastContext';
-import { ApiError, api } from '../../services/apiClient';
+import { ApiError } from '../../services/apiClient';
 import { ROLES } from '../../models/types';
 import { avatarFor } from './Topbar';
 
@@ -37,11 +37,14 @@ export function AccountSettings() {
   const [confirm, setConfirm] = useState('');
   const [savingPw, setSavingPw] = useState(false);
 
-  // OTP state
-  const [otpCode, setOtpCode] = useState('');
+  // OTP state - simple toggle
   const [otpLoading, setOtpLoading] = useState(false);
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpEnabled, setOtpEnabled] = useState(false);
+  const [otpEnabled, setOtpEnabled] = useState(user!.otpEnabled ?? true);
+
+  // Sync OTP state with user object
+  useEffect(() => {
+    setOtpEnabled(user!.otpEnabled ?? true);
+  }, [user!.otpEnabled]);
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -95,48 +98,24 @@ export function AccountSettings() {
     }
   };
 
-  const generateOtp = async () => {
+  const toggleOtp = async () => {
     setOtpLoading(true);
     try {
-      await api.post('/auth/otp/generate', {});
-      setOtpSent(true);
-      notify('OTP code sent to your email!');
-    } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Could not generate OTP.', 'error');
-    } finally {
-      setOtpLoading(false);
-    }
-  };
-
-  const verifyOtp = async () => {
-    if (!otpCode || otpCode.length !== 6) return notify('Enter a valid 6-digit code.', 'error');
-    setOtpLoading(true);
-    try {
-      const res = await api.post<{ valid: boolean }>('/auth/otp/verify', { code: otpCode });
-      if (res.valid) {
-        await api.post('/auth/otp/enable', {});
+      if (otpEnabled) {
+        // Disable OTP
+        const { authService } = await import('../../services/authService');
+        await authService.disableOtp();
+        setOtpEnabled(false);
+        notify('OTP disabled. You will no longer be asked for a code on sign-in.');
+      } else {
+        // Enable OTP - no re-enrollment needed, just toggle
+        const { authService } = await import('../../services/authService');
+        await authService.enableOtp();
         setOtpEnabled(true);
         notify('OTP enabled! You will be asked for a code on every sign-in.');
-      } else {
-        notify('Invalid or expired OTP code.', 'error');
       }
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'OTP verification failed.', 'error');
-    } finally {
-      setOtpLoading(false);
-    }
-  };
-
-  const disableOtp = async () => {
-    setOtpLoading(true);
-    try {
-      await api.post('/auth/otp/disable', {});
-      setOtpEnabled(false);
-      setOtpSent(false);
-      setOtpCode('');
-      notify('OTP disabled.');
-    } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Could not disable OTP.', 'error');
+      notify(err instanceof ApiError ? err.message : 'Could not update OTP settings.', 'error');
     } finally {
       setOtpLoading(false);
     }
@@ -232,39 +211,27 @@ export function AccountSettings() {
             <h3><Shield size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />Two-Factor Authentication (OTP)</h3>
             <p>Add an extra layer of security. You'll be asked for a 6-digit code on every sign-in.</p>
           </div>
-          {!otpEnabled ? (
-            <>
-              {!otpSent ? (
-                <div className="account-actions">
-                  <button className="btn-primary" onClick={generateOtp} disabled={otpLoading}>
-                    {otpLoading ? 'Sending…' : 'Enable OTP'}
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="form-group">
-                    <label>Enter 6-digit OTP Code</label>
-                    <input type="text" inputMode="numeric" maxLength={6} placeholder="000000" value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))} />
-                  </div>
-                  <div className="account-actions">
-                    <button className="btn-primary" onClick={verifyOtp} disabled={otpLoading || otpCode.length !== 6}>
-                      {otpLoading ? 'Verifying…' : 'Verify & Enable'}
-                    </button>
-                    <button className="btn-secondary" onClick={() => { setOtpSent(false); setOtpCode(''); }}>
-                      Cancel
-                    </button>
-                  </div>
-                </>
-              )}
-            </>
-          ) : (
-            <div className="account-actions">
-              <p style={{ fontSize: 13, color: '#16a34a', marginBottom: 8 }}>OTP is enabled on your account.</p>
-              <button className="btn-secondary" onClick={disableOtp} disabled={otpLoading}>
-                {otpLoading ? 'Disabling…' : 'Disable OTP'}
-              </button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 0' }}>
+            <div>
+              <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>
+                {otpEnabled ? 'OTP is enabled' : 'OTP is disabled'}
+              </p>
+              <p style={{ fontSize: 12, color: 'var(--muted)' }}>
+                {otpEnabled
+                  ? 'You will be asked for a verification code when signing in.'
+                  : 'Enable OTP for additional security during sign-in.'
+                }
+              </p>
             </div>
-          )}
+            <button
+              className={`btn-${otpEnabled ? 'danger' : 'primary'}`}
+              onClick={toggleOtp}
+              disabled={otpLoading}
+              style={{ minWidth: 100 }}
+            >
+              {otpLoading ? 'Saving…' : otpEnabled ? 'Disable' : 'Enable'}
+            </button>
+          </div>
         </section>
       </div>
     </div>
