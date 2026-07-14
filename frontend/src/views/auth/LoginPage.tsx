@@ -41,14 +41,8 @@ export function LoginPage() {
     }
     setSubmitting(true);
     try {
-      const result = await login({ email, password, remember });
-      if (result.otpRequired) {
-        setStep('otp');
-        setCooldown(60);
-        notify('OTP sent to your email.', 'success');
-      } else {
-        navigate('/dashboard');
-      }
+      await login({ email, password, remember });
+      navigate('/dashboard');
     } catch (err) {
       notify(err instanceof ApiError ? err.message : 'Login failed.', 'error');
     } finally {
