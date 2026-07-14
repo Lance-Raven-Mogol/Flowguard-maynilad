@@ -19,13 +19,6 @@ export const env = {
     serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? '',
     accessToken: process.env.SUPABASE_ACCESS_TOKEN ?? '',
   },
-
-  // Resend API for email delivery
-  resend: {
-    apiKey: process.env.RESEND_API_KEY ?? '',
-    // Use onboarding@resend.dev for testing (works without domain verification)
-    fromEmail: process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev',
-  },
 } as const;
 
 export const isSupabaseConfigured = Boolean(env.supabase.url && env.supabase.serviceKey);
