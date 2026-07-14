@@ -57,8 +57,8 @@ export const authController = {
   async generateOtp(req: Request, res: Response): Promise<void> {
     if (!req.user) throw unauthorized();
     const code = await authService.generateOtp(req.user.id);
-    // In production, send via email/SMS. For now, return in response for dev/testing.
-    res.json({ code, message: 'OTP generated. In production, this would be sent via email.' });
+    // Return code in response (email sends it too if configured)
+    res.json({ code, message: 'OTP generated.' });
   },
 
   async verifyOtp(req: Request, res: Response): Promise<void> {

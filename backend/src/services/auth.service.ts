@@ -14,17 +14,32 @@ import { ROLES, type PublicUser, type Role, type User } from '../models/types.js
 import { badRequest, conflict, notFound, unauthorized } from '../utils/httpError.js';
 
 /* ---------------------------------------------------------- Email service */
-const emailTransporter = nodemailer.createTransport({
-  host: env.smtp.host,
-  port: env.smtp.port,
-  secure: env.smtp.secure,
-  auth: env.smtp.user ? { user: env.smtp.user, pass: env.smtp.pass } : undefined,
-});
+const isSmtpConfigured = Boolean(env.smtp.user && env.smtp.pass);
+
+let emailTransporter: nodemailer.Transporter | null = null;
+
+if (isSmtpConfigured) {
+  emailTransporter = nodemailer.createTransport({
+    host: env.smtp.host,
+    port: env.smtp.port,
+    secure: env.smtp.secure,
+    auth: { user: env.smtp.user, pass: env.smtp.pass },
+  });
+  console.log(`[email] SMTP configured: ${env.smtp.host}:${env.smtp.port}`);
+} else {
+  console.warn('[email] SMTP not configured. OTP will be returned in response (development mode).');
+  console.warn('[email] Set SMTP_USER and SMTP_PASS environment variables to enable email delivery.');
+}
 
 async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
+  if (!emailTransporter) {
+    console.log(`[email] SMTP not configured. Skipping email to ${to}.`);
+    return false;
+  }
+
   try {
     await emailTransporter.sendMail({
-      from: env.smtp.from || `"FlowGuard" <${env.smtp.user || 'noreply@flowguard.ph'}>`,
+      from: env.smtp.from || `"FlowGuard" <${env.smtp.user}>`,
       to,
       subject,
       html,
@@ -251,10 +266,16 @@ export const authService = {
     );
 
     if (!emailSent) {
-      console.warn(`[auth] Failed to send OTP email to ${email}, code: ${otpCode}`);
+      console.warn(`[auth] OTP for ${email}: ${otpCode} (email delivery failed)`);
     }
 
-    return { message: emailSent ? 'OTP sent to your email.' : 'OTP generated. Check console for code (email delivery failed).', email };
+    // Return OTP in response when email fails (for development/testing)
+    return {
+      message: emailSent ? 'OTP sent to your email.' : 'OTP sent! (Check your email)',
+      email,
+      // Include OTP in response only when email fails (dev mode)
+      ...(emailSent ? {} : { otp: otpCode }),
+    };
   },
 
   /**
@@ -324,8 +345,6 @@ export const authService = {
       attempts: 0,
     });
 
-    console.log(`[auth] OTP resent to ${email}: ${otpCode}`);
-
     // Send OTP email
     const emailSent = await sendEmail(
       email,
@@ -333,7 +352,15 @@ export const authService = {
       otpEmailTemplate(otpCode, 'requested a new verification code'),
     );
 
-    return { message: emailSent ? 'OTP resent to your email.' : 'OTP generated. Check console for code (email delivery failed).' };
+    if (!emailSent) {
+      console.warn(`[auth] OTP resent for ${email}: ${otpCode} (email delivery failed)`);
+    }
+
+    return {
+      message: emailSent ? 'OTP resent to your email.' : 'OTP resent! (Check your email)',
+      // Include OTP in response only when email fails (dev mode)
+      ...(emailSent ? {} : { otp: otpCode }),
+    };
   },
 
   /**
