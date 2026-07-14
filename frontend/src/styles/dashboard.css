@@ -112,6 +112,37 @@ input {
   position: relative;
   box-shadow: 6px 0 36px rgba(8, 21, 48, 0.28);
   z-index: 5;
+  overflow: hidden;
+}
+
+.sidebar > .brand {
+  flex-shrink: 0;
+}
+
+.sidebar > .menu-title,
+.sidebar > .nav-list {
+  flex-shrink: 0;
+}
+
+.sidebar > .nav-list {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar > .support-title {
+  flex-shrink: 0;
+}
+
+.sidebar > .nav-list.support {
+  overflow-y: auto;
+  flex: 0 1 auto;
+  max-height: 40vh;
+  min-height: 0;
+}
+
+.sidebar > .logout {
+  flex-shrink: 0;
 }
 
 .sidebar::after {
@@ -289,6 +320,7 @@ input {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   padding-top: 18px;
   color: #ff8095;
+  flex-shrink: 0;
 }
 
 .logout:hover {
