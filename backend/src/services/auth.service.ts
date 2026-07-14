@@ -1,86 +1,44 @@
 /**
  * Auth service — business logic for registration, login and token issuance.
- * Uses Resend API for OTP email delivery (zero SMTP configuration needed).
+ * Uses Supabase Auth for OTP email delivery (SMTP already configured in Supabase).
  */
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 import { userRepo } from '../models/userRepo.js';
+import { supabaseAuth } from '../models/supabase.js';
 import { renameIncidentReporter, insertRow as auditInsert } from '../models/resourceRepo.js';
 import { uploadAvatar } from '../models/supabase.js';
 import { ROLES, type PublicUser, type Role, type User } from '../models/types.js';
 import { badRequest, conflict, notFound, unauthorized } from '../utils/httpError.js';
 
-/* ---------------------------------------------------------- Email via Resend API */
+/* ---------------------------------------------------------- Email via Supabase Auth */
 async function sendOtpEmail(email: string, otpCode: string, purpose: string): Promise<boolean> {
-  if (!env.resend.apiKey) {
-    console.warn(`[email] RESEND_API_KEY not set. OTP for ${email}: ${otpCode}`);
+  if (!supabaseAuth) {
+    console.warn(`[email] Supabase Auth not configured. OTP for ${email}: ${otpCode}`);
     return false;
   }
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f8fe; margin: 0; padding: 20px; }
-        .container { max-width: 480px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(31, 60, 120, 0.08); }
-        .header { background: linear-gradient(135deg, #2f6bff, #5965f0); padding: 32px; text-align: center; }
-        .header h1 { color: #fff; margin: 0; font-size: 24px; font-weight: 700; }
-        .header p { color: rgba(255,255,255,0.8); margin: 8px 0 0; font-size: 14px; }
-        .body { padding: 32px; text-align: center; }
-        .otp-code { font-size: 48px; font-weight: 700; color: #2f6bff; letter-spacing: 12px; margin: 24px 0; padding: 16px; background: #eaf1ff; border-radius: 12px; }
-        .message { color: #3a4d70; font-size: 14px; line-height: 1.6; margin: 0 0 16px; }
-        .footer { color: #7d8aa6; font-size: 12px; padding: 0 32px 24px; }
-        .warning { color: #e25577; font-size: 13px; font-weight: 500; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>FlowGuard</h1>
-          <p>Water Utility Management System</p>
-        </div>
-        <div class="body">
-          <p class="message">${purpose}</p>
-          <div class="otp-code">${otpCode}</div>
-          <p class="message">This code will expire in <strong>5 minutes</strong>.</p>
-          <p class="warning">If you didn't request this code, please ignore this email.</p>
-        </div>
-        <div class="footer">
-          <p>&copy; ${new Date().getFullYear()} FlowGuard &middot; Maynilad Water Services</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
-
   try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${env.resend.apiKey}`,
-        'Content-Type': 'application/json',
+    // Use Supabase Auth to send OTP email - uses the SMTP configured in Supabase Dashboard
+    const { error } = await supabaseAuth.auth.signInWithOtp({
+      email,
+      options: {
+        // Store the OTP code in user metadata for verification
+        data: { otp_code: otpCode },
       },
-      body: JSON.stringify({
-        from: env.resend.fromEmail,
-        to: email,
-        subject: 'Your FlowGuard Verification Code',
-        html,
-      }),
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error(`[email] Resend API error for ${email}:`, error);
+    if (error) {
+      console.error(`[email] Supabase Auth OTP error for ${email}:`, error.message);
       return false;
     }
 
-    console.log(`[email] OTP sent to ${email} via Resend`);
+    console.log(`[email] OTP sent to ${email} via Supabase Auth`);
     return true;
   } catch (err) {
-    console.error(`[email] Failed to send to ${email}:`, err);
+    console.error(`[email] Supabase Auth exception for ${email}:`, err);
     return false;
   }
 }
@@ -228,7 +186,7 @@ export const authService = {
         expiresAt: Date.now() + 5 * 60 * 1000,
         attempts: 0,
       });
-      await sendOtpEmail(email, otpCode, 'You requested a new verification code for your FlowGuard account.');
+      await sendOtpEmail(email, otpCode, 'You requested a new verification code.');
       return { message: 'OTP sent to your email.', email };
     }
 
@@ -248,6 +206,7 @@ export const authService = {
     return {
       message: 'OTP sent to your email.',
       email,
+      // Include OTP in response as fallback when email fails
       ...(emailSent ? {} : { otp: otpCode }),
     };
   },
