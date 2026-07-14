@@ -1,7 +1,5 @@
 /**
  * Centralised environment configuration.
- * Reading process.env in exactly one place keeps the rest of the codebase
- * decoupled from how configuration is sourced.
  */
 import 'dotenv/config';
 
@@ -22,12 +20,12 @@ export const env = {
     accessToken: process.env.SUPABASE_ACCESS_TOKEN ?? '',
   },
 
-  // Resend API for email delivery (zero SMTP config needed)
+  // Resend API for email delivery
   resend: {
     apiKey: process.env.RESEND_API_KEY ?? '',
+    // Use onboarding@resend.dev for testing (works without domain verification)
     fromEmail: process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev',
   },
 } as const;
 
-/** True when the Supabase admin client has enough config to connect. */
 export const isSupabaseConfigured = Boolean(env.supabase.url && env.supabase.serviceKey);
