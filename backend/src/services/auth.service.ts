@@ -1,43 +1,86 @@
 /**
  * Auth service — business logic for registration, login and token issuance.
- * Uses Supabase Auth for OTP email delivery (zero configuration needed).
+ * Uses Resend API for OTP email delivery (zero SMTP configuration needed).
  */
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 import { userRepo } from '../models/userRepo.js';
-import { supabaseAuth } from '../models/supabase.js';
 import { renameIncidentReporter, insertRow as auditInsert } from '../models/resourceRepo.js';
 import { uploadAvatar } from '../models/supabase.js';
 import { ROLES, type PublicUser, type Role, type User } from '../models/types.js';
 import { badRequest, conflict, notFound, unauthorized } from '../utils/httpError.js';
 
-/* ---------------------------------------------------------- Email via Supabase Auth */
-async function sendOtpEmail(email: string, otpCode: string): Promise<boolean> {
-  if (!supabaseAuth) {
-    console.warn(`[auth] Supabase Auth not configured. OTP for ${email}: ${otpCode}`);
+/* ---------------------------------------------------------- Email via Resend API */
+async function sendOtpEmail(email: string, otpCode: string, purpose: string): Promise<boolean> {
+  if (!env.resend.apiKey) {
+    console.warn(`[email] RESEND_API_KEY not set. OTP for ${email}: ${otpCode}`);
     return false;
   }
 
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f8fe; margin: 0; padding: 20px; }
+        .container { max-width: 480px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(31, 60, 120, 0.08); }
+        .header { background: linear-gradient(135deg, #2f6bff, #5965f0); padding: 32px; text-align: center; }
+        .header h1 { color: #fff; margin: 0; font-size: 24px; font-weight: 700; }
+        .header p { color: rgba(255,255,255,0.8); margin: 8px 0 0; font-size: 14px; }
+        .body { padding: 32px; text-align: center; }
+        .otp-code { font-size: 48px; font-weight: 700; color: #2f6bff; letter-spacing: 12px; margin: 24px 0; padding: 16px; background: #eaf1ff; border-radius: 12px; }
+        .message { color: #3a4d70; font-size: 14px; line-height: 1.6; margin: 0 0 16px; }
+        .footer { color: #7d8aa6; font-size: 12px; padding: 0 32px 24px; }
+        .warning { color: #e25577; font-size: 13px; font-weight: 500; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>FlowGuard</h1>
+          <p>Water Utility Management System</p>
+        </div>
+        <div class="body">
+          <p class="message">${purpose}</p>
+          <div class="otp-code">${otpCode}</div>
+          <p class="message">This code will expire in <strong>5 minutes</strong>.</p>
+          <p class="warning">If you didn't request this code, please ignore this email.</p>
+        </div>
+        <div class="footer">
+          <p>&copy; ${new Date().getFullYear()} FlowGuard &middot; Maynilad Water Services</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
   try {
-    // Use Supabase Auth to send OTP email
-    const { error } = await supabaseAuth.auth.signInWithOtp({
-      email,
-      options: {
-        data: { otp_code: otpCode },
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.resend.apiKey}`,
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({
+        from: env.resend.fromEmail,
+        to: email,
+        subject: 'Your FlowGuard Verification Code',
+        html,
+      }),
     });
 
-    if (error) {
-      console.error(`[auth] Supabase Auth OTP failed for ${email}:`, error.message);
+    if (!response.ok) {
+      const error = await response.text();
+      console.error(`[email] Resend API error for ${email}:`, error);
       return false;
     }
 
-    console.log(`[auth] OTP email sent to ${email} via Supabase Auth`);
+    console.log(`[email] OTP sent to ${email} via Resend`);
     return true;
   } catch (err) {
-    console.error(`[auth] Supabase Auth error for ${email}:`, err);
+    console.error(`[email] Failed to send to ${email}:`, err);
     return false;
   }
 }
@@ -142,7 +185,6 @@ export interface AuthResult {
   user: PublicUser;
 }
 
-/** In-memory store for pending registrations (supplement to DB). */
 const pendingRegistrations = new Map<string, {
   fullName: string;
   email: string;
@@ -158,10 +200,6 @@ function generateOtpCode(): string {
 }
 
 export const authService = {
-  /**
-   * Step 1 of registration: validate input, check email uniqueness,
-   * generate OTP, and store pending registration. Does NOT create account yet.
-   */
   async initiateRegistration(input: {
     fullName?: string;
     email?: string;
@@ -178,7 +216,6 @@ export const authService = {
     if (password.length < 6) throw badRequest('Password must be at least 6 characters.');
     if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
 
-    // Check if there's already a pending registration for this email
     const existing = pendingRegistrations.get(email);
     if (existing && existing.expiresAt > Date.now()) {
       const otpCode = generateOtpCode();
@@ -191,11 +228,10 @@ export const authService = {
         expiresAt: Date.now() + 5 * 60 * 1000,
         attempts: 0,
       });
-      await sendOtpEmail(email, otpCode);
+      await sendOtpEmail(email, otpCode, 'You requested a new verification code for your FlowGuard account.');
       return { message: 'OTP sent to your email.', email };
     }
 
-    // Generate OTP
     const otpCode = generateOtpCode();
     pendingRegistrations.set(email, {
       fullName,
@@ -207,20 +243,15 @@ export const authService = {
       attempts: 0,
     });
 
-    // Send OTP email via Supabase Auth
-    const emailSent = await sendOtpEmail(email, otpCode);
+    const emailSent = await sendOtpEmail(email, otpCode, 'You signed up for a FlowGuard account.');
 
     return {
       message: 'OTP sent to your email.',
       email,
-      // Include OTP in response when Supabase Auth is not configured (dev mode)
       ...(emailSent ? {} : { otp: otpCode }),
     };
   },
 
-  /**
-   * Step 2 of registration: verify OTP and create account.
-   */
   async completeRegistration(input: {
     email?: string;
     otpCode?: string;
@@ -245,7 +276,6 @@ export const authService = {
       throw badRequest(`Invalid OTP code. ${5 - pending.attempts} attempts remaining.`);
     }
 
-    // OTP verified - create the account
     const user = await userRepo.create({
       fullName: pending.fullName,
       email: pending.email,
@@ -266,9 +296,6 @@ export const authService = {
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
-  /**
-   * Resend OTP for a pending registration.
-   */
   async resendOtp(input: { email?: string }): Promise<{ message: string; otp?: string }> {
     const email = input.email?.trim().toLowerCase();
     if (!email || !EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
@@ -284,7 +311,7 @@ export const authService = {
       attempts: 0,
     });
 
-    const emailSent = await sendOtpEmail(email, otpCode);
+    const emailSent = await sendOtpEmail(email, otpCode, 'You requested a new verification code.');
 
     return {
       message: 'OTP resent to your email.',
@@ -292,9 +319,6 @@ export const authService = {
     };
   },
 
-  /**
-   * Legacy registration (for admin-created accounts - no OTP required).
-   */
   async register(input: { fullName?: string; email?: string; password?: string }): Promise<AuthResult> {
     const fullName = input.fullName?.trim();
     const email = input.email?.trim().toLowerCase();
@@ -315,7 +339,6 @@ export const authService = {
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
-  /** Login by email + password only. */
   async login(input: { email?: string; password?: string }): Promise<AuthResult & { otpRequired?: boolean }> {
     const email = input.email?.trim().toLowerCase();
     const password = input.password ?? '';
@@ -336,7 +359,6 @@ export const authService = {
     return { token: signToken(user), user: toPublicUser(user), otpRequired };
   },
 
-  /** Admin (GM) — create a staff account with an explicit role. */
   async adminCreateUser(input: {
     fullName?: string;
     email?: string;
@@ -374,7 +396,6 @@ export const authService = {
     return toPublicUser(user);
   },
 
-  /** Admin (GM) — reassign a user's role. */
   async adminUpdateRole(userId: string, role?: string, actorUser?: PublicUser): Promise<PublicUser> {
     if (!ROLES.includes(role as Role)) throw badRequest('A valid role is required.');
     const before = await userRepo.findById(userId);
@@ -388,7 +409,6 @@ export const authService = {
     return toPublicUser(updated);
   },
 
-  /** Admin (GM) — archive (resign) a user. */
   async archiveUser(userId: string, actorUser?: PublicUser, reason?: string): Promise<void> {
     const user = await userRepo.findById(userId);
     if (!user) throw notFound('User not found.');
@@ -401,7 +421,6 @@ export const authService = {
     });
   },
 
-  /** Admin (GM) — restore an archived user. */
   async restoreUser(userId: string, actorUser?: PublicUser): Promise<void> {
     const user = await userRepo.findById(userId);
     if (!user) throw notFound('User not found.');
@@ -440,7 +459,6 @@ export const authService = {
     return toPublicUser(updated);
   },
 
-  /** Upload a new profile photo to Supabase Storage. */
   async updateAvatar(userId: string, dataUrl?: string): Promise<PublicUser> {
     const match = /^data:(image\/(?:png|jpe?g|webp|gif));base64,(.+)$/.exec(dataUrl ?? '');
     if (!match) throw badRequest('Please upload a valid PNG, JPG, WEBP or GIF image.');
@@ -475,7 +493,6 @@ export const authService = {
     }
   },
 
-  /** Generate and store a 6-digit OTP for the user. Sends email via Supabase Auth. */
   async generateOtp(userId: string): Promise<string> {
     const code = crypto.randomInt(100000, 999999).toString();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
@@ -483,13 +500,12 @@ export const authService = {
 
     const user = await userRepo.findById(userId);
     if (user) {
-      await sendOtpEmail(user.email, code);
+      await sendOtpEmail(user.email, code, 'You are signing in to your FlowGuard account.');
     }
 
     return code;
   },
 
-  /** Verify a 6-digit OTP code for a user. */
   async verifyOtp(userId: string, code: string): Promise<boolean> {
     const user = await userRepo.findById(userId);
     if (!user || !user.otpSecret) return false;
@@ -500,7 +516,6 @@ export const authService = {
     return true;
   },
 
-  /** Enable OTP for a user. */
   async enableOtp(userId: string): Promise<void> {
     const user = await userRepo.findById(userId);
     if (!user) throw notFound('User not found.');
@@ -508,7 +523,6 @@ export const authService = {
     await logUserAudit('otp_enabled', user.fullName, user.role, userId, user.email, {});
   },
 
-  /** Disable OTP for a user. */
   async disableOtp(userId: string): Promise<void> {
     const user = await userRepo.findById(userId);
     if (!user) throw notFound('User not found.');
@@ -516,7 +530,6 @@ export const authService = {
     await logUserAudit('otp_disabled', user.fullName, user.role, userId, user.email, {});
   },
 
-  /** Check if a user has OTP enabled. */
   async isOtpEnabled(userId: string): Promise<boolean> {
     const user = await userRepo.findById(userId);
     return user?.otpEnabled ?? true;

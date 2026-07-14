@@ -1,27 +1,19 @@
 /**
- * Supabase clients — server-side only.
+ * Supabase admin client — server-side only.
  *
- * Admin client uses the service-role key (bypasses RLS) for trusted server access.
- * Auth client uses the anon key for Supabase Auth OTP functionality.
+ * Uses the service-role key, which bypasses Row Level Security, so this module
+ * must never be imported by anything that runs in the browser. All trusted
+ * server data access (user accounts) goes through this client.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { env, isSupabaseConfigured } from '../config/env.js';
 
 let client: SupabaseClient | null = null;
-let authClient: SupabaseClient | null = null;
 
 if (isSupabaseConfigured) {
-  // Admin client (service role) - bypasses RLS
   client = createClient(env.supabase.url, env.supabase.serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-
-  // Auth client (anon key) - for Supabase Auth OTP
-  if (env.supabase.anonKey) {
-    authClient = createClient(env.supabase.url, env.supabase.anonKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-  }
 } else {
   console.warn(
     '[supabase] SUPABASE_URL / service key not set — falling back to in-memory user store.',
@@ -30,9 +22,6 @@ if (isSupabaseConfigured) {
 
 /** The shared admin client, or null when Supabase is not configured. */
 export const supabase = client;
-
-/** The auth client for Supabase Auth OTP (uses anon key). */
-export const supabaseAuth = authClient;
 
 /** Narrowing helper for call sites that require a configured client. */
 export function requireSupabase(): SupabaseClient {
