@@ -20,14 +20,18 @@ export interface InitiateRegistrationInput {
   barangay?: string;
 }
 
-export interface AuthResult extends AuthResponse {
-  otpRequired?: boolean;
+export interface LoginResult {
+  token?: string;
+  user?: User;
+  loginToken?: string;
+  otpRequired: boolean;
+  message: string;
 }
 
 export const authService = {
-  /** Step 1: Initiate registration - generates OTP and returns it. */
-  async initiateRegistration(input: InitiateRegistrationInput): Promise<{ message: string; email: string; otp: string }> {
-    return api.post<{ message: string; email: string; otp: string }>('/auth/register/initiate', input);
+  /** Step 1: Initiate registration - sends OTP to email. */
+  async initiateRegistration(input: InitiateRegistrationInput): Promise<{ message: string; email: string }> {
+    return api.post<{ message: string; email: string }>('/auth/register/initiate', input);
   },
 
   /** Step 2: Complete registration with OTP verification. */
@@ -39,14 +43,26 @@ export const authService = {
     return res;
   },
 
-  async resendOtp(email: string): Promise<{ message: string; otp: string }> {
-    return api.post<{ message: string; otp: string }>('/auth/register/resend-otp', { email });
+  async resendOtp(email: string): Promise<{ message: string }> {
+    return api.post<{ message: string }>('/auth/register/resend-otp', { email });
   },
 
-  async login({ remember, ...input }: LoginInput): Promise<User> {
-    const res = await api.post<AuthResponse>('/auth/login', input);
+  async login({ remember, ...input }: LoginInput): Promise<LoginResult> {
+    const res = await api.post<LoginResult>('/auth/login', input);
+    if (res.token && res.user) {
+      tokenStore.set(res.token, remember ?? true);
+    }
+    return res;
+  },
+
+  async verifyLoginOtp(loginToken: string, otpCode: string, remember?: boolean): Promise<User> {
+    const res = await api.post<AuthResponse>('/auth/login/verify-otp', { loginToken, otpCode });
     tokenStore.set(res.token, remember ?? true);
     return res.user;
+  },
+
+  async resendLoginOtp(loginToken: string): Promise<{ message: string }> {
+    return api.post<{ message: string }>('/auth/login/resend-otp', { loginToken });
   },
 
   async register(input: RegisterInput): Promise<User> {

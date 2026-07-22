@@ -10,11 +10,13 @@ import { tokenStore } from '../services/apiClient';
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
-  login: (input: LoginInput) => Promise<User>;
+  login: (input: LoginInput) => Promise<import('../services/authService').LoginResult>;
   register: (input: RegisterInput) => Promise<User>;
-  initiateRegistration: (input: InitiateRegistrationInput) => Promise<{ message: string; email: string; otp: string }>;
+  initiateRegistration: (input: InitiateRegistrationInput) => Promise<{ message: string; email: string }>;
   completeRegistration: (email: string, otpCode: string) => Promise<User>;
-  resendOtp: (email: string) => Promise<{ message: string; otp: string }>;
+  resendOtp: (email: string) => Promise<{ message: string }>;
+  verifyLoginOtp: (loginToken: string, otpCode: string, remember?: boolean) => Promise<User>;
+  resendLoginOtp: (loginToken: string) => Promise<{ message: string }>;
   updateProfile: (input: { fullName?: string; email?: string }) => Promise<User>;
   changePassword: (input: { currentPassword: string; newPassword: string }) => Promise<void>;
   updateAvatar: (dataUrl: string) => Promise<User>;
@@ -40,9 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (input: LoginInput) => {
-    const u = await authService.login(input);
-    setUser(u);
-    return u;
+    return authService.login(input);
   }, []);
 
   const register = useCallback(async (input: RegisterInput) => {
@@ -63,6 +63,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const resendOtp = useCallback(async (email: string) => {
     return authService.resendOtp(email);
+  }, []);
+
+  const verifyLoginOtp = useCallback(async (loginToken: string, otpCode: string, remember?: boolean) => {
+    const u = await authService.verifyLoginOtp(loginToken, otpCode, remember);
+    setUser(u);
+    return u;
+  }, []);
+
+  const resendLoginOtp = useCallback(async (loginToken: string) => {
+    return authService.resendLoginOtp(loginToken);
   }, []);
 
   const updateProfile = useCallback(async (input: { fullName?: string; email?: string }) => {
@@ -96,12 +106,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       initiateRegistration,
       completeRegistration,
       resendOtp,
+      verifyLoginOtp,
+      resendLoginOtp,
       updateProfile,
       changePassword,
       updateAvatar,
       logout,
     }),
-    [user, loading, login, register, initiateRegistration, completeRegistration, resendOtp, updateProfile, changePassword, updateAvatar, logout],
+    [user, loading, login, register, initiateRegistration, completeRegistration, resendOtp, verifyLoginOtp, resendLoginOtp, updateProfile, changePassword, updateAvatar, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -14,6 +14,8 @@ authRoutes.post('/register/resend-otp', asyncHandler(authController.resendOtp));
 authRoutes.post('/register', asyncHandler(authController.register));
 
 authRoutes.post('/login', asyncHandler(authController.login));
+authRoutes.post('/login/verify-otp', asyncHandler(authController.verifyLoginOtp));
+authRoutes.post('/login/resend-otp', asyncHandler(authController.resendLoginOtp));
 authRoutes.get('/me', requireAuth, authController.me);
 authRoutes.patch('/profile', requireAuth, asyncHandler(authController.updateProfile));
 authRoutes.patch('/password', requireAuth, asyncHandler(authController.changePassword));

@@ -7,7 +7,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 import { userRepo } from '../models/userRepo.js';
-import { supabase } from '../models/supabase.js';
+import { sendOtpEmail } from './mailer.service.js';
 import { renameIncidentReporter, insertRow as auditInsert } from '../models/resourceRepo.js';
 import { uploadAvatar } from '../models/supabase.js';
 import { ROLES, type PublicUser, type Role, type User } from '../models/types.js';
@@ -54,10 +54,12 @@ export interface AuthResult { token: string; user: PublicUser; }
 
 const pending = new Map<string, { fullName: string; email: string; passwordHash: string; barangay: string; otpCode: string; expiresAt: number; attempts: number }>();
 
+const pendingLogins = new Map<string, { userId: string; email: string; otpCode: string; expiresAt: number; attempts: number }>();
+
 function genOtp(): string { return crypto.randomInt(100000, 999999).toString(); }
 
 export const authService = {
-  async initiateRegistration(input: { fullName?: string; email?: string; password?: string; barangay?: string }): Promise<{ message: string; email: string; otp: string }> {
+  async initiateRegistration(input: { fullName?: string; email?: string; password?: string; barangay?: string }): Promise<{ message: string; email: string }> {
     const fullName = input.fullName?.trim();
     const email = input.email?.trim().toLowerCase();
     const password = input.password ?? '';
@@ -70,13 +72,14 @@ export const authService = {
 
     const existing = pending.get(email);
     if (existing && existing.expiresAt > Date.now()) {
-      const otpCode = existing.otpCode;
-      return { message: 'OTP displayed on screen.', email, otp: otpCode };
+      await sendOtpEmail(email, existing.otpCode);
+      return { message: 'OTP sent to your email.', email };
     }
 
     const otpCode = genOtp();
     pending.set(email, { fullName, email, passwordHash: bcrypt.hashSync(password, 10), barangay, otpCode, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0 });
-    return { message: 'OTP displayed on screen.', email, otp: otpCode };
+    await sendOtpEmail(email, otpCode);
+    return { message: 'OTP sent to your email.', email };
   },
 
   async completeRegistration(input: { email?: string; otpCode?: string }): Promise<AuthResult> {
@@ -96,14 +99,43 @@ export const authService = {
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
-  async resendOtp(input: { email?: string }): Promise<{ message: string; otp: string }> {
+  async resendOtp(input: { email?: string }): Promise<{ message: string }> {
     const email = input.email?.trim().toLowerCase();
     if (!email || !EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
     const p = pending.get(email);
     if (!p) throw badRequest('No pending registration found.');
     const otpCode = genOtp();
     pending.set(email, { ...p, otpCode, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0 });
-    return { message: 'OTP resent.', otp: otpCode };
+    await sendOtpEmail(email, otpCode);
+    return { message: 'OTP resent to your email.' };
+  },
+
+  async verifyLoginOtp(input: { loginToken?: string; otpCode?: string }): Promise<AuthResult> {
+    const email = input.loginToken?.trim().toLowerCase();
+    const otpCode = input.otpCode ?? '';
+    if (!email || !otpCode) throw badRequest('Login token and OTP code are required.');
+
+    const p = pendingLogins.get(email);
+    if (!p) throw badRequest('No pending login found. Please log in again.');
+    if (p.expiresAt < Date.now()) { pendingLogins.delete(email); throw badRequest('OTP expired. Please log in again.'); }
+    if (p.attempts >= 5) { pendingLogins.delete(email); throw badRequest('Too many failed attempts. Please log in again.'); }
+    if (p.otpCode !== otpCode) { p.attempts++; throw badRequest(`Invalid OTP. ${5 - p.attempts} attempts remaining.`); }
+
+    const user = await userRepo.findById(p.userId);
+    pendingLogins.delete(email);
+    if (!user) throw unauthorized('Account no longer exists.');
+    return { token: signToken(user), user: toPublicUser(user) };
+  },
+
+  async resendLoginOtp(input: { loginToken?: string }): Promise<{ message: string }> {
+    const email = input.loginToken?.trim().toLowerCase();
+    if (!email) throw badRequest('Login token is required.');
+    const p = pendingLogins.get(email);
+    if (!p) throw badRequest('No pending login found. Please log in again.');
+    const otpCode = genOtp();
+    pendingLogins.set(email, { ...p, otpCode, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0 });
+    await sendOtpEmail(email, otpCode);
+    return { message: 'OTP resent to your email.' };
   },
 
   async register(input: { fullName?: string; email?: string; password?: string }): Promise<AuthResult> {
@@ -119,14 +151,23 @@ export const authService = {
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
-  async login(input: { email?: string; password?: string }): Promise<AuthResult & { otpRequired?: boolean }> {
+  async login(input: { email?: string; password?: string }): Promise<{ token?: string; user?: PublicUser; loginToken?: string; otpRequired: boolean; message: string }> {
     const email = input.email?.trim().toLowerCase();
     const password = input.password ?? '';
     if (!email || !password) throw badRequest('Email and password are required.');
     const user = await userRepo.findByEmail(email);
     if (!user || !bcrypt.compareSync(password, user.passwordHash)) throw unauthorized('Invalid email or password.');
     if (user.isArchived) throw unauthorized('This account has been deactivated.');
-    return { token: signToken(user), user: toPublicUser(user), otpRequired: user.otpEnabled ?? true };
+
+    const otpEnabled = user.otpEnabled ?? true;
+    if (otpEnabled) {
+      const otpCode = genOtp();
+      pendingLogins.set(email, { userId: user.id, email, otpCode, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0 });
+      await sendOtpEmail(email, otpCode);
+      return { loginToken: email, otpRequired: true, message: 'OTP sent to your email.' };
+    }
+
+    return { token: signToken(user), user: toPublicUser(user), otpRequired: false, message: 'Login successful.' };
   },
 
   async adminCreateUser(input: { fullName?: string; email?: string; password?: string; role?: string; startDate?: string; barangay?: string }): Promise<PublicUser> {
@@ -212,6 +253,8 @@ export const authService = {
     const code = crypto.randomInt(100000, 999999).toString();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
     await userRepo.update(userId, { otpSecret: `${code}:${expiresAt}` });
+    const user = await userRepo.findById(userId);
+    if (user) await sendOtpEmail(user.email, code);
     return code;
   },
 

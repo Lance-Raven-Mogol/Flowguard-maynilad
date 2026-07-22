@@ -20,6 +20,7 @@ class Store {
         role: u.role,
         passwordHash: bcrypt.hashSync(u.password, 10),
         createdAt: new Date().toISOString(),
+        otpEnabled: true,
       });
     }
   }
@@ -40,12 +41,13 @@ class Store {
       role: data.role,
       passwordHash: data.passwordHash,
       createdAt: new Date().toISOString(),
+      otpEnabled: true,
     };
     this.users.push(user);
     return user;
   }
 
-  updateUser(id: string, fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string }): User | undefined {
+  updateUser(id: string, fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string; otpSecret?: string; otpEnabled?: boolean }): User | undefined {
     const user = this.users.find((u) => u.id === id);
     if (!user) return undefined;
     if (fields.fullName !== undefined) user.fullName = fields.fullName;
@@ -53,6 +55,8 @@ class Store {
     if (fields.passwordHash !== undefined) user.passwordHash = fields.passwordHash;
     if (fields.role !== undefined) user.role = fields.role;
     if (fields.avatarUrl !== undefined) user.avatarUrl = fields.avatarUrl;
+    if (fields.otpSecret !== undefined) user.otpSecret = fields.otpSecret;
+    if (fields.otpEnabled !== undefined) user.otpEnabled = fields.otpEnabled;
     return user;
   }
 }

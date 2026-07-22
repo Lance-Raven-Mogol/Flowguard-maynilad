@@ -42,7 +42,7 @@ function fromRow(row: UserRow): User {
     isArchived: row.is_archived ?? false,
     barangay: row.barangay ?? 'Boac',
     otpSecret: row.otp_secret ?? undefined,
-    otpEnabled: row.otp_enabled ?? false,
+    otpEnabled: row.otp_enabled ?? true,
   };
 }
 
@@ -92,6 +92,7 @@ export const userRepo = {
         role: input.role,
         password_hash: input.passwordHash,
         start_date: input.startDate ?? new Date().toISOString().slice(0, 10),
+        otp_enabled: true,
       })
       .select('*')
       .single<UserRow>();

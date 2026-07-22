@@ -38,14 +38,24 @@ export function AccountSettings() {
   const [confirm, setConfirm] = useState('');
   const [savingPw, setSavingPw] = useState(false);
 
-  // OTP state - simple toggle
+  // OTP state - toggle with verification
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpEnabled, setOtpEnabled] = useState(user!.otpEnabled ?? true);
+  const [otpModalOpen, setOtpModalOpen] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [otpCooldown, setOtpCooldown] = useState(0);
 
   // Sync OTP state with user object
   useEffect(() => {
     setOtpEnabled(user!.otpEnabled ?? true);
   }, [user!.otpEnabled]);
+
+  useEffect(() => {
+    if (otpCooldown <= 0) return;
+    const timer = setInterval(() => setOtpCooldown((c) => (c > 0 ? c - 1 : 0)), 1000);
+    return () => clearInterval(timer);
+  }, [otpCooldown]);
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -100,22 +110,71 @@ export function AccountSettings() {
   };
 
   const toggleOtp = async (enabled: boolean) => {
-    setOtpLoading(true);
-    try {
-      const { authService } = await import('../../services/authService');
-      if (enabled) {
-        await authService.enableOtp();
-        setOtpEnabled(true);
-        notify('OTP enabled! You will be asked for a code on every sign-in.');
-      } else {
+    if (enabled) {
+      // When enabling, send OTP first and open verification modal
+      setOtpLoading(true);
+      try {
+        const { authService } = await import('../../services/authService');
+        await authService.generateOtp();
+        setOtpModalOpen(true);
+        setOtpCode('');
+        setOtpCooldown(60);
+        notify('OTP sent to your email. Enter the code to enable 2FA.', 'success');
+      } catch (err) {
+        notify(err instanceof ApiError ? err.message : 'Could not send OTP.', 'error');
+      } finally {
+        setOtpLoading(false);
+      }
+    } else {
+      // When disabling, no verification needed
+      setOtpLoading(true);
+      try {
+        const { authService } = await import('../../services/authService');
         await authService.disableOtp();
         setOtpEnabled(false);
         notify('OTP disabled. You will no longer be asked for a code on sign-in.');
+      } catch (err) {
+        notify(err instanceof ApiError ? err.message : 'Could not update OTP settings.', 'error');
+      } finally {
+        setOtpLoading(false);
+      }
+    }
+  };
+
+  const handleOtpVerify = async () => {
+    if (!otpCode || otpCode.length !== 6) {
+      notify('Please enter a valid 6-digit code.', 'error');
+      return;
+    }
+    setOtpVerifying(true);
+    try {
+      const { authService } = await import('../../services/authService');
+      const result = await authService.verifyOtp(otpCode);
+      if (result.valid) {
+        await authService.enableOtp();
+        setOtpEnabled(true);
+        setOtpModalOpen(false);
+        setOtpCode('');
+        notify('OTP enabled! You will be asked for a code on every sign-in.', 'success');
+      } else {
+        notify('Invalid OTP code. Please try again.', 'error');
       }
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Could not update OTP settings.', 'error');
+      notify(err instanceof ApiError ? err.message : 'OTP verification failed.', 'error');
     } finally {
-      setOtpLoading(false);
+      setOtpVerifying(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (otpCooldown > 0) return;
+    try {
+      const { authService } = await import('../../services/authService');
+      await authService.generateOtp();
+      setOtpCooldown(60);
+      notify('OTP resent to your email!', 'success');
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : 'Failed to resend OTP.', 'error');
     }
   };
 
@@ -221,6 +280,68 @@ export function AccountSettings() {
           />
         </section>
       </div>
+
+      {/* OTP Verification Modal */}
+      {otpModalOpen && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }}>
+          <div style={{
+            background: 'var(--panel)', borderRadius: 12, padding: 32,
+            width: '100%', maxWidth: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+          }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: 18 }}>Verify OTP to Enable 2FA</h3>
+            <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 20px' }}>
+              Enter the 6-digit code sent to your email.
+            </p>
+            <div className="input-shell">
+              <label className="input-copy" htmlFor="settings-otp">
+                <span className="input-label">OTP Code</span>
+                <input
+                  id="settings-otp"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                  style={{ textAlign: 'center', fontSize: 24, letterSpacing: 8 }}
+                />
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+              <button
+                className="btn-primary"
+                style={{ flex: 1 }}
+                onClick={handleOtpVerify}
+                disabled={otpVerifying || otpCode.length !== 6}
+              >
+                {otpVerifying ? 'Verifying…' : 'Verify & Enable'}
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => { setOtpModalOpen(false); setOtpCode(''); }}
+              >
+                Cancel
+              </button>
+            </div>
+            <div style={{ textAlign: 'center', marginTop: 16 }}>
+              {otpCooldown > 0 ? (
+                <p style={{ fontSize: 13, color: 'var(--muted)' }}>Resend OTP in {otpCooldown}s</p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleResendOtp}
+                  style={{ background: 'none', border: 'none', color: 'var(--blue)', cursor: 'pointer', fontSize: 13 }}
+                >
+                  Resend OTP
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

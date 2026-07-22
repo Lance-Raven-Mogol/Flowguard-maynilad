@@ -32,6 +32,16 @@ export const authController = {
     res.json(result);
   },
 
+  async verifyLoginOtp(req: Request, res: Response): Promise<void> {
+    const result = await authService.verifyLoginOtp(req.body ?? {});
+    res.json(result);
+  },
+
+  async resendLoginOtp(req: Request, res: Response): Promise<void> {
+    const result = await authService.resendLoginOtp(req.body ?? {});
+    res.json(result);
+  },
+
   me(req: Request, res: Response): void {
     res.json({ user: req.user });
   },

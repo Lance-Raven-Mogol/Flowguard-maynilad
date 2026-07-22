@@ -1,15 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../controllers/AuthContext';
 import { useToast } from '../../controllers/ToastContext';
-import { ApiError, api } from '../../services/apiClient';
+import { ApiError } from '../../services/apiClient';
 import { AuthCard } from './AuthCard';
 import { PasswordInput } from './PasswordInput';
 
 type Step = 'credentials' | 'otp';
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, verifyLoginOtp, resendLoginOtp } = useAuth();
   const { notify } = useToast();
   const navigate = useNavigate();
 
@@ -23,6 +24,8 @@ export function LoginPage() {
   const [otpCode, setOtpCode] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [loginToken, setLoginToken] = useState('');
+  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Cooldown timer for resend OTP
   useEffect(() => {
@@ -41,8 +44,15 @@ export function LoginPage() {
     }
     setSubmitting(true);
     try {
-      await login({ email, password, remember });
-      navigate('/dashboard');
+      const result = await login({ email, password, remember });
+      if (result.otpRequired && result.loginToken) {
+        setLoginToken(result.loginToken);
+        setStep('otp');
+        setCooldown(60);
+        notify('OTP sent to your email!', 'success');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (err) {
       notify(err instanceof ApiError ? err.message : 'Login failed.', 'error');
     } finally {
@@ -57,14 +67,9 @@ export function LoginPage() {
     }
     setOtpLoading(true);
     try {
-      // Verify OTP - the token is already set from login
-      const res = await api.post<{ valid: boolean }>('/auth/otp/verify', { code: otpCode });
-      if (res.valid) {
-        notify('OTP verified! Signing in...');
-        navigate('/dashboard');
-      } else {
-        notify('Invalid or expired OTP code.', 'error');
-      }
+      await verifyLoginOtp(loginToken, otpCode, remember);
+      notify('OTP verified! Signing in...');
+      navigate('/dashboard');
     } catch (err) {
       notify(err instanceof ApiError ? err.message : 'OTP verification failed.', 'error');
     } finally {
@@ -75,8 +80,7 @@ export function LoginPage() {
   const handleResendOtp = async () => {
     if (cooldown > 0) return;
     try {
-      // Generate new OTP for the current user
-      await api.post('/auth/otp/generate', {});
+      await resendLoginOtp(loginToken);
       setCooldown(60);
       notify('OTP resent to your email!', 'success');
     } catch (err) {
@@ -123,25 +127,46 @@ export function LoginPage() {
           </button>
         </form>
       ) : (
-        <div className="login-form">
-          <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16, textAlign: 'center' }}>
-            For your security, please enter the verification code to continue.
+        <div className="login-form otp-step">
+          <div className="otp-icon-wrap">
+            <ShieldCheck size={32} strokeWidth={1.8} />
+          </div>
+          <p className="otp-step-desc">
+            We sent a verification code to<br />
+            <strong>{maskEmail(email)}</strong>
           </p>
 
-          <div className="input-shell">
-            <label className="input-copy" htmlFor="otp">
-              <span className="input-label">OTP Code</span>
+          <div className="otp-input-group">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
               <input
-                id="otp"
+                key={i}
+                ref={(el) => { otpRefs.current[i] = el; }}
+                className="otp-digit"
                 type="text"
                 inputMode="numeric"
-                maxLength={6}
-                placeholder="000000"
-                value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                style={{ textAlign: 'center', fontSize: 24, letterSpacing: 8 }}
+                maxLength={1}
+                value={otpCode[i] ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '');
+                  const next = otpCode.split('');
+                  next[i] = val;
+                  const joined = next.join('').slice(0, 6);
+                  setOtpCode(joined);
+                  if (val && i < 5) otpRefs.current[i + 1]?.focus();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Backspace' && !otpCode[i] && i > 0) {
+                    otpRefs.current[i - 1]?.focus();
+                  }
+                }}
+                onPaste={(e) => {
+                  e.preventDefault();
+                  const pasted = (e.clipboardData.getData('text') ?? '').replace(/\D/g, '').slice(0, 6);
+                  setOtpCode(pasted);
+                  otpRefs.current[Math.min(pasted.length, 5)]?.focus();
+                }}
               />
-            </label>
+            ))}
           </div>
 
           <button
@@ -153,29 +178,18 @@ export function LoginPage() {
             {otpLoading ? 'Verifying…' : 'Verify & Sign In'}
           </button>
 
-          <div style={{ textAlign: 'center', marginTop: 16 }}>
+          <div className="otp-actions">
             {cooldown > 0 ? (
-              <p style={{ fontSize: 13, color: 'var(--muted)' }}>
-                Resend OTP in {cooldown}s
-              </p>
+              <p className="otp-cooldown">Resend code in {cooldown}s</p>
             ) : (
-              <button
-                type="button"
-                className="link-btn"
-                onClick={handleResendOtp}
-                style={{ background: 'none', border: 'none', color: 'var(--blue)', cursor: 'pointer', fontSize: 13 }}
-              >
-                Resend OTP
+              <button type="button" className="otp-link-btn" onClick={handleResendOtp}>
+                Resend code
               </button>
             )}
-          </div>
-
-          <div style={{ textAlign: 'center', marginTop: 12 }}>
             <button
               type="button"
-              className="link-btn"
-              onClick={() => { setStep('credentials'); setOtpCode(''); }}
-              style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13 }}
+              className="otp-link-btn otp-back"
+              onClick={() => { setStep('credentials'); setOtpCode(''); setLoginToken(''); }}
             >
               ← Back to login
             </button>

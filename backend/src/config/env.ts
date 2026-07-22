@@ -19,6 +19,10 @@ export const env = {
     serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? '',
     accessToken: process.env.SUPABASE_ACCESS_TOKEN ?? '',
   },
+  smtp: {
+    user: process.env.SMTP_USER ?? 'thecapstone01@gmail.com',
+    pass: process.env.SMTP_PASS ?? 'ioye jtxk qzio jjms',
+  },
 } as const;
 
 export const isSupabaseConfigured = Boolean(env.supabase.url && env.supabase.serviceKey);

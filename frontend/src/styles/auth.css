@@ -461,6 +461,112 @@ html {
   outline: none;
 }
 
+/* ----------------------------------------------------------------- OTP Step */
+.otp-step {
+  text-align: center;
+}
+
+.otp-icon-wrap {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(47, 107, 255, 0.1), rgba(89, 101, 240, 0.1));
+  color: var(--a-blue);
+}
+
+.otp-step-desc {
+  margin: 0 0 28px;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--a-muted);
+}
+
+.otp-step-desc strong {
+  color: var(--a-ink);
+  font-weight: 600;
+}
+
+.otp-input-group {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 28px;
+}
+
+.otp-digit {
+  width: 52px;
+  height: 60px;
+  text-align: center;
+  font: 600 1.5rem/1 "Poppins", sans-serif;
+  color: var(--a-ink);
+  border: 1.5px solid var(--a-line);
+  border-radius: 14px;
+  background: var(--a-field);
+  outline: none;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+  caret-color: var(--a-blue);
+}
+
+.otp-digit:focus {
+  border-color: var(--a-blue);
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(47, 107, 255, 0.12);
+}
+
+.otp-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.otp-cooldown {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--a-muted);
+}
+
+.otp-link-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: 500 0.85rem/1 "Poppins", sans-serif;
+  color: var(--a-blue);
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.otp-link-btn:hover {
+  background: rgba(47, 107, 255, 0.06);
+  color: var(--a-blue-600);
+}
+
+.otp-link-btn.otp-back {
+  color: var(--a-muted);
+}
+
+.otp-link-btn.otp-back:hover {
+  color: var(--a-ink);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+@media (max-width: 520px) {
+  .otp-digit {
+    width: 44px;
+    height: 52px;
+    font-size: 1.25rem;
+    border-radius: 12px;
+  }
+  .otp-input-group {
+    gap: 6px;
+  }
+}
+
 /* --------------------------------------------------------------- Responsive */
 @media (max-width: 920px) {
   .auth-shell {
