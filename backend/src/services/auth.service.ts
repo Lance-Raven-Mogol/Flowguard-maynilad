@@ -208,14 +208,15 @@ export const authService = {
     await audit('reactivate', actorUser?.fullName, 'general-manager', userId, user.email, { target_name: user.fullName, target_role: user.role });
   },
 
-  async updateProfile(userId: string, input: { fullName?: string; email?: string }): Promise<PublicUser> {
+  async updateProfile(userId: string, input: { fullName?: string; email?: string; barangay?: string }): Promise<PublicUser> {
     const fullName = input.fullName?.trim();
     const email = input.email?.trim().toLowerCase();
+    const barangay = input.barangay?.trim() || undefined;
     if (fullName !== undefined && fullName.length < 2) throw badRequest('Full name is too short.');
     if (email !== undefined && !EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
     if (email) { const existing = await userRepo.findByEmail(email); if (existing && existing.id !== userId) throw conflict('That email is already in use.'); }
     const before = await userRepo.findById(userId);
-    const updated = await userRepo.update(userId, { fullName, email });
+    const updated = await userRepo.update(userId, { fullName, email, barangay });
     if (!updated) throw unauthorized('Account no longer exists.');
     if (before && fullName && before.fullName !== fullName) await renameIncidentReporter(before.fullName, fullName);
     await audit('profile_update', updated.fullName, updated.role, userId, updated.email, { fields_changed: Object.keys(input) });

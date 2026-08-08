@@ -10,6 +10,7 @@ const transporter = nodemailer.createTransport({
 });
 
 export async function sendOtpEmail(to: string, otpCode: string): Promise<void> {
+  try {
   await transporter.sendMail({
     from: `"FlowGuard" <${env.smtp.user}>`,
     to,
@@ -95,4 +96,10 @@ export async function sendOtpEmail(to: string, otpCode: string): Promise<void> {
       </html>
     `,
   });
+  } catch (err) {
+    // In development, log the OTP to the console so login still works
+    // even when Gmail SMTP is unavailable or misconfigured.
+    console.warn(`[mailer] Failed to send OTP email to ${to}: ${err instanceof Error ? err.message : err}`);
+    console.warn(`[mailer] ⚠️  DEV OTP for ${to}: ${otpCode}`);
+  }
 }

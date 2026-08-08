@@ -17,7 +17,7 @@ interface AuthContextValue {
   resendOtp: (email: string) => Promise<{ message: string }>;
   verifyLoginOtp: (loginToken: string, otpCode: string, remember?: boolean) => Promise<User>;
   resendLoginOtp: (loginToken: string) => Promise<{ message: string }>;
-  updateProfile: (input: { fullName?: string; email?: string }) => Promise<User>;
+  updateProfile: (input: { fullName?: string; email?: string; barangay?: string }) => Promise<User>;
   changePassword: (input: { currentPassword: string; newPassword: string }) => Promise<void>;
   updateAvatar: (dataUrl: string) => Promise<User>;
   logout: () => void;
@@ -75,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return authService.resendLoginOtp(loginToken);
   }, []);
 
-  const updateProfile = useCallback(async (input: { fullName?: string; email?: string }) => {
+  const updateProfile = useCallback(async (input: { fullName?: string; email?: string; barangay?: string }) => {
     const u = await authService.updateProfile(input);
     setUser(u);
     return u;

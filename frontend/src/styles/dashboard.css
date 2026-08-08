@@ -1330,6 +1330,83 @@ td strong {
   stroke-width: 2 !important;
 }
 
+/* ---------------------------------------------------- OTP Settings Modal */
+/* Backdrop */
+.otp-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 27, 61, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+  animation: otp-backdrop-in 0.18s ease;
+}
+
+@keyframes otp-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Card — mirrors the auth form panel look */
+.otp-modal-card {
+  width: 100%;
+  max-width: 400px;
+  background: #fff;
+  border-radius: 20px;
+  padding: 36px 32px 28px;
+  box-shadow: 0 24px 64px rgba(10, 27, 61, 0.22);
+  text-align: center;
+  animation: otp-card-in 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes otp-card-in {
+  from { opacity: 0; transform: scale(0.92) translateY(12px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.otp-modal-title {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #14233f;
+  letter-spacing: -0.3px;
+}
+
+/* Reuse auth.css OTP classes inside the modal */
+/* .otp-icon-wrap, .otp-step-desc, .otp-input-group, .otp-digit,   */
+/* .otp-actions, .otp-cooldown, .otp-link-btn are all defined in   */
+/* auth.css and available globally via index.css import.           */
+
+/* Primary button inside the modal — mirrors .primary-submit in auth.css */
+.otp-modal-card .primary-submit {
+  margin-top: 4px;
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  padding: 14px 1rem;
+  font: 600 0.97rem/1 "Poppins", sans-serif;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(100deg, #2f6bff, #5965f0);
+  box-shadow: 0 12px 26px rgba(47, 107, 255, 0.32);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+}
+
+.otp-modal-card .primary-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 34px rgba(47, 107, 255, 0.42);
+}
+
+.otp-modal-card .primary-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
 /* --------------------------------------------------------------------- FAQ */
 .faq-list {
   display: grid;

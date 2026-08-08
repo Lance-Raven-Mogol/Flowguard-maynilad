@@ -4,7 +4,7 @@
  * and location (barangay). Sections are stacked so the page fills naturally.
  */
 import { useRef, useState, useEffect } from 'react';
-import { Camera, Shield, MapPin } from 'lucide-react';
+import { Camera, Shield, MapPin, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../controllers/AuthContext';
 import { useToast } from '../../controllers/ToastContext';
 import { ApiError } from '../../services/apiClient';
@@ -45,6 +45,14 @@ export function AccountSettings() {
   const [otpCode, setOtpCode] = useState('');
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [otpCooldown, setOtpCooldown] = useState(0);
+  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const maskEmail = (e: string) => {
+    const [name, domain] = e.split('@');
+    if (!domain) return e;
+    const masked = name.length > 2 ? name[0] + '***' + name[name.length - 1] : name[0] + '***';
+    return `${masked}@${domain}`;
+  };
 
   // Sync OTP state with user object
   useEffect(() => {
@@ -83,7 +91,7 @@ export function AccountSettings() {
   const saveProfile = async () => {
     setSavingProfile(true);
     try {
-      await updateProfile({ fullName: fullName.trim() });
+      await updateProfile({ fullName: fullName.trim(), barangay });
       notify('Profile updated successfully!');
     } catch (err) {
       notify(err instanceof ApiError ? err.message : 'Could not update profile.', 'error');
@@ -281,63 +289,85 @@ export function AccountSettings() {
         </section>
       </div>
 
-      {/* OTP Verification Modal */}
+      {/* OTP Verification Modal — matches the login OTP step design */}
       {otpModalOpen && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
-        }}>
-          <div style={{
-            background: 'var(--panel)', borderRadius: 12, padding: 32,
-            width: '100%', maxWidth: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
-          }}>
-            <h3 style={{ margin: '0 0 8px', fontSize: 18 }}>Verify OTP to Enable 2FA</h3>
-            <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 20px' }}>
-              Enter the 6-digit code sent to your email.
+        <div
+          className="otp-modal-backdrop"
+          onClick={(e) => { if (e.target === e.currentTarget) { setOtpModalOpen(false); setOtpCode(''); } }}
+        >
+          <div className="otp-modal-card">
+            {/* Icon */}
+            <div className="otp-icon-wrap" style={{ margin: '0 auto 20px' }}>
+              <ShieldCheck size={32} strokeWidth={1.8} />
+            </div>
+
+            {/* Heading */}
+            <h3 className="otp-modal-title">Verify to Enable 2FA</h3>
+            <p className="otp-step-desc">
+              Enter the 6-digit code sent to<br />
+              <strong>{maskEmail(user!.email)}</strong>
             </p>
-            <div className="input-shell">
-              <label className="input-copy" htmlFor="settings-otp">
-                <span className="input-label">OTP Code</span>
+
+            {/* 6-digit boxes — identical to login */}
+            <div className="otp-input-group">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
                 <input
-                  id="settings-otp"
+                  key={i}
+                  ref={(el) => { otpRefs.current[i] = el; }}
+                  className="otp-digit"
                   type="text"
                   inputMode="numeric"
-                  maxLength={6}
-                  placeholder="000000"
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                  style={{ textAlign: 'center', fontSize: 24, letterSpacing: 8 }}
+                  maxLength={1}
+                  value={otpCode[i] ?? ''}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '');
+                    const next = otpCode.split('');
+                    next[i] = val;
+                    const joined = next.join('').slice(0, 6);
+                    setOtpCode(joined);
+                    if (val && i < 5) otpRefs.current[i + 1]?.focus();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Backspace' && !otpCode[i] && i > 0) {
+                      otpRefs.current[i - 1]?.focus();
+                    }
+                  }}
+                  onPaste={(e) => {
+                    e.preventDefault();
+                    const pasted = (e.clipboardData.getData('text') ?? '').replace(/\D/g, '').slice(0, 6);
+                    setOtpCode(pasted);
+                    otpRefs.current[Math.min(pasted.length, 5)]?.focus();
+                  }}
                 />
-              </label>
+              ))}
             </div>
-            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-              <button
-                className="btn-primary"
-                style={{ flex: 1 }}
-                onClick={handleOtpVerify}
-                disabled={otpVerifying || otpCode.length !== 6}
-              >
-                {otpVerifying ? 'Verifying…' : 'Verify & Enable'}
-              </button>
-              <button
-                className="btn-secondary"
-                onClick={() => { setOtpModalOpen(false); setOtpCode(''); }}
-              >
-                Cancel
-              </button>
-            </div>
-            <div style={{ textAlign: 'center', marginTop: 16 }}>
+
+            {/* Verify button */}
+            <button
+              className="primary-submit"
+              type="button"
+              onClick={handleOtpVerify}
+              disabled={otpVerifying || otpCode.length !== 6}
+            >
+              {otpVerifying ? 'Verifying…' : 'Verify & Enable 2FA'}
+            </button>
+
+            {/* Resend + Cancel */}
+            <div className="otp-actions">
               {otpCooldown > 0 ? (
-                <p style={{ fontSize: 13, color: 'var(--muted)' }}>Resend OTP in {otpCooldown}s</p>
+                <p className="otp-cooldown">Resend code in {otpCooldown}s</p>
               ) : (
-                <button
-                  type="button"
-                  onClick={handleResendOtp}
-                  style={{ background: 'none', border: 'none', color: 'var(--blue)', cursor: 'pointer', fontSize: 13 }}
-                >
-                  Resend OTP
+                <button type="button" className="otp-link-btn" onClick={handleResendOtp}>
+                  Resend code
                 </button>
               )}
+              <button
+                type="button"
+                className="otp-link-btn otp-back"
+                onClick={() => { setOtpModalOpen(false); setOtpCode(''); }}
+              >
+                ← Cancel
+              </button>
             </div>
           </div>
         </div>
