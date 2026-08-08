@@ -50,10 +50,14 @@ interface StatsValue {
 
 const StatsContext = createContext<StatsValue | null>(null);
 
+/** How often to silently re-fetch in the background (ms). */
+const POLL_INTERVAL = 10_000;
+
 export function StatsProvider({ children }: { children: ReactNode }) {
   const [stats, setStats] = useState<DashboardStats>(EMPTY);
   const [loading, setLoading] = useState(true);
 
+  /** Full fetch — shows the loading state (used on first mount). */
   const reload = useCallback(async () => {
     setLoading(true);
     try {
@@ -70,9 +74,33 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  /** Silent background fetch — no loading flash, just updates the data. */
+  const silentReload = useCallback(async () => {
+    try {
+      const results = await Promise.all(
+        ENTITIES.map(([, slug]) => resourceService.list(slug).catch(() => [] as EntityRow[])),
+      );
+      const next = { ...EMPTY };
+      ENTITIES.forEach(([key], i) => {
+        next[key] = results[i];
+      });
+      setStats(next);
+    } catch {
+      /* network blip — keep the last good snapshot */
+    }
+  }, []);
+
+  // Initial load.
   useEffect(() => {
     reload();
   }, [reload]);
+
+  // Background polling — keeps the bell and badges up to date in real time
+  // without requiring a page refresh or navigation action.
+  useEffect(() => {
+    const id = setInterval(silentReload, POLL_INTERVAL);
+    return () => clearInterval(id);
+  }, [silentReload]);
 
   const value = useMemo(() => ({ stats, loading, reload }), [stats, loading, reload]);
   return <StatsContext.Provider value={value}>{children}</StatsContext.Provider>;
@@ -101,6 +129,17 @@ export interface Alert {
 /** Stable key for an aggregate alert: tag + the sorted ids it covers. */
 const aggKey = (tag: string, rows: EntityRow[]) => `${tag}:${rows.map((r) => r.id).sort().join(',')}`;
 
+/** Urgency → alert tone mapping. */
+const urgencyTone = (urgency: unknown): Alert['tone'] => {
+  if (urgency === 'high') return 'danger';
+  if (urgency === 'medium') return 'warn';
+  return 'info';
+};
+
+/** Human-readable incident status label. */
+const incidentStatusLabel = (status: unknown): string =>
+  String(status ?? '').replace(/_/g, ' ');
+
 /** Role-aware notification feed derived from the live snapshot. */
 export function buildAlerts(stats: DashboardStats, role: string, fullName: string): Alert[] {
   const alerts: Alert[] = [];
@@ -123,7 +162,14 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
   if (role === 'customer') {
     const mine = stats.incidents.filter((i) => String(i.reported_by).toLowerCase() === fullName.toLowerCase() && isOpen(i));
     mine.forEach((i) =>
-      alerts.push({ key: `inc:${i.id}:${i.status}`, view: 'complaints', icon: 'message-square', title: `Complaint ${i.ref_code} is ${String(i.status).replace(/_/g, ' ')}`, detail: String(i.description ?? ''), tone: 'info' }),
+      alerts.push({
+        key: `inc:${i.id}:${i.status}`,
+        view: 'complaints',
+        icon: 'message-square',
+        title: `Complaint ${i.ref_code} is ${incidentStatusLabel(i.status)}`,
+        detail: String(i.description ?? ''),
+        tone: 'info',
+      }),
     );
     const mySupplies = stats.supplyRequests.filter((r) => String(r.requested_by ?? '').toLowerCase() === fullName.toLowerCase() && r.status !== 'fulfilled');
     mySupplies.forEach((s) =>
@@ -143,10 +189,24 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
     if (pendingMrf.length) alerts.push({ key: aggKey('mrf', pendingMrf), view: mrfView, icon: 'file-input', title: `${pendingMrf.length} material request(s) pending`, detail: 'Awaiting approval / release', tone: 'warn' });
     if (pendingPurchases.length) alerts.push({ key: aggKey('purchase', pendingPurchases), view: 'purchase', icon: 'shopping-cart', title: `${pendingPurchases.length} purchase request(s) pending`, detail: 'Awaiting approval', tone: 'warn' });
   }
+
+  // Per-incident alerts for staff roles — each new complaint gets its own key
+  // so the bell lights up immediately when a new one arrives, even if the user
+  // has already seen previous incidents.
   if (['zone-specialist', 'technical-team', 'general-manager'].includes(role)) {
-    if (openIncidents.length) alerts.push({ key: aggKey('openinc', openIncidents), view: incView, icon: 'message-square', title: `${openIncidents.length} open incident(s)`, detail: `${openIncidents.filter((i) => i.urgency === 'high').length} high urgency`, tone: openIncidents.some((i) => i.urgency === 'high') ? 'danger' : 'info' });
+    openIncidents.forEach((i) =>
+      alerts.push({
+        key: `inc:${i.id}:${i.status}`,
+        view: incView,
+        icon: 'message-square',
+        title: `Complaint ${i.ref_code} — ${incidentStatusLabel(i.status)}`,
+        detail: `${String(i.urgency ?? 'medium')} urgency · ${String(i.location ?? i.description ?? '')}`.slice(0, 80),
+        tone: urgencyTone(i.urgency),
+      }),
+    );
     if (criticalAssets.length) alerts.push({ key: aggKey('asset', criticalAssets), view: 'assets', icon: 'wrench', title: `${criticalAssets.length} asset(s) need attention`, detail: criticalAssets.map((a) => a.name).slice(0, 3).join(', '), tone: 'warn' });
   }
+
   if (role === 'general-manager') {
     if (draftAdvisories.length) alerts.push({ key: aggKey('draftadv', draftAdvisories), view: 'advisories', icon: 'megaphone', title: `${draftAdvisories.length} advisory(ies) awaiting publish`, detail: 'Review and approve', tone: 'info' });
     if (overduePayments.length) alerts.push({ key: aggKey('overdue', overduePayments), view: 'payments', icon: 'credit-card', title: `${overduePayments.length} payment(s) overdue`, detail: 'Follow up required', tone: 'danger' });

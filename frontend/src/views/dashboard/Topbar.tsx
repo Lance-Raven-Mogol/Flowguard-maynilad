@@ -25,7 +25,7 @@ export function avatarFor(user: { fullName: string; avatarUrl?: string | null },
 
 export function Topbar({ config, filter, onFilter, onNavigate }: TopbarProps) {
   const { user } = useAuth();
-  const { items, unreadCount, markAlertSeen } = useNotifications();
+  const { items, unreadCount, markAlertSeen, markAllSeen } = useNotifications();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -72,7 +72,17 @@ export function Topbar({ config, filter, onFilter, onNavigate }: TopbarProps) {
         </label>
 
         <div className="popover-wrapper" ref={wrapRef}>
-          <button className="icon-btn bell" type="button" aria-label="Notifications" onClick={() => setOpen((o) => !o)}>
+          <button
+            className="icon-btn bell"
+            type="button"
+            aria-label="Notifications"
+            onClick={() => {
+              const opening = !open;
+              setOpen(opening);
+              // Mark all current alerts seen the moment the bell is opened.
+              if (opening) markAllSeen();
+            }}
+          >
             <Bell size={20} />
             {unreadCount > 0 && <span className="notif-count">{unreadCount}</span>}
           </button>
