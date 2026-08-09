@@ -43,6 +43,16 @@ function canWrite(def: ResourceDef, role: Role): boolean {
   return role === 'general-manager' || def.writeRoles.includes(role);
 }
 
+/** Derive the inventory status from the material's current stock levels. */
+function materialStockStatus(quantity: unknown, minLevel: unknown, requestedStatus?: unknown): string {
+  if (requestedStatus === 'defective') return 'defective';
+  const stock = Number(quantity ?? 0);
+  const minimum = Number(minLevel ?? 10);
+  if (stock <= 0) return 'out_of_stock';
+  if (stock <= minimum) return 'low_stock';
+  return 'in_stock';
+}
+
 const randDigits = (n: number): string =>
   Math.floor(Math.random() * 10 ** n)
     .toString()
@@ -204,6 +214,10 @@ export const resourceService = {
       if (!values[key.column]) values[key.column] = `${key.prefix}-${randDigits(key.digits)}`;
     }
 
+    if (entity === 'materials') {
+      values.status = materialStockStatus(values.quantity, values.min_level, values.status);
+    }
+
     // One active job order per incident — reject duplicates even if the UI is
     // bypassed. Checked before insert so no orphan row is ever created.
     const incidentRef = entity === 'job-orders' ? String(values.incident_ref ?? '').trim() : '';
@@ -243,6 +257,16 @@ export const resourceService = {
     const values = sanitize(def, body);
     if (def.touch) values[def.touch] = new Date().toISOString();
     if (Object.keys(values).length === 0) throw badRequest('No valid fields to update.');
+
+    if (entity === 'materials' && ('quantity' in values || 'min_level' in values)) {
+      const current = await repo.getRowById(def.table, id);
+      if (!current) throw notFound('Record not found.');
+      values.status = materialStockStatus(
+        values.quantity ?? current.quantity,
+        values.min_level ?? current.min_level,
+        values.status ?? current.status,
+      );
+    }
 
     // Approving/releasing a material request deducts its quantity from stock —
     // once. Runs before the status write so insufficient stock blocks approval.

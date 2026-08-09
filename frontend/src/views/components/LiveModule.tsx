@@ -67,6 +67,8 @@ export interface LiveModuleProps {
   /** Arbitrary per-row visibility predicate (e.g. "assigned to me"). */
   rowFilter?: (row: EntityRow) => boolean;
   metrics?: (rows: EntityRow[]) => Metric[];
+  /** Normalize or derive values immediately before create/update. */
+  prepareValues?: (values: Record<string, unknown>) => Record<string, unknown>;
   actions?: (ctx: RowActionCtx) => ReactNode;
   actionLabel?: string;
   /** Show the "Show archived" toggle (defaults to on when the user can write). */
@@ -91,6 +93,7 @@ export function LiveModule({
   mineValue,
   rowFilter,
   metrics,
+  prepareValues,
   actions,
   actionLabel = 'Action',
   archivable,
@@ -176,8 +179,9 @@ export function LiveModule({
   const submit = async () => {
     setSubmitting(true);
     try {
-      if (editing) await resourceService.update(entity, editing.id, values);
-      else await resourceService.create(entity, values);
+      const submittedValues = prepareValues ? prepareValues(values) : values;
+      if (editing) await resourceService.update(entity, editing.id, submittedValues);
+      else await resourceService.create(entity, submittedValues);
       notify(editing ? 'Record updated successfully!' : 'Record created successfully!');
       setOpen(false);
       await Promise.all([load(), reloadStats()]);

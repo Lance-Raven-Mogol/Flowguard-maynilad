@@ -740,6 +740,15 @@ const MATERIAL_STATUS = [
   { value: 'defective', label: 'Defective' },
 ];
 
+function materialStockStatus(quantity: unknown, minLevel: unknown, requestedStatus?: unknown): string {
+  if (requestedStatus === 'defective') return 'defective';
+  const stock = Number(quantity ?? 0);
+  const minimum = Number(minLevel ?? 10);
+  if (stock <= 0) return 'out_of_stock';
+  if (stock <= minimum) return 'low_stock';
+  return 'in_stock';
+}
+
 export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps & { readOnly?: boolean; title?: string }) {
   const { user } = useAuth();
   const role = user!.role;
@@ -753,7 +762,7 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
     { header: 'Weight', cell: (r) => r.weight_kg ? `${r.weight_kg} kg` : '—' },
     { header: 'Size', cell: (r) => String(r.size ?? '—') },
     { header: 'Unit Price', cell: (r) => money(r.unit_price) },
-    { header: 'Status', cell: (r) => statusCell(r.status) },
+    { header: 'Status', cell: (r) => statusCell(materialStockStatus(r.quantity, r.min_level, r.status)) },
   ];
 
   const fields: ModuleField[] = [
@@ -779,12 +788,16 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
       createLabel="Add New Item"
       columns={columns}
       fields={fields}
+      prepareValues={(values) => ({
+        ...values,
+        status: materialStockStatus(values.quantity, values.min_level, values.status),
+      })}
       canWrite={canWrite}
       filter={filter}
       metrics={(rows) => [
         metric('m1', 'Total SKUs', String(rows.length), 'box', 'customers'),
-        metric('m2', 'Out of Stock', count(rows, (r) => r.status === 'out_of_stock' || Number(r.quantity) === 0), 'package-x', 'profit'),
-        metric('m3', 'Low Stock', count(rows, (r) => r.status === 'low_stock'), 'alert-triangle', 'revenue'),
+        metric('m2', 'Out of Stock', count(rows, (r) => materialStockStatus(r.quantity, r.min_level, r.status) === 'out_of_stock'), 'package-x', 'profit'),
+        metric('m3', 'Low Stock', count(rows, (r) => materialStockStatus(r.quantity, r.min_level, r.status) === 'low_stock'), 'alert-triangle', 'revenue'),
         metric('m4', 'Inventory Value', money(rows.reduce((s, r) => s + Number(r.quantity || 0) * Number(r.unit_price || 0), 0)), 'wallet', 'invoices'),
       ]}
       actions={
