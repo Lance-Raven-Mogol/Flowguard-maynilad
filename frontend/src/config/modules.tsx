@@ -32,6 +32,8 @@ const titleCase = (v: unknown): string =>
   String(v ?? '').replace(/[_-]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 const statusCell = (v: unknown): TableCell => ({ text: titleCase(v), status: statusTone(v) });
+const workflowStatusLabel = (v: unknown): string => String(v ?? '').toLowerCase() === 'pending' ? 'Ongoing' : titleCase(v);
+const workflowStatusCell = (v: unknown): TableCell => ({ text: workflowStatusLabel(v), status: statusTone(v) });
 const badgeCell = (text: string, tone: BadgeTone): TableCell => ({ text, badge: tone });
 const money = (v: unknown): string =>
   '₱ ' + Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -52,6 +54,7 @@ const WRITE: Record<string, string[]> = {
   incidents: ['customer', 'zone-specialist', 'technical-team', 'general-manager'],
   'job-orders': ['technical-team', 'general-manager'],
   materials: ['inventory-officer', 'general-manager'],
+  suppliers: ['inventory-officer', 'general-manager'],
   'material-requests': ['technical-team', 'inventory-officer', 'general-manager'],
   assets: ['technical-team', 'zone-specialist', 'general-manager'],
   advisories: ['technical-team', 'general-manager'],
@@ -561,7 +564,7 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
 
 /* -------------------------------------------------------------- Job Orders */
 const JOB_STATUS = [
-  { value: 'pending', label: 'Pending' },
+  { value: 'pending', label: 'Ongoing' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'completed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' },
@@ -673,7 +676,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
     { header: 'Assigned To', cell: (r) => String(r.assigned_to ?? '—') },
     { header: 'Est. Cost', cell: (r) => money(r.estimated_cost) },
     { header: 'Schedule', cell: (r) => dateShort(r.scheduled_date) },
-    { header: 'Status', cell: (r) => statusCell(r.status) },
+    { header: 'Status', cell: (r) => workflowStatusCell(r.status) },
   ];
 
   const fields: ModuleField[] = [
@@ -711,7 +714,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
       metrics={(rows) => [
         metric('j1', 'Total Job Orders', String(rows.length), 'clipboard-list', 'customers'),
         metric('j2', 'In Progress', count(rows, (r) => r.status === 'in_progress'), 'wrench', 'revenue'),
-        metric('j3', 'Pending', count(rows, (r) => r.status === 'pending'), 'clock', 'profit'),
+        metric('j3', 'Ongoing', count(rows, (r) => r.status === 'pending'), 'clock', 'profit'),
         metric('j4', 'Completed', count(rows, (r) => r.status === 'completed'), 'check-circle', 'invoices'),
       ]}
       actions={
@@ -733,12 +736,24 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
 }
 
 /* --------------------------------------------------------------- Materials */
-const MATERIAL_STATUS = [
-  { value: 'in_stock', label: 'In Stock' },
-  { value: 'low_stock', label: 'Low Stock' },
-  { value: 'out_of_stock', label: 'Out of Stock' },
-  { value: 'defective', label: 'Defective' },
-];
+function useSupplierOptions() {
+  const [suppliers, setSuppliers] = useState<EntityRow[]>([]);
+  useEffect(() => {
+    resourceService.list('suppliers').then(setSuppliers).catch(() => setSuppliers([]));
+  }, []);
+  return suppliers
+    .filter((supplier) => !supplier.archived && supplier.status !== 'inactive')
+    .map((supplier) => ({ value: String(supplier.id), label: String(supplier.name) }));
+}
+
+function categoryColor(category: unknown, explicitColor?: unknown): string {
+  const supplied = String(explicitColor ?? '').trim();
+  if (/^(#[0-9a-f]{3,8}|[a-z]+|hsl\(.+\)|rgb\(.+\))$/i.test(supplied)) return supplied;
+  const name = String(category ?? 'Uncategorized');
+  let hash = 0;
+  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) % 360;
+  return `hsl(${hash} 65% 52%)`;
+}
 
 function materialStockStatus(quantity: unknown, minLevel: unknown, requestedStatus?: unknown): string {
   if (requestedStatus === 'defective') return 'defective';
@@ -753,11 +768,12 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
   const { user } = useAuth();
   const role = user!.role;
   const canWrite = !readOnly && WRITE.materials.includes(role);
+  const supplierOptions = useSupplierOptions();
 
   const columns: ModuleColumn[] = [
     { header: 'SKU', cell: (r) => ({ text: String(r.sku), strong: true }) },
     { header: 'Material', cell: (r) => String(r.name ?? '') },
-    { header: 'Category', cell: (r) => String(r.category ?? '—') },
+    { header: 'Category', cell: (r) => ({ text: String(r.category ?? 'Uncategorized'), swatch: categoryColor(r.category, r.color) }) },
     { header: 'Stock', cell: (r) => `${r.quantity ?? 0} ${r.unit ?? ''}`.trim() },
     { header: 'Weight', cell: (r) => r.weight_kg ? `${r.weight_kg} kg` : '—' },
     { header: 'Size', cell: (r) => String(r.size ?? '—') },
@@ -770,15 +786,21 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
     { name: 'category', label: 'Category', placeholder: 'Pipes / Valves / Meters…' },
     { name: 'description', label: 'Description', kind: 'textarea' },
     { name: 'quantity', label: 'Quantity', kind: 'number', default: '0' },
+    { name: 'min_level', label: 'Minimum Level', kind: 'number', default: '10', hint: 'Stock at or below this level is automatically marked Low Stock.' },
     { name: 'unit', label: 'Unit', default: 'units' },
     { name: 'weight_kg', label: 'Weight (kg)', kind: 'number' },
     { name: 'size', label: 'Size', placeholder: 'e.g. 50mm, 4 inches' },
     { name: 'color', label: 'Color', placeholder: 'e.g. Blue, Red' },
     { name: 'unit_price', label: 'Unit Price (₱)', kind: 'number' },
-    { name: 'supplier', label: 'Supplier', placeholder: 'Supplier name' },
     { name: 'source', label: 'Source', kind: 'select', optionList: [{ value: 'mother-company', label: 'Mother Company' }, { value: 'external', label: 'External Supplier' }] },
-    { name: 'min_level', label: 'Minimum Level', kind: 'number', default: '10' },
-    { name: 'status', label: 'Status', kind: 'select', optionList: MATERIAL_STATUS },
+    {
+      name: 'supplier_id',
+      label: 'Supplier',
+      kind: 'select',
+      optionList: [{ value: '', label: 'Select external supplier' }, ...supplierOptions],
+      visibleWhen: (values) => values.source === 'external',
+      hint: 'Manage available supplier profiles from the Suppliers module.',
+    },
   ];
 
   return (
@@ -790,7 +812,11 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
       fields={fields}
       prepareValues={(values) => ({
         ...values,
-        status: materialStockStatus(values.quantity, values.min_level, values.status),
+        status: materialStockStatus(values.quantity, values.min_level),
+        supplier_id: values.source === 'external' ? values.supplier_id : null,
+        supplier: values.source === 'external'
+          ? supplierOptions.find((supplier) => supplier.value === values.supplier_id)?.label ?? ''
+          : '',
       })}
       canWrite={canWrite}
       filter={filter}
@@ -800,6 +826,14 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
         metric('m3', 'Low Stock', count(rows, (r) => materialStockStatus(r.quantity, r.min_level, r.status) === 'low_stock'), 'alert-triangle', 'revenue'),
         metric('m4', 'Inventory Value', money(rows.reduce((s, r) => s + Number(r.quantity || 0) * Number(r.unit_price || 0), 0)), 'wallet', 'invoices'),
       ]}
+      quickFilters={(rows) => Array.from(new Set(rows.map((row) => String(row.category ?? 'Uncategorized'))))
+        .sort((a, b) => a.localeCompare(b))
+        .map((category) => ({
+          id: `category:${category}`,
+          label: category,
+          hint: `${rows.filter((row) => String(row.category ?? 'Uncategorized') === category).reduce((sum, row) => sum + Number(row.quantity ?? 0), 0)} units`,
+          matches: (row: EntityRow) => String(row.category ?? 'Uncategorized') === category,
+        }))}
       actions={
         canWrite
           ? (c) => (
@@ -816,7 +850,7 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
 
 /* ------------------------------------------------------- Material Requests */
 const MR_STATUS = [
-  { value: 'pending', label: 'Pending' },
+  { value: 'pending', label: 'Ongoing' },
   { value: 'approved', label: 'Approved' },
   { value: 'released', label: 'Released' },
   { value: 'rejected', label: 'Rejected' },
@@ -1267,7 +1301,7 @@ export function MaterialRequestsModule({ filter, title }: ModuleProps & { title?
     { header: 'Qty', cell: (r) => String(r.quantity ?? 0) },
     { header: 'Job Order', cell: (r) => String(r.job_order_ref ?? '—') },
     { header: 'Requested By', cell: (r) => String(r.requested_by ?? '—') },
-    { header: 'Status', cell: (r) => statusCell(r.status) },
+    { header: 'Status', cell: (r) => workflowStatusCell(r.status) },
   ];
 
   const fields: ModuleField[] = [
@@ -1296,7 +1330,7 @@ export function MaterialRequestsModule({ filter, title }: ModuleProps & { title?
       renderCreate={({ reload }) => <MaterialRequestButton onCreated={reload} />}
       metrics={(rows) => [
         metric('r1', 'Total Requests', String(rows.length), 'file-input', 'customers'),
-        metric('r2', 'Pending', count(rows, (r) => r.status === 'pending'), 'clock', 'revenue'),
+        metric('r2', 'Ongoing', count(rows, (r) => r.status === 'pending'), 'clock', 'revenue'),
         metric('r3', 'Approved', count(rows, (r) => r.status === 'approved'), 'check-circle', 'profit'),
         metric('r4', 'Released', count(rows, (r) => r.status === 'released'), 'package-check', 'invoices'),
       ]}
@@ -1674,9 +1708,54 @@ export function AuditLogsModule({ filter }: ModuleProps) {
   );
 }
 
+/* ---------------------------------------------------------- Suppliers */
+const SUPPLIER_STATUS = [
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+];
+
+export function SuppliersModule({ filter }: ModuleProps) {
+  const { user } = useAuth();
+  const canWrite = WRITE.suppliers.includes(user!.role);
+  const columns: ModuleColumn[] = [
+    { header: 'Supplier', cell: (r) => ({ text: String(r.name ?? ''), strong: true }) },
+    { header: 'Contact Person', cell: (r) => String(r.contact_person ?? '—') },
+    { header: 'Email', cell: (r) => String(r.email ?? '—') },
+    { header: 'Phone', cell: (r) => String(r.phone ?? '—') },
+    { header: 'Address', cell: (r) => String(r.address ?? '—') },
+    { header: 'Status', cell: (r) => statusCell(r.status) },
+  ];
+  const fields: ModuleField[] = [
+    { name: 'name', label: 'Supplier Name', placeholder: 'Registered business name' },
+    { name: 'contact_person', label: 'Contact Person' },
+    { name: 'email', label: 'Email' },
+    { name: 'phone', label: 'Phone Number' },
+    { name: 'address', label: 'Address', kind: 'textarea' },
+    { name: 'notes', label: 'Notes', kind: 'textarea' },
+    { name: 'status', label: 'Status', kind: 'select', optionList: SUPPLIER_STATUS },
+  ];
+  return (
+    <LiveModule
+      entity="suppliers"
+      title="Supplier Profiles"
+      createLabel="Add Supplier"
+      columns={columns}
+      fields={fields}
+      canWrite={canWrite}
+      filter={filter}
+      metrics={(rows) => [
+        metric('sp1', 'Total Suppliers', String(rows.length), 'users', 'customers'),
+        metric('sp2', 'Active', count(rows, (r) => r.status !== 'inactive'), 'check-circle', 'profit'),
+        metric('sp3', 'Inactive', count(rows, (r) => r.status === 'inactive'), 'archive', 'invoices'),
+      ]}
+      actions={canWrite ? (c) => <><EditBtn c={c} /><ArchiveBtn c={c} /></> : undefined}
+    />
+  );
+}
+
 /* --------------------------------------------------- Purchase Requests */
 const PR_STATUS = [
-  { value: 'pending', label: 'Pending' },
+  { value: 'pending', label: 'Ongoing' },
   { value: 'approved', label: 'Approved' },
   { value: 'ordered', label: 'Ordered' },
   { value: 'received', label: 'Received' },
@@ -1688,6 +1767,7 @@ export function PurchaseRequestsModule({ filter }: ModuleProps) {
   const role = user!.role;
   const canWrite = WRITE['purchase-requests'].includes(role);
   const canApprove = role === 'general-manager';
+  const supplierOptions = useSupplierOptions();
 
   const columns: ModuleColumn[] = [
     { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
@@ -1697,7 +1777,7 @@ export function PurchaseRequestsModule({ filter }: ModuleProps) {
     { header: 'Total', cell: (r) => money(r.total_cost) },
     { header: 'Supplier', cell: (r) => String(r.supplier ?? '—') },
     { header: 'Requested By', cell: (r) => String(r.requested_by ?? '—') },
-    { header: 'Status', cell: (r) => statusCell(r.status) },
+    { header: 'Status', cell: (r) => workflowStatusCell(r.status) },
   ];
 
   const fields: ModuleField[] = [
@@ -1706,7 +1786,7 @@ export function PurchaseRequestsModule({ filter }: ModuleProps) {
     { name: 'unit', label: 'Unit', default: 'units' },
     { name: 'unit_price', label: 'Unit Price (₱)', kind: 'number' },
     { name: 'total_cost', label: 'Total Cost (₱)', kind: 'number' },
-    { name: 'supplier', label: 'Supplier', placeholder: 'Supplier name' },
+    { name: 'supplier_id', label: 'Supplier', kind: 'select', optionList: [{ value: '', label: 'No linked supplier' }, ...supplierOptions] },
     { name: 'justification', label: 'Justification', kind: 'textarea', placeholder: 'Why is this purchase needed?' },
     { name: 'requested_by', label: 'Requested By', default: user!.fullName, readOnly: true },
   ];
@@ -1718,11 +1798,15 @@ export function PurchaseRequestsModule({ filter }: ModuleProps) {
       createLabel="New Purchase Request"
       columns={columns}
       fields={fields}
+      prepareValues={(values) => ({
+        ...values,
+        supplier: supplierOptions.find((supplier) => supplier.value === values.supplier_id)?.label ?? '',
+      })}
       canWrite={canWrite}
       filter={filter}
       metrics={(rows) => [
         metric('pr1', 'Total Requests', String(rows.length), 'shopping-cart', 'customers'),
-        metric('pr2', 'Pending', count(rows, (r) => r.status === 'pending'), 'clock', 'revenue'),
+        metric('pr2', 'Ongoing', count(rows, (r) => r.status === 'pending'), 'clock', 'revenue'),
         metric('pr3', 'Approved', count(rows, (r) => r.status === 'approved'), 'check-circle', 'profit'),
         metric('pr4', 'Total Value', money(rows.reduce((s, r) => s + Number(r.total_cost || 0), 0)), 'wallet', 'invoices'),
       ]}
@@ -1738,7 +1822,7 @@ export function PurchaseRequestsModule({ filter }: ModuleProps) {
               <DetailRow label="Supplier">{String(c.row.supplier ?? '—')}</DetailRow>
               <DetailRow label="Justification">{String(c.row.justification ?? '—')}</DetailRow>
               <DetailRow label="Requested By">{String(c.row.requested_by ?? '—')}</DetailRow>
-              <DetailRow label="Status">{titleCase(c.row.status)}</DetailRow>
+              <DetailRow label="Status">{workflowStatusLabel(c.row.status)}</DetailRow>
             </dl>
           </ViewAction>
           {canWrite && (
@@ -1830,7 +1914,7 @@ export function PaymentsModule({ filter }: ModuleProps) {
 
 /* --------------------------------------------------- Supply Requests */
 const SR_STATUS = [
-  { value: 'pending', label: 'Pending' },
+  { value: 'pending', label: 'Ongoing' },
   { value: 'approved', label: 'Approved' },
   { value: 'fulfilled', label: 'Fulfilled' },
   { value: 'rejected', label: 'Rejected' },
@@ -1848,7 +1932,7 @@ export function SupplyRequestsModule({ filter }: ModuleProps) {
     { header: 'Qty', cell: (r) => String(r.quantity ?? 0) },
     { header: 'Reason', cell: (r) => String(r.reason ?? '—') },
     { header: 'Requested By', cell: (r) => String(r.requested_by ?? '—') },
-    { header: 'Status', cell: (r) => statusCell(r.status) },
+    { header: 'Status', cell: (r) => workflowStatusCell(r.status) },
   ];
 
   const fields: ModuleField[] = [
@@ -1869,7 +1953,7 @@ export function SupplyRequestsModule({ filter }: ModuleProps) {
       filter={filter}
       metrics={(rows) => [
         metric('sr1', 'Total Requests', String(rows.length), 'package', 'customers'),
-        metric('sr2', 'Pending', count(rows, (r) => r.status === 'pending'), 'clock', 'revenue'),
+        metric('sr2', 'Ongoing', count(rows, (r) => r.status === 'pending'), 'clock', 'revenue'),
         metric('sr3', 'Fulfilled', count(rows, (r) => r.status === 'fulfilled'), 'check-circle', 'profit'),
         metric('sr4', 'Rejected', count(rows, (r) => r.status === 'rejected'), 'x-circle', 'invoices'),
       ]}
@@ -1882,7 +1966,7 @@ export function SupplyRequestsModule({ filter }: ModuleProps) {
               <DetailRow label="Quantity">{String(c.row.quantity ?? 0)}</DetailRow>
               <DetailRow label="Reason">{String(c.row.reason ?? '—')}</DetailRow>
               <DetailRow label="Requested By">{String(c.row.requested_by ?? '—')}</DetailRow>
-              <DetailRow label="Status">{titleCase(c.row.status)}</DetailRow>
+              <DetailRow label="Status">{workflowStatusLabel(c.row.status)}</DetailRow>
             </dl>
           </ViewAction>
           {canWrite && (

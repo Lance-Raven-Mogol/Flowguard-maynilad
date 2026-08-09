@@ -168,6 +168,21 @@ create table if not exists public.audit_logs (
 );
 alter table public.audit_logs add column if not exists archived boolean not null default false;
 
+-- --------------------------------------------- Supplier profiles -----------
+create table if not exists public.suppliers (
+  id              uuid primary key default gen_random_uuid(),
+  name            text unique not null,
+  contact_person  text,
+  email           text,
+  phone           text,
+  address         text,
+  notes           text,
+  status          text not null default 'active' check (status in ('active','inactive')),
+  archived        boolean not null default false,
+  created_at      timestamptz not null default now()
+);
+alter table public.materials add column if not exists supplier_id uuid references public.suppliers(id) on delete set null;
+
 -- --------------------------------------------- Purchase requests -----------
 create table if not exists public.purchase_requests (
   id              uuid primary key default gen_random_uuid(),
@@ -186,6 +201,7 @@ create table if not exists public.purchase_requests (
   created_at      timestamptz not null default now()
 );
 alter table public.purchase_requests add column if not exists archived boolean not null default false;
+alter table public.purchase_requests add column if not exists supplier_id uuid references public.suppliers(id) on delete set null;
 
 -- --------------------------------------------- E-Billing -------------------
 create table if not exists public.payments (
@@ -227,6 +243,7 @@ alter table public.material_requests    enable row level security;
 alter table public.assets               enable row level security;
 alter table public.advisories           enable row level security;
 alter table public.audit_logs           enable row level security;
+alter table public.suppliers            enable row level security;
 alter table public.purchase_requests    enable row level security;
 alter table public.payments             enable row level security;
 alter table public.supply_requests      enable row level security;

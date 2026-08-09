@@ -30,6 +30,8 @@ export interface ModuleField {
   hint?: string;
   /** For date fields: allow selecting past dates (defaults to future-only). */
   allowPast?: boolean;
+  /** Show this field only when the current form values satisfy a condition. */
+  visibleWhen?: (values: Record<string, unknown>) => boolean;
 }
 
 /** Today's date as YYYY-MM-DD — used as the min for scheduling date pickers. */
@@ -67,6 +69,7 @@ export interface LiveModuleProps {
   /** Arbitrary per-row visibility predicate (e.g. "assigned to me"). */
   rowFilter?: (row: EntityRow) => boolean;
   metrics?: (rows: EntityRow[]) => Metric[];
+  quickFilters?: (rows: EntityRow[]) => { id: string; label: string; hint?: string; matches: (row: EntityRow) => boolean }[];
   /** Normalize or derive values immediately before create/update. */
   prepareValues?: (values: Record<string, unknown>) => Record<string, unknown>;
   actions?: (ctx: RowActionCtx) => ReactNode;
@@ -93,6 +96,7 @@ export function LiveModule({
   mineValue,
   rowFilter,
   metrics,
+  quickFilters,
   prepareValues,
   actions,
   actionLabel = 'Action',
@@ -110,6 +114,7 @@ export function LiveModule({
   const [submitting, setSubmitting] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [quickFilter, setQuickFilter] = useState('all');
 
   const showArchiveToggle = (archivable ?? canWrite) === true;
 
@@ -131,12 +136,16 @@ export function LiveModule({
 
   const visibleRows = useMemo(() => {
     let out = rows;
+    const selectedQuickFilter = quickFilters?.(rows).find((item) => item.id === quickFilter);
+    if (selectedQuickFilter) out = out.filter(selectedQuickFilter.matches);
     if (mineField && mineValue) {
       out = out.filter((r) => String(r[mineField] ?? '').toLowerCase() === mineValue.toLowerCase());
     }
     if (rowFilter) out = out.filter(rowFilter);
     return out;
-  }, [rows, mineField, mineValue, rowFilter]);
+  }, [rows, mineField, mineValue, rowFilter, quickFilter, quickFilters]);
+
+  const quickFilterItems = useMemo(() => quickFilters?.(rows) ?? [], [quickFilters, rows]);
 
   const table: ResourceTable = useMemo(
     () => ({
@@ -243,6 +252,16 @@ export function LiveModule({
   return (
     <>
       {metrics && !showArchived && rows.length > 0 && <MetricsGrid metrics={metrics(rows)} />}
+      {quickFilterItems.length > 0 && !showArchived && (
+        <div className="quick-filter-bar" aria-label="Quick filters">
+          <button type="button" className={quickFilter === 'all' ? 'active' : ''} onClick={() => setQuickFilter('all')}>All Categories</button>
+          {quickFilterItems.map((item) => (
+            <button key={item.id} type="button" className={quickFilter === item.id ? 'active' : ''} onClick={() => setQuickFilter(item.id)}>
+              <span>{item.label}</span>{item.hint && <strong>{item.hint}</strong>}
+            </button>
+          ))}
+        </div>
+      )}
       <PanelHead
         title={showArchived ? `${title} · Archived` : title}
         action={
@@ -277,7 +296,7 @@ export function LiveModule({
           submitText={editing ? 'Save Changes' : 'Create'}
           submitting={submitting}
         >
-          {fields.map((f) => (
+          {fields.filter((f) => !f.visibleWhen || f.visibleWhen(values)).map((f) => (
             <div className="form-group" key={f.name}>
               <label>{f.label}</label>
               {f.kind === 'images' ? (

@@ -49,6 +49,7 @@ export interface TableCell {
   strong?: boolean;
   status?: StatusTone;
   badge?: BadgeTone;
+  swatch?: string;
 }
 
 export interface TableRow {

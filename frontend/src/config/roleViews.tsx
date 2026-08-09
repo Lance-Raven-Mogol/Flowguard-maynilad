@@ -20,6 +20,7 @@ import {
   PaymentsModule,
   PurchaseRequestsModule,
   SupplyRequestsModule,
+  SuppliersModule,
   UsersPanel,
 } from './modules';
 
@@ -136,6 +137,10 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter }) => <PurchaseRequestsModule filter={filter} />,
       },
       {
+        id: 'suppliers', label: 'Suppliers', icon: 'truck', group: 'main',
+        render: ({ filter }) => <SuppliersModule filter={filter} />,
+      },
+      {
         id: 'payments', label: 'E-Billing', icon: 'credit-card', group: 'main',
         render: ({ filter }) => <PaymentsModule filter={filter} />,
       },
@@ -175,10 +180,14 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         id: 'mrf', label: 'MRF Requests', icon: 'file-input', group: 'main',
         render: ({ filter }) => <MaterialRequestsModule filter={filter} />,
       },
+      {
+        id: 'suppliers', label: 'Suppliers', icon: 'truck', group: 'main',
+        render: ({ filter }) => <SuppliersModule filter={filter} />,
+      },
       faqView('help', 'Help', 'circle-help', 'Inventory Help', [
         { q: 'How do I add a new material?', a: "In 'Material List' click 'Add New Item'. A SKU is generated automatically. Set the quantity, minimum level, supplier and source." },
         { q: 'How are low-stock items flagged?', a: 'Set a material status to Low Stock (or it can be marked when quantity nears the minimum). The overview and notifications surface them automatically.' },
-        { q: 'How do I process a material request?', a: "In 'MRF Requests', use the status dropdown to move a request from Pending → Approved → Released, or Reject it." },
+        { q: 'How do I process a material request?', a: "In 'MRF Requests', use the status dropdown to move a request from Ongoing → Approved → Released, or Reject it." },
       ]),
       settings(),
     ],
@@ -209,7 +218,7 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter }) => <AdvisoriesModule filter={filter} />,
       },
       faqView('support', 'Field Support', 'help-circle', 'Technical Field Support', [
-        { q: 'How do I update a job order?', a: "In 'Job Orders' use the status dropdown to move a job from Pending → In Progress → Completed, or edit its details." },
+        { q: 'How do I update a job order?', a: "In 'Job Orders' use the status dropdown to move a job from Ongoing → In Progress → Completed, or edit its details." },
         { q: 'How do I request materials?', a: "In 'Material Requests' click 'New Request', enter the material and quantity, and optionally link a job order ref." },
         { q: 'Safety protocol for main line repairs', a: 'Cordon off the area and confirm with the zone specialist that water flow is isolated at the nearest main valve before excavation.' },
       ]),

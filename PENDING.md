@@ -29,6 +29,29 @@
 - **Fix:** Sa direct create/update ng material, awtomatikong kino-compute ang status mula sa `quantity` at `min_level`.
 - **Rules:** `quantity = 0` → `out_of_stock`; `quantity <= min_level` → `low_stock`; `quantity > min_level` → `in_stock`.
 - **Implemented sa:** Backend `resource.service.ts` at frontend Materials/LiveModule save-and-display flow.
+- **Form behavior:** Wala nang manual Status field; Quantity at Minimum Level ang automatic basis. Supplier selection ay lumalabas lang kapag External Supplier ang Source.
+- **Verification:** Passed ang frontend/backend TypeScript typechecks at full production build.
+
+### ✅ Priority 3 — Enhancements (Completed 2026-08-09)
+
+#### 5. “Pending” → “Ongoing” label — COMPLETED
+- Display label lang ang pinalitan; nananatiling `pending` ang DB value para walang breaking schema/data change.
+- Applied sa Job Orders, Material Requests, Purchase Requests, at Supply Requests tables, dropdowns, metrics, at details.
+
+#### 6. Inventory category summary/filter buttons — COMPLETED
+- May clickable category buttons na sa ibabaw ng inventory table.
+- Bawat category ay nagpapakita ng total stock quantity at nagfi-filter ng table kapag pinili.
+
+#### 7. Supplier profiles — COMPLETED
+- May dedicated `suppliers` table/resource at Supplier Profiles module para sa General Manager at Inventory Officer.
+- Supplier records include contact person, email, phone, address, notes, status, at archive support.
+- Materials at Purchase Requests ay naka-link na sa supplier profile gamit ang `supplier_id` dropdown.
+- Applied successfully ang idempotent Supabase migration.
+
+#### 8. Material category color coding — COMPLETED
+- May color swatch na sa Category column ng inventory table.
+- Ginagamit ang saved material color kapag valid; kung wala, may consistent generated color base sa category.
+
 - **Verification:** Passed ang frontend/backend TypeScript typechecks at full production build.
 
 ---
@@ -49,29 +72,6 @@
 #### 4. Purchase Requests — hindi visible sa Inventory Officer
 - **Problema:** Ang `PurchaseRequestsModule` ay nasa General Manager lang sa sidebar. Ang Inventory Officer ay wala nitong view kahit na may write permission siya (`WRITE['purchase-requests']` includes `inventory-officer`).
 - **Nasaan ang fix:** `frontend/src/config/roleViews.tsx` — `inventory-officer` views array, dagdag ng Purchase Requests entry.
-
----
-
-### 🟡 Priority 3 — Enhancements
-
-#### 5. "Pending" → "Ongoing" label
-- **Problema:** Lahat ng modules (job orders, material requests, purchase requests, supply requests) ay gumagamit ng `label: 'Pending'` sa status display. Gusto nilang "Ongoing" para sa in-progress na items.
-- **Klaripikasyon needed:** Palitan ba ang DB value (`pending` → `ongoing`) o display label lang? Palitan ng label lang ang mas safe (no breaking change).
-- **Nasaan ang fix:** `frontend/src/config/modules.tsx` — `JOB_STATUS`, `MR_STATUS`, `PR_STATUS`, `SR_STATUS` arrays.
-
-#### 6. Inventory summary — category breakdown / top-button filters
-- **Problema:** Ang metrics sa Inventory ay generic lang (Total SKUs, Out of Stock, Low Stock, Total Value). Walang per-category quantity breakdown.
-- **Gusto:** Quick view ng stocks per category (e.g. "Pipes: 50 units", "Valves: 12 pcs") as filter tabs or summary buttons sa top ng inventory.
-- **Nasaan ang fix:** `frontend/src/config/modules.tsx` — `MaterialsModule` metrics + bagong category filter/tabs component.
-
-#### 7. Supplier profiles — dedicated module
-- **Problema:** Ang `supplier` field sa materials at purchase requests ay plain text pa. Walang dedicated Supplier records kung saan pwedeng i-manage ang supplier info at i-link.
-- **Scope:** Bagong table (`suppliers`), bagong resource def, bagong module, bagong view sa relevant roles.
-
-#### 8. Color coding ng materials per category sa table
-- **Problema:** May `color` field sa DB at form para sa kulay ng material mismo (e.g. blue pipe). Pero walang visual color indicator per category sa table rows.
-- **Gusto:** Color swatch o colored badge sa table display para madaling ma-identify ang type ng material.
-- **Nasaan ang fix:** `frontend/src/config/modules.tsx` — `MaterialsModule` columns, idagdag ang color swatch cell.
 
 ---
 

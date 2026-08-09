@@ -4,6 +4,7 @@ import type { TableCell } from '../../models/types';
 export function Cell({ cell }: { cell: TableCell }) {
   if (cell.status) return <span className={`status ${cell.status}`}>{cell.text}</span>;
   if (cell.badge) return <span className={`badge badge-${cell.badge}`}>{cell.text}</span>;
+  if (cell.swatch) return <span className="color-cell"><span className="color-swatch" style={{ background: cell.swatch }} />{cell.text}</span>;
   if (cell.strong) return <strong>{cell.text}</strong>;
   return <>{cell.text}</>;
 }
