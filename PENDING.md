@@ -10,7 +10,7 @@
 | OTP sa signup | Email OTP verification before account creation |
 | OTP sa login | 6-digit OTP step after credentials |
 | OTP on/off sa Settings | Toggle + verify modal sa Account Settings |
-| Bell notifications | Per-incident alerts, mark-all on open, 10s poll |
+| Bell notifications | Unread-first feed with separate Earlier section, read actions, immediate cross-tab refresh, 3s fallback poll |
 | Barangay save sa profile | Now saved via updateProfile |
 | Soft-delete / Resign ng user | Archive button, account preserved |
 | Restore ng archived user | Restore button sa User Management |
@@ -54,6 +54,13 @@
 
 - **Verification:** Passed ang frontend/backend TypeScript typechecks at full production build.
 
+### ✅ Item 3 — Incident Location Default (Completed 2026-08-09)
+
+#### 3. Location field sa Incidents → user's barangay — FIXED
+- Sa pag-create ng incident, ang `location` ay naka-default na sa barangay ng naka-login na user.
+- Gumagamit ng `Boac` bilang fallback kapag walang barangay value ang account.
+- Editable pa rin ang location kung kailangang ilagay ang mas eksaktong lugar.
+
 ---
 
 ## ❌ HINDI PA IMPLEMENTED
@@ -64,10 +71,6 @@
 - **Problema:** Ang `category` field ng materials ay plain text input. Walang dropdown/autocomplete na nagsu-suggest ng existing categories na naka-enter na sa DB.
 - **Gusto:** Kapag nag-type, lalabas agad ang existing categories (para less typing, consistent names).
 - **Nasaan ang fix:** `frontend/src/config/modules.tsx` — `MaterialsModule` fields array, similar sa `MaterialCombobox` pattern na ginagamit sa MRF.
-
-#### 3. Location field sa Incidents → hindi nag-de-default sa user's barangay
-- **Problema:** Ang `location` field sa incident create form ay blank. Dapat ang default value ay yung barangay ng naka-login na user (na naka-save na sa account).
-- **Nasaan ang fix:** `frontend/src/config/modules.tsx` — `IncidentsModule` fields array, `location` field — idagdag ang `default: user!.barangay ?? 'Boac'`.
 
 #### 4. Purchase Requests — hindi visible sa Inventory Officer
 - **Problema:** Ang `PurchaseRequestsModule` ay nasa General Manager lang sa sidebar. Ang Inventory Officer ay wala nitong view kahit na may write permission siya (`WRITE['purchase-requests']` includes `inventory-officer`).

@@ -59,6 +59,7 @@ export interface LiveModuleProps {
   entity: string;
   title: string;
   columns: ModuleColumn[];
+  tableClassName?: string;
   filter?: string;
   createLabel?: string;
   fields?: ModuleField[];
@@ -88,6 +89,7 @@ export function LiveModule({
   entity,
   title,
   columns,
+  tableClassName,
   filter = '',
   createLabel,
   fields,
@@ -284,7 +286,7 @@ export function LiveModule({
       ) : error ? (
         <p style={{ color: '#e25577', padding: '8px 2px' }}>{error}</p>
       ) : (
-        <DataTable table={table} filter={filter} renderActions={renderActions} actionLabel={actionLabel} />
+        <DataTable table={table} className={tableClassName} filter={filter} renderActions={renderActions} actionLabel={actionLabel} />
       )}
 
       {open && fields && (

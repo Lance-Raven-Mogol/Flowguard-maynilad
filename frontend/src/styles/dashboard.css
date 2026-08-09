@@ -873,8 +873,29 @@ input {
 /* ------------------------------------------------------------------ Tables */
 .invoice-table {
   padding: 22px 24px 24px;
-  overflow-x: auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
+
+.table-scroll {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: #aebfe0 transparent;
+}
+
+.table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.table-scroll::-webkit-scrollbar-track { background: transparent; }
+.table-scroll::-webkit-scrollbar-thumb { background: #c6d3ea; border-radius: 999px; }
+.table-scroll::-webkit-scrollbar-thumb:hover { background: #9fb2d4; }
+.table-scroll:focus-visible { outline: 2px solid var(--blue-100); outline-offset: 2px; }
 
 /* Friendly empty state inside any data table. */
 .table-empty {
@@ -1565,9 +1586,53 @@ td strong {
   font-weight: 600;
 }
 
+.mark-all-read {
+  border: 0;
+  padding: 4px 0;
+  background: transparent;
+  color: var(--blue);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mark-all-read:hover { text-decoration: underline; }
+
 .popover-body {
-  max-height: 360px;
+  max-height: 420px;
   overflow-y: auto;
+  background: #f8faff;
+}
+
+.notification-section + .notification-section { border-top: 1px solid var(--line); }
+
+.notification-section-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  background: rgba(248, 250, 255, 0.96);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.notification-section-title strong {
+  display: grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--blue-50);
+  color: var(--blue);
+  font-size: 10px;
 }
 
 .popover-item {
@@ -1601,6 +1666,10 @@ td strong {
 .popover-item.is-unread:hover {
   background: var(--blue-100, #e3ecff);
 }
+
+.popover-item.is-read { background: #fff; opacity: 0.82; }
+.popover-item.is-read .item-icon { filter: saturate(0.55); }
+.popover-item.is-read strong { font-weight: 600; color: var(--text-soft); }
 
 .item-unread-dot {
   width: 9px;
@@ -1732,6 +1801,8 @@ td strong {
 
 .view-section.active-view {
   display: block;
+  min-width: 0;
+  max-width: 100%;
   animation: viewIn 0.35s ease;
 }
 
@@ -2460,6 +2531,96 @@ td strong {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+/* General Manager incidents: balanced, compact columns and controls. */
+.gm-incidents-table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 12px 20px 18px;
+  overflow: hidden;
+  scrollbar-gutter: stable;
+}
+
+.gm-incidents-table table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 0;
+  font-size: 12.5px;
+}
+
+.gm-incidents-table th,
+.gm-incidents-table td {
+  padding: 11px 9px;
+  vertical-align: middle;
+}
+
+.gm-incidents-table th:nth-child(1) { width: 88px; }
+.gm-incidents-table th:nth-child(2) { width: 96px; }
+.gm-incidents-table th:nth-child(3) { width: auto; }
+.gm-incidents-table th:nth-child(4) { width: 122px; }
+.gm-incidents-table th:nth-child(5) { width: 86px; }
+.gm-incidents-table th:nth-child(6) { width: 124px; }
+.gm-incidents-table th:nth-child(7) { width: 190px; }
+
+.gm-incidents-table td:nth-child(2),
+.gm-incidents-table td:nth-child(4) {
+  overflow-wrap: anywhere;
+}
+
+.gm-incidents-table td:nth-child(3) {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.gm-incidents-table .status {
+  min-width: 0;
+  width: 100%;
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+
+.gm-incidents-table .action-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+
+.gm-incidents-table .btn-action {
+  justify-content: center;
+  min-width: 0;
+  width: 100%;
+  padding: 6px 5px;
+  border-radius: 8px;
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.gm-incidents-table select.btn-action {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  width: 100%;
+  padding-inline: 8px;
+}
+
+.gm-incidents-table .action-group > button {
+  grid-row: 2;
+}
+
+.gm-incidents-table th:last-child,
+.gm-incidents-table td:last-child {
+  padding-right: 14px;
+  padding-left: 12px;
+}
+
+@media (max-width: 1180px) {
+  .gm-incidents-table {
+    padding-inline: 14px;
+  }
 }
 
 /* ---------------------------------------------------------- Toggle switch */

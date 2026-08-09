@@ -51,7 +51,8 @@ interface StatsValue {
 const StatsContext = createContext<StatsValue | null>(null);
 
 /** How often to silently re-fetch in the background (ms). */
-const POLL_INTERVAL = 10_000;
+const POLL_INTERVAL = 3_000;
+const RESOURCE_CHANGE_KEY = 'flowguard:resource-change';
 
 export function StatsProvider({ children }: { children: ReactNode }) {
   const [stats, setStats] = useState<DashboardStats>(EMPTY);
@@ -100,6 +101,27 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const id = setInterval(silentReload, POLL_INTERVAL);
     return () => clearInterval(id);
+  }, [silentReload]);
+
+  // Refresh immediately when another FlowGuard tab creates/updates a record,
+  // and whenever this dashboard becomes active again. Polling remains the
+  // fallback for changes made from another browser or device.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === RESOURCE_CHANGE_KEY) void silentReload();
+    };
+    const onFocus = () => void silentReload();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void silentReload();
+    };
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [silentReload]);
 
   const value = useMemo(() => ({ stats, loading, reload }), [stats, loading, reload]);

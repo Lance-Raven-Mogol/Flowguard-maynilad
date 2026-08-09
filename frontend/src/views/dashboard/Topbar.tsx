@@ -34,6 +34,26 @@ export function Topbar({ config, filter, onFilter, onNavigate }: TopbarProps) {
   const today = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const roleLabel = ROLES.find((r) => r.value === user!.role)?.label ?? user!.role;
   const avatarUrl = avatarFor(user!);
+  const unreadItems = items.filter((item) => item.unread);
+  const readItems = items.filter((item) => !item.unread);
+
+  const notificationRow = (a: (typeof items)[number]) => (
+    <button
+      type="button"
+      className={`popover-item${a.unread ? ' is-unread' : ' is-read'}`}
+      key={a.key}
+      onClick={() => onNotificationClick(a.key, a.view)}
+    >
+      <div className="item-icon" style={{ background: `${TONE_COLOR[a.tone]}1a`, color: TONE_COLOR[a.tone] }}>
+        <Icon name={a.icon} size={18} />
+      </div>
+      <div className="item-content">
+        <strong>{a.title}</strong>
+        <p>{a.detail}</p>
+      </div>
+      {a.unread && <span className="item-unread-dot" aria-label="Unread" />}
+    </button>
+  );
 
   // Clicking a notification marks only that one read and opens its page.
   const onNotificationClick = (key: string, view: string) => {
@@ -76,12 +96,7 @@ export function Topbar({ config, filter, onFilter, onNavigate }: TopbarProps) {
             className="icon-btn bell"
             type="button"
             aria-label="Notifications"
-            onClick={() => {
-              const opening = !open;
-              setOpen(opening);
-              // Mark all current alerts seen the moment the bell is opened.
-              if (opening) markAllSeen();
-            }}
+            onClick={() => setOpen((current) => !current)}
           >
             <Bell size={20} />
             {unreadCount > 0 && <span className="notif-count">{unreadCount}</span>}
@@ -89,7 +104,11 @@ export function Topbar({ config, filter, onFilter, onNavigate }: TopbarProps) {
           <div className={`static-popover${open ? ' is-active' : ''}`}>
             <div className="popover-header">
               <h4>Notifications</h4>
-              <span>{unreadCount > 0 ? `${unreadCount} new` : items.length > 0 ? 'All read' : ''}</span>
+              {unreadCount > 0 && (
+                <button type="button" className="mark-all-read" onClick={markAllSeen}>
+                  Mark all read
+                </button>
+              )}
             </div>
             <div className="popover-body">
               {items.length === 0 ? (
@@ -99,23 +118,20 @@ export function Topbar({ config, filter, onFilter, onNavigate }: TopbarProps) {
                   </div>
                 </div>
               ) : (
-                items.map((a) => (
-                  <button
-                    type="button"
-                    className={`popover-item${a.unread ? ' is-unread' : ''}`}
-                    key={a.key}
-                    onClick={() => onNotificationClick(a.key, a.view)}
-                  >
-                    <div className="item-icon" style={{ background: `${TONE_COLOR[a.tone]}1a`, color: TONE_COLOR[a.tone] }}>
-                      <Icon name={a.icon} size={18} />
-                    </div>
-                    <div className="item-content">
-                      <strong>{a.title}</strong>
-                      <p>{a.detail}</p>
-                    </div>
-                    {a.unread && <span className="item-unread-dot" aria-label="Unread" />}
-                  </button>
-                ))
+                <>
+                  {unreadItems.length > 0 && (
+                    <section className="notification-section" aria-label="Unread notifications">
+                      <div className="notification-section-title"><span>Unread</span><strong>{unreadItems.length}</strong></div>
+                      {unreadItems.map(notificationRow)}
+                    </section>
+                  )}
+                  {readItems.length > 0 && (
+                    <section className="notification-section" aria-label="Earlier notifications">
+                      <div className="notification-section-title"><span>Earlier</span><strong>{readItems.length}</strong></div>
+                      {readItems.map(notificationRow)}
+                    </section>
+                  )}
+                </>
               )}
             </div>
           </div>

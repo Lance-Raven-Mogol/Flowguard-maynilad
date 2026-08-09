@@ -504,7 +504,7 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
   const fields: ModuleField[] = [
     { name: 'type', label: 'Type', kind: 'select', optionList: INCIDENT_TYPE_OPTIONS, default: 'complaint' },
     { name: 'description', label: 'Description', kind: 'textarea', placeholder: 'Describe the concern…' },
-    { name: 'location', label: 'Location', placeholder: 'Brgy., Boac' },
+    { name: 'location', label: 'Location', placeholder: 'Brgy., Boac', default: user!.barangay ?? 'Boac' },
     { name: 'urgency', label: 'Urgency', kind: 'select', options: URGENCY, default: 'medium' },
     { name: 'images', label: 'Photos (optional)', kind: 'images' },
     // Reporter is always the signed-in account — read-only, never editable.
@@ -542,6 +542,7 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
       title={title ?? (mine ? 'My Complaints & Inquiries' : 'Incident Management')}
       createLabel="File Complaint"
       columns={columns}
+      tableClassName={role === 'general-manager' ? 'gm-incidents-table' : undefined}
       fields={fields}
       canWrite={canWrite}
       filter={filter}

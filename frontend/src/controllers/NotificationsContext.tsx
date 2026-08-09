@@ -2,7 +2,7 @@
  * Notifications controller — layers "read / seen" state on top of the live
  * stats snapshot. The bell badge and each sidebar tab badge count only the
  * items the user hasn't acknowledged yet:
- *   • opening the bell marks ALL current alerts seen → bubble clears.
+ *   • unread alerts appear first, followed by previously read live alerts.
  *   • opening a tab marks that tab's items seen → its badge clears.
  * Seen state is persisted per-user in localStorage so unrelated actions (e.g.
  * editing your display name) never silently mark notifications as read.
@@ -54,7 +54,7 @@ interface NotificationsValue {
   unreadCount: number;
   /** Mark a single notification read (e.g. when the user clicks it). */
   markAlertSeen: (key: string) => void;
-  /** Mark ALL current alerts as seen — call this when the bell is opened. */
+  /** Mark ALL current alerts as seen. */
   markAllSeen: () => void;
   badges: Record<string, number>;
   markViewSeen: (viewId: string) => void;
@@ -93,11 +93,13 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   }, [userId, seen, liveAlertKeys]);
 
   const items = useMemo<NotificationItem[]>(
-    () => alerts.map((a) => ({ ...a, unread: !seen.alerts.includes(a.key) })),
+    () => alerts
+      .map((a) => ({ ...a, unread: !seen.alerts.includes(a.key) }))
+      .sort((a, b) => Number(b.unread) - Number(a.unread)),
     [alerts, seen.alerts],
   );
 
-  const unreadCount = useMemo(() => items.filter((i) => i.unread).length, [items]);
+  const unreadCount = useMemo(() => items.filter((item) => item.unread).length, [items]);
 
   const badges = useMemo(() => {
     const out: Record<string, number> = {};

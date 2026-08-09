@@ -8,14 +8,31 @@ import { api } from './apiClient';
 
 export type EntityRow = Record<string, unknown> & { id: string };
 
+/** Notify other open FlowGuard tabs that dashboard data has changed. */
+const broadcastResourceChange = (entity: string): void => {
+  try {
+    localStorage.setItem('flowguard:resource-change', JSON.stringify({ entity, at: Date.now() }));
+  } catch {
+    /* Storage can be unavailable; background polling remains as fallback. */
+  }
+};
+
 export const resourceService = {
   list: (entity: string, archived?: 'only' | 'all') =>
     api
       .get<{ data: EntityRow[] }>(`/resources/${entity}${archived ? `?archived=${archived}` : ''}`)
       .then((r) => r.data),
   create: (entity: string, values: Record<string, unknown>) =>
-    api.post<{ data: EntityRow }>(`/resources/${entity}`, values).then((r) => r.data),
+    api.post<{ data: EntityRow }>(`/resources/${entity}`, values).then((r) => {
+      broadcastResourceChange(entity);
+      return r.data;
+    }),
   update: (entity: string, id: string, values: Record<string, unknown>) =>
-    api.patch<{ data: EntityRow }>(`/resources/${entity}/${id}`, values).then((r) => r.data),
-  remove: (entity: string, id: string) => api.del(`/resources/${entity}/${id}`),
+    api.patch<{ data: EntityRow }>(`/resources/${entity}/${id}`, values).then((r) => {
+      broadcastResourceChange(entity);
+      return r.data;
+    }),
+  remove: (entity: string, id: string) => api.del(`/resources/${entity}/${id}`).then(() => {
+    broadcastResourceChange(entity);
+  }),
 };
