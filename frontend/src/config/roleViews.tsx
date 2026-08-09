@@ -181,6 +181,10 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter }) => <MaterialRequestsModule filter={filter} />,
       },
       {
+        id: 'purchase', label: 'Purchase Requests', icon: 'shopping-cart', group: 'main',
+        render: ({ filter }) => <PurchaseRequestsModule filter={filter} />,
+      },
+      {
         id: 'suppliers', label: 'Suppliers', icon: 'truck', group: 'main',
         render: ({ filter }) => <SuppliersModule filter={filter} />,
       },

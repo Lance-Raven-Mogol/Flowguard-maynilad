@@ -2189,6 +2189,12 @@ td strong {
   min-width: 0;
 }
 
+.combobox-control input[readonly] {
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+}
+
 .combobox-control.is-linked input {
   border-color: var(--blue, #2a6fb0);
   box-shadow: 0 0 0 2px rgba(42, 111, 176, 0.12);
@@ -2265,6 +2271,15 @@ td strong {
 
 .combobox-option.is-selected {
   outline: 1px solid rgba(42, 111, 176, 0.4);
+}
+
+.combobox-option.combobox-option-simple {
+  grid-template-columns: 1fr auto;
+}
+
+.combobox-selected-mark {
+  color: #1f9d64;
+  font-weight: 800;
 }
 
 .combobox-sku {

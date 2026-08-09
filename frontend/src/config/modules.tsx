@@ -784,7 +784,18 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
 
   const fields: ModuleField[] = [
     { name: 'name', label: 'Material Name', placeholder: 'e.g. PVC Pipe 50mm' },
-    { name: 'category', label: 'Category', placeholder: 'Pipes / Valves / Meters…' },
+    {
+      name: 'category',
+      label: 'Category',
+      placeholder: 'Pipes / Valves / Meters…',
+      suggestionsFromRows: (rows) => Array.from(new Map(
+        rows
+          .map((row) => String(row.category ?? '').trim())
+          .filter(Boolean)
+          .map((category) => [category.toLocaleLowerCase(), category]),
+      ).values()).sort((a, b) => a.localeCompare(b)),
+      hint: 'Type to choose an existing category, or enter a new one.',
+    },
     { name: 'description', label: 'Description', kind: 'textarea' },
     { name: 'quantity', label: 'Quantity', kind: 'number', default: '0' },
     { name: 'min_level', label: 'Minimum Level', kind: 'number', default: '10', hint: 'Stock at or below this level is automatically marked Low Stock.' },
@@ -793,7 +804,13 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
     { name: 'size', label: 'Size', placeholder: 'e.g. 50mm, 4 inches' },
     { name: 'color', label: 'Color', placeholder: 'e.g. Blue, Red' },
     { name: 'unit_price', label: 'Unit Price (₱)', kind: 'number' },
-    { name: 'source', label: 'Source', kind: 'select', optionList: [{ value: 'mother-company', label: 'Mother Company' }, { value: 'external', label: 'External Supplier' }] },
+    {
+      name: 'source',
+      label: 'Source',
+      kind: 'select',
+      styledSelect: true,
+      optionList: [{ value: 'mother-company', label: 'Mother Company' }, { value: 'external', label: 'External Supplier' }],
+    },
     {
       name: 'supplier_id',
       label: 'Supplier',

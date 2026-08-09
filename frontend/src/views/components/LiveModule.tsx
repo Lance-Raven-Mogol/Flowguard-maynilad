@@ -32,6 +32,10 @@ export interface ModuleField {
   allowPast?: boolean;
   /** Show this field only when the current form values satisfy a condition. */
   visibleWhen?: (values: Record<string, unknown>) => boolean;
+  /** Existing values to offer as autocomplete suggestions while allowing new text. */
+  suggestionsFromRows?: (rows: EntityRow[]) => string[];
+  /** Render select options with the shared custom dropdown instead of the browser-native menu. */
+  styledSelect?: boolean;
 }
 
 /** Today's date as YYYY-MM-DD — used as the min for scheduling date pickers. */
@@ -83,6 +87,186 @@ export interface LiveModuleProps {
    * can write and is viewing active records. `reload` refreshes the table.
    */
   renderCreate?: (ctx: { reload: () => Promise<void> }) => ReactNode;
+}
+
+function AutocompleteInput({
+  value,
+  suggestions,
+  placeholder,
+  readOnly,
+  onChange,
+}: {
+  value: string;
+  suggestions: string[];
+  placeholder?: string;
+  readOnly?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(-1);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const filtered = useMemo(() => {
+    const query = value.trim().toLocaleLowerCase();
+    return (query ? suggestions.filter((item) => item.toLocaleLowerCase().includes(query)) : suggestions).slice(0, 50);
+  }, [suggestions, value]);
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, []);
+
+  const pick = (suggestion: string) => {
+    onChange(suggestion);
+    setOpen(false);
+    setHighlight(-1);
+  };
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+      setOpen(true);
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setHighlight((current) => Math.min(current + 1, filtered.length - 1));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setHighlight((current) => Math.max(current - 1, 0));
+    } else if (event.key === 'Enter' && highlight >= 0 && filtered[highlight]) {
+      event.preventDefault();
+      pick(filtered[highlight]);
+    } else if (event.key === 'Escape') {
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div className="combobox" ref={wrapRef}>
+      <div className="combobox-control">
+        <input
+          role="combobox"
+          aria-expanded={open}
+          aria-autocomplete="list"
+          value={value}
+          placeholder={placeholder}
+          readOnly={readOnly}
+          onChange={(event) => {
+            onChange(event.target.value);
+            setOpen(true);
+            setHighlight(-1);
+          }}
+          onFocus={() => !readOnly && setOpen(true)}
+          onKeyDown={onKeyDown}
+        />
+        {!readOnly && (
+          <button type="button" className="combobox-caret" tabIndex={-1} aria-label="Toggle suggestions" onClick={() => setOpen((current) => !current)}>
+            ▾
+          </button>
+        )}
+      </div>
+      {open && !readOnly && (
+        <ul className="combobox-list" role="listbox">
+          {filtered.length === 0 ? (
+            <li className="combobox-empty">No matching category. “{value.trim()}” will be saved as a new category.</li>
+          ) : filtered.map((suggestion, index) => (
+            <li
+              key={suggestion}
+              role="option"
+              aria-selected={suggestion.toLocaleLowerCase() === value.toLocaleLowerCase()}
+              className={`combobox-option combobox-option-simple${index === highlight ? ' is-active' : ''}${suggestion.toLocaleLowerCase() === value.toLocaleLowerCase() ? ' is-selected' : ''}`}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                pick(suggestion);
+              }}
+              onMouseEnter={() => setHighlight(index)}
+            >
+              <span className="combobox-name">{suggestion}</span>
+              {suggestion.toLocaleLowerCase() === value.toLocaleLowerCase() && <span className="combobox-selected-mark">✓</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function StyledSelect({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const selected = options.find((option) => option.value === value) ?? options[0];
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, []);
+
+  return (
+    <div className="combobox" ref={wrapRef}>
+      <div className="combobox-control">
+        <input
+          role="combobox"
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          value={selected?.label ?? 'Select an option'}
+          readOnly
+          onClick={() => setOpen((current) => !current)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setOpen(false);
+            if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              setOpen(true);
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="combobox-caret"
+          tabIndex={-1}
+          aria-label="Toggle options"
+          onClick={() => setOpen((current) => !current)}
+        >
+          ▾
+        </button>
+      </div>
+      {open && (
+        <ul className="combobox-list" role="listbox">
+          {options.map((option) => {
+            const isSelected = option.value === value;
+            return (
+              <li
+                key={option.value}
+                role="option"
+                aria-selected={isSelected}
+                className={`combobox-option combobox-option-simple${isSelected ? ' is-selected' : ''}`}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+              >
+                <span className="combobox-name">{option.label}</span>
+                {isSelected && <span className="combobox-selected-mark">✓</span>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 export function LiveModule({
@@ -298,7 +482,9 @@ export function LiveModule({
           submitText={editing ? 'Save Changes' : 'Create'}
           submitting={submitting}
         >
-          {fields.filter((f) => !f.visibleWhen || f.visibleWhen(values)).map((f) => (
+          {fields.filter((f) => !f.visibleWhen || f.visibleWhen(values)).map((f) => {
+            const suggestions = f.suggestionsFromRows?.(rows) ?? [];
+            return (
             <div className="form-group" key={f.name}>
               <label>{f.label}</label>
               {f.kind === 'images' ? (
@@ -313,6 +499,12 @@ export function LiveModule({
                   value={String(values[f.name] ?? '')}
                   onChange={(e) => setValues((p) => ({ ...p, [f.name]: e.target.value }))}
                 />
+              ) : f.kind === 'select' && !f.readOnly && f.styledSelect ? (
+                <StyledSelect
+                  value={String(values[f.name] ?? '')}
+                  options={f.optionList ?? (f.options ?? []).map((option) => ({ value: option, label: option }))}
+                  onChange={(value) => setValues((previous) => ({ ...previous, [f.name]: value }))}
+                />
               ) : f.kind === 'select' && !f.readOnly ? (
                 <select
                   value={String(values[f.name] ?? '')}
@@ -324,6 +516,14 @@ export function LiveModule({
                     </option>
                   ))}
                 </select>
+              ) : f.suggestionsFromRows ? (
+                <AutocompleteInput
+                  value={String(values[f.name] ?? '')}
+                  suggestions={suggestions}
+                  placeholder={f.placeholder}
+                  readOnly={f.readOnly}
+                  onChange={(value) => setValues((previous) => ({ ...previous, [f.name]: value }))}
+                />
               ) : (
                 <input
                   type={f.kind === 'number' ? 'number' : f.kind === 'date' ? 'date' : 'text'}
@@ -336,7 +536,8 @@ export function LiveModule({
               )}
               {f.hint && <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>{f.hint}</small>}
             </div>
-          ))}
+            );
+          })}
         </Modal>
       )}
     </>
