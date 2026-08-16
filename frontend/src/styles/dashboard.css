@@ -2664,6 +2664,21 @@ td strong {
   padding-left: 12px;
 }
 
+/* Asset inspection uses the same compact table/action treatment as incidents. */
+.assets-table th:nth-child(1) { width: 100px; }
+.assets-table th:nth-child(2) { width: auto; }
+.assets-table th:nth-child(3) { width: 105px; }
+.assets-table th:nth-child(4) { width: 140px; }
+.assets-table th:nth-child(5) { width: 135px; }
+.assets-table th:nth-child(6) { width: 90px; }
+.assets-table th:nth-child(7) { width: 190px; }
+
+.assets-table td:nth-child(2),
+.assets-table td:nth-child(3),
+.assets-table td:nth-child(4) {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1180px) {
   .gm-incidents-table {
     padding-inline: 14px;

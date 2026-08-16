@@ -189,7 +189,6 @@ create table if not exists public.purchase_requests (
   id              uuid primary key default gen_random_uuid(),
   ref_code        text unique not null,
   material_name   text not null,
-  material_sku    text,
   quantity        integer not null default 1,
   unit            text default 'units',
   unit_price      numeric(12,2) default 0,
@@ -203,6 +202,13 @@ create table if not exists public.purchase_requests (
 );
 alter table public.purchase_requests add column if not exists archived boolean not null default false;
 alter table public.purchase_requests add column if not exists supplier_id uuid references public.suppliers(id) on delete set null;
+alter table public.purchase_requests add column if not exists category text;
+alter table public.purchase_requests add column if not exists description text;
+alter table public.purchase_requests add column if not exists min_level integer default 10;
+alter table public.purchase_requests add column if not exists weight_kg numeric(10,2) default 0;
+alter table public.purchase_requests add column if not exists size text;
+alter table public.purchase_requests add column if not exists color text;
+alter table public.purchase_requests add column if not exists source text default 'external';
 
 -- --------------------------------------------- E-Billing -------------------
 create table if not exists public.payments (

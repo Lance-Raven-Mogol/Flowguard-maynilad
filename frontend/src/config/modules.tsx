@@ -1389,10 +1389,8 @@ export function AssetsModule({ filter, title }: ModuleProps & { title?: string }
     { header: 'Asset', cell: (r) => String(r.name ?? '') },
     { header: 'Type', cell: (r) => String(r.type ?? '—') },
     { header: 'Location', cell: (r) => String(r.location ?? '—') },
-    { header: 'Installed', cell: (r) => dateShort(r.install_date) },
     { header: 'Health', cell: (r) => ({ text: `${r.health_score ?? '—'} · ${r.health_label ?? ''}`.trim(), status: statusTone(r.health_label) }) },
     { header: 'Remaining', cell: (r) => `${r.remaining_years ?? 0} yrs` },
-    { header: 'Action Needed', cell: (r) => String(r.recommendation ?? '—') },
   ];
 
   const fields: ModuleField[] = [
@@ -1411,6 +1409,7 @@ export function AssetsModule({ filter, title }: ModuleProps & { title?: string }
       title={title ?? 'Asset Lifecycle Monitoring'}
       createLabel="Register Asset"
       columns={columns}
+      tableClassName="gm-incidents-table assets-table"
       fields={fields}
       canWrite={canWrite}
       filter={filter}
@@ -1424,6 +1423,22 @@ export function AssetsModule({ filter, title }: ModuleProps & { title?: string }
         canWrite
           ? (c) => (
               <>
+                <ViewAction title={`Asset ${c.row.asset_tag}`} wide>
+                  <p className="detail-section-title">Asset Details</p>
+                  <dl className="detail-list">
+                    <DetailRow label="Asset Tag">{String(c.row.asset_tag ?? '')}</DetailRow>
+                    <DetailRow label="Asset Name">{String(c.row.name ?? '')}</DetailRow>
+                    <DetailRow label="Type">{String(c.row.type ?? '—')}</DetailRow>
+                    <DetailRow label="Location">{String(c.row.location ?? '—')}</DetailRow>
+                    <DetailRow label="Installation Date">{dateShort(c.row.install_date)}</DetailRow>
+                    <DetailRow label="Last Maintenance">{dateShort(c.row.last_maintenance)}</DetailRow>
+                    <DetailRow label="Expected Lifespan">{`${c.row.expected_lifespan_years ?? 0} years`}</DetailRow>
+                    <DetailRow label="Remaining Lifespan">{`${c.row.remaining_years ?? 0} years`}</DetailRow>
+                    <DetailRow label="Condition">{titleCase(c.row.condition)}</DetailRow>
+                    <DetailRow label="Health">{`${c.row.health_score ?? '—'} · ${c.row.health_label ?? ''}`.trim()}</DetailRow>
+                    <DetailRow label="Recommended Action">{String(c.row.recommendation ?? '—')}</DetailRow>
+                  </dl>
+                </ViewAction>
                 {!c.archived && <StatusSelect value={String(c.row.condition)} options={CONDITION} disabled={c.busy} onChange={(s) => c.update({ condition: s })} />}
                 <EditBtn c={c} />
                 <ArchiveBtn c={c} />
@@ -1821,7 +1836,9 @@ export function PurchaseRequestsModule({ filter }: ModuleProps) {
   const columns: ModuleColumn[] = [
     { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
     { header: 'Material', cell: (r) => String(r.material_name ?? '') },
+    { header: 'Category', cell: (r) => String(r.category ?? '—') },
     { header: 'Qty', cell: (r) => `${r.quantity ?? 0} ${r.unit ?? ''}`.trim() },
+    { header: 'Weight', cell: (r) => Number(r.weight_kg ?? 0) > 0 ? `${r.weight_kg} kg` : '—' },
     { header: 'Unit Price', cell: (r) => money(r.unit_price) },
     { header: 'Total', cell: (r) => money(r.total_cost) },
     { header: 'Supplier', cell: (r) => String(r.supplier ?? '—') },
@@ -1831,11 +1848,24 @@ export function PurchaseRequestsModule({ filter }: ModuleProps) {
 
   const fields: ModuleField[] = [
     { name: 'material_name', label: 'Material Name', placeholder: 'Material to purchase' },
+    { name: 'category', label: 'Category', placeholder: 'Pipes / Valves / Meters…' },
+    { name: 'description', label: 'Description', kind: 'textarea' },
     { name: 'quantity', label: 'Quantity', kind: 'number', default: '1' },
+    { name: 'min_level', label: 'Minimum Level', kind: 'number', default: '10', hint: 'Minimum stock level to use when this item is added to inventory.' },
     { name: 'unit', label: 'Unit', default: 'units' },
+    { name: 'weight_kg', label: 'Weight (kg)', kind: 'number' },
+    { name: 'size', label: 'Size', placeholder: 'e.g. 50mm, 4 inches' },
+    { name: 'color', label: 'Color', placeholder: 'e.g. Blue, Red' },
     { name: 'unit_price', label: 'Unit Price (₱)', kind: 'number' },
-    { name: 'total_cost', label: 'Total Cost (₱)', kind: 'number' },
-    { name: 'supplier_id', label: 'Supplier', kind: 'select', optionList: [{ value: '', label: 'No linked supplier' }, ...supplierOptions] },
+    {
+      name: 'source',
+      label: 'Source',
+      kind: 'select',
+      styledSelect: true,
+      optionList: [{ value: 'mother-company', label: 'Mother Company' }, { value: 'external', label: 'External Supplier' }],
+      default: 'external',
+    },
+    { name: 'supplier_id', label: 'Supplier', kind: 'select', optionList: [{ value: '', label: 'Select external supplier' }, ...supplierOptions], visibleWhen: (values) => values.source === 'external' },
     { name: 'justification', label: 'Justification', kind: 'textarea', placeholder: 'Why is this purchase needed?' },
     { name: 'requested_by', label: 'Requested By', default: user!.fullName, readOnly: true },
   ];
@@ -1849,7 +1879,11 @@ export function PurchaseRequestsModule({ filter }: ModuleProps) {
       fields={fields}
       prepareValues={(values) => ({
         ...values,
-        supplier: supplierOptions.find((supplier) => supplier.value === values.supplier_id)?.label ?? '',
+        total_cost: Number(values.quantity || 0) * Number(values.unit_price || 0),
+        supplier_id: values.source === 'external' ? values.supplier_id : null,
+        supplier: values.source === 'external'
+          ? supplierOptions.find((supplier) => supplier.value === values.supplier_id)?.label ?? ''
+          : 'Mother Company',
       })}
       canWrite={canWrite}
       filter={filter}
@@ -1865,9 +1899,16 @@ export function PurchaseRequestsModule({ filter }: ModuleProps) {
             <dl className="detail-list">
               <DetailRow label="Reference">{String(c.row.ref_code ?? '')}</DetailRow>
               <DetailRow label="Material">{String(c.row.material_name ?? '')}</DetailRow>
+              <DetailRow label="Category">{String(c.row.category ?? '—')}</DetailRow>
+              <DetailRow label="Description">{String(c.row.description ?? '—')}</DetailRow>
               <DetailRow label="Quantity">{`${c.row.quantity ?? 0} ${c.row.unit ?? ''}`}</DetailRow>
+              <DetailRow label="Minimum Level">{String(c.row.min_level ?? 10)}</DetailRow>
+              <DetailRow label="Weight">{Number(c.row.weight_kg ?? 0) > 0 ? `${c.row.weight_kg} kg` : '—'}</DetailRow>
+              <DetailRow label="Size">{String(c.row.size ?? '—')}</DetailRow>
+              <DetailRow label="Color">{String(c.row.color ?? '—')}</DetailRow>
               <DetailRow label="Unit Price">{money(c.row.unit_price)}</DetailRow>
               <DetailRow label="Total Cost">{money(c.row.total_cost)}</DetailRow>
+              <DetailRow label="Source">{titleCase(c.row.source ?? 'external')}</DetailRow>
               <DetailRow label="Supplier">{String(c.row.supplier ?? '—')}</DetailRow>
               <DetailRow label="Justification">{String(c.row.justification ?? '—')}</DetailRow>
               <DetailRow label="Requested By">{String(c.row.requested_by ?? '—')}</DetailRow>

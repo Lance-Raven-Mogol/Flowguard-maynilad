@@ -119,9 +119,9 @@ export const RESOURCES: Record<string, ResourceDef> = {
   'purchase-requests': {
     table: 'purchase_requests',
     writeRoles: ['inventory-officer'],
-    allowed: ['material_name', 'material_sku', 'quantity', 'unit', 'unit_price', 'total_cost', 'supplier', 'supplier_id', 'justification', 'requested_by', 'status', 'archived'],
+    allowed: ['material_name', 'category', 'description', 'quantity', 'min_level', 'unit', 'weight_kg', 'size', 'color', 'unit_price', 'total_cost', 'source', 'supplier', 'supplier_id', 'justification', 'requested_by', 'status', 'archived'],
     required: ['material_name'],
-    numeric: ['quantity', 'unit_price', 'total_cost'],
+    numeric: ['quantity', 'min_level', 'weight_kg', 'unit_price', 'total_cost'],
     nullable: ['supplier_id'],
     autoKeys: [{ column: 'ref_code', prefix: 'PR', digits: 4 }],
   },
