@@ -134,7 +134,8 @@ alter table public.app_users         add column if not exists start_date date;
 alter table public.app_users         add column if not exists is_archived boolean not null default false;
 alter table public.app_users         add column if not exists barangay text default 'Boac';
 alter table public.app_users         add column if not exists otp_secret text;
-alter table public.app_users         add column if not exists otp_enabled boolean not null default true;
+alter table public.app_users         add column if not exists otp_enabled boolean not null default false;
+alter table public.app_users         alter column otp_enabled set default false;
 alter table public.incidents         add column if not exists archived boolean not null default false;
 -- Zone-specialist remarks forwarded to the technical team + customer photo evidence.
 alter table public.incidents         add column if not exists remarks text;

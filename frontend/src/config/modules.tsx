@@ -4,6 +4,7 @@
  * material requests, assets + health scoring, advisories, users) to live data.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import type { BadgeTone, Metric, StatusTone, TableCell } from '../models/types';
 import { ROLES } from '../models/types';
 import { useAuth } from '../controllers/AuthContext';
@@ -1502,6 +1503,7 @@ interface UserRow {
   barangay?: string;
 }
 const BLANK_USER = { fullName: '', email: '', password: '', role: 'customer', startDate: '' };
+const DEFAULT_TEMPORARY_PASSWORD = 'Password123';
 
 export function UsersPanel({ filter }: ModuleProps) {
   const { notify } = useToast();
@@ -1512,6 +1514,7 @@ export function UsersPanel({ filter }: ModuleProps) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [form, setForm] = useState(BLANK_USER);
   const [showArchived, setShowArchived] = useState(false);
+  const [showTemporaryPassword, setShowTemporaryPassword] = useState(false);
 
   const load = () =>
     api
@@ -1530,6 +1533,7 @@ export function UsersPanel({ filter }: ModuleProps) {
       notify('User account created successfully!');
       setOpen(false);
       setForm(BLANK_USER);
+      setShowTemporaryPassword(false);
       await load();
     } catch (e) {
       notify(e instanceof ApiError ? e.message : 'Could not create user.', 'error');
@@ -1578,7 +1582,18 @@ export function UsersPanel({ filter }: ModuleProps) {
   };
 
   const roleOptions = ROLES.map((r) => ({ value: r.value, label: r.label }));
-  const filteredRows = showArchived ? rows : rows.filter((u) => !u.isArchived);
+  const filteredRows = rows.filter((u) => (showArchived ? Boolean(u.isArchived) : !u.isArchived));
+
+  const openCreateUser = () => {
+    setForm({ ...BLANK_USER, password: DEFAULT_TEMPORARY_PASSWORD });
+    setShowTemporaryPassword(false);
+    setOpen(true);
+  };
+
+  const closeCreateUser = () => {
+    setOpen(false);
+    setShowTemporaryPassword(false);
+  };
 
   const table = useMemo(
     () => ({
@@ -1608,7 +1623,7 @@ export function UsersPanel({ filter }: ModuleProps) {
               <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
               Show Archived
             </label>
-            <ActionButton label="Add User" icon="user-plus" onClick={() => setOpen(true)} />
+            <ActionButton label="Add User" icon="user-plus" onClick={openCreateUser} />
           </div>
         }
       />
@@ -1637,7 +1652,7 @@ export function UsersPanel({ filter }: ModuleProps) {
       )}
 
       {open && (
-        <Modal title="Add Staff User" open onClose={() => setOpen(false)} onSubmit={createUser} submitText="Create User" submitting={submitting}>
+        <Modal title="Add Staff User" open onClose={closeCreateUser} onSubmit={createUser} submitText="Create User" submitting={submitting}>
           <div className="form-group">
             <label>Full Name</label>
             <input value={form.fullName} onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))} placeholder="Full name" />
@@ -1648,7 +1663,23 @@ export function UsersPanel({ filter }: ModuleProps) {
           </div>
           <div className="form-group">
             <label>Temporary Password</label>
-            <input type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder="Min. 6 characters" />
+            <div className="dashboard-password-field">
+              <input
+                type={showTemporaryPassword ? 'text' : 'password'}
+                value={form.password}
+                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                placeholder="Min. 6 characters"
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowTemporaryPassword((visible) => !visible)}
+                aria-label={showTemporaryPassword ? 'Hide temporary password' : 'Show temporary password'}
+                title={showTemporaryPassword ? 'Hide password' : 'Show password'}
+              >
+                {showTemporaryPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
           <div className="form-group">
             <label>Start Date (Join Date)</label>

@@ -16,7 +16,8 @@ export const env = {
   supabase: {
     url: process.env.SUPABASE_URL ?? '',
     anonKey: process.env.SUPABASE_ANON_KEY ?? '',
-    serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? '',
+    // A blank legacy key should fall back to the new sb_secret_ key.
+    serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '',
     accessToken: process.env.SUPABASE_ACCESS_TOKEN ?? '',
   },
   smtp: {

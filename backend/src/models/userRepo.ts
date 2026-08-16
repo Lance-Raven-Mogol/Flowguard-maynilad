@@ -42,7 +42,7 @@ function fromRow(row: UserRow): User {
     isArchived: row.is_archived ?? false,
     barangay: row.barangay ?? 'Boac',
     otpSecret: row.otp_secret ?? undefined,
-    otpEnabled: row.otp_enabled ?? true,
+    otpEnabled: row.otp_enabled ?? false,
   };
 }
 
@@ -92,7 +92,7 @@ export const userRepo = {
         role: input.role,
         password_hash: input.passwordHash,
         start_date: input.startDate ?? new Date().toISOString().slice(0, 10),
-        otp_enabled: true,
+        otp_enabled: false,
       })
       .select('*')
       .single<UserRow>();
@@ -182,6 +182,7 @@ export const userRepo = {
       email: u.email.toLowerCase(),
       role: u.role,
       password_hash: bcrypt.hashSync(u.password, 10),
+      otp_enabled: false,
     }));
     const { error: insertError } = await supabase.from(TABLE).insert(rows);
     if (insertError) throw new Error(`Supabase seed insert failed: ${insertError.message}`);

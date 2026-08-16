@@ -159,7 +159,7 @@ export const authService = {
     if (!user || !bcrypt.compareSync(password, user.passwordHash)) throw unauthorized('Invalid email or password.');
     if (user.isArchived) throw unauthorized('This account has been deactivated.');
 
-    const otpEnabled = user.otpEnabled ?? true;
+    const otpEnabled = user.otpEnabled ?? false;
     if (otpEnabled) {
       const otpCode = genOtp();
       pendingLogins.set(email, { userId: user.id, email, otpCode, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0 });
@@ -284,6 +284,6 @@ export const authService = {
 
   async isOtpEnabled(userId: string): Promise<boolean> {
     const user = await userRepo.findById(userId);
-    return user?.otpEnabled ?? true;
+    return user?.otpEnabled ?? false;
   },
 };

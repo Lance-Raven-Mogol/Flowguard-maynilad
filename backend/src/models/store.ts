@@ -20,7 +20,7 @@ class Store {
         role: u.role,
         passwordHash: bcrypt.hashSync(u.password, 10),
         createdAt: new Date().toISOString(),
-        otpEnabled: true,
+        otpEnabled: false,
       });
     }
   }
@@ -41,7 +41,7 @@ class Store {
       role: data.role,
       passwordHash: data.passwordHash,
       createdAt: new Date().toISOString(),
-      otpEnabled: true,
+      otpEnabled: false,
     };
     this.users.push(user);
     return user;

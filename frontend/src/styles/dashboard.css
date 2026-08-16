@@ -2433,6 +2433,38 @@ td strong {
   resize: none;
 }
 
+.dashboard-password-field {
+  position: relative;
+}
+
+.form-group .dashboard-password-field input {
+  padding-right: 48px;
+}
+
+.dashboard-password-field button {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.dashboard-password-field button:hover,
+.dashboard-password-field button:focus-visible {
+  color: var(--blue);
+  background: var(--blue-soft);
+  outline: none;
+}
+
 .btn-secondary {
   background: var(--panel-soft);
   border: 1px solid var(--line);
