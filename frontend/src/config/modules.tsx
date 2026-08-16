@@ -20,8 +20,8 @@ import { ActionButton, PanelHead } from '../views/components/panels';
 const roleLabel = (role: unknown): string => ROLES.find((r) => r.value === role)?.label ?? String(role ?? '');
 
 /* ------------------------------------------------------------------ helpers */
-const GREEN = new Set(['resolved', 'completed', 'released', 'published', 'approved', 'in_stock', 'good']);
-const RED = new Set(['rejected', 'cancelled', 'needs_replacement', 'dispose', 'defective', 'overdue', 'critical', 'out_of_stock']);
+const GREEN = new Set(['active', 'resolved', 'completed', 'released', 'published', 'approved', 'in_stock', 'good']);
+const RED = new Set(['inactive', 'rejected', 'cancelled', 'needs_replacement', 'dispose', 'defective', 'overdue', 'critical', 'out_of_stock']);
 
 function statusTone(v: unknown): StatusTone {
   const k = String(v ?? '').toLowerCase();
