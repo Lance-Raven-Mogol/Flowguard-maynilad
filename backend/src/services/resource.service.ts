@@ -198,9 +198,28 @@ async function settleStockDeduction(mrfId: string, user: PublicUser): Promise<vo
 }
 
 export const resourceService = {
-  async list(entity: string, archived?: 'only' | 'all'): Promise<Row[]> {
+  async list(entity: string, user: PublicUser, archived?: 'only' | 'all'): Promise<Row[]> {
     const def = getDef(entity);
-    const rows = await repo.listRows(def.table, { archived });
+    if (entity === 'payments' && !['general-manager', 'customer'].includes(user.role)) {
+      throw forbidden('You do not have permission to view billing records.');
+    }
+    if (entity === 'payment-methods' && user.role !== 'general-manager') {
+      throw forbidden('Only the General Manager can view payment profiles.');
+    }
+    let rows = await repo.listRows(def.table, { archived });
+    if (entity === 'payments' && user.role === 'customer') {
+      const email = user.email.trim().toLowerCase();
+      rows = rows.filter((row) => String(row.customer_email ?? '').trim().toLowerCase() === email);
+    }
+    if (entity === 'payments') {
+      const today = new Date().toISOString().slice(0, 10);
+      rows = rows.map((row) => ({
+        ...row,
+        status: ['pending', 'unpaid'].includes(String(row.status)) && row.due_date && String(row.due_date) < today
+          ? 'overdue'
+          : row.status,
+      }));
+    }
     return entity === 'assets' ? rows.map(withAssetHealth) : rows;
   },
 
@@ -227,6 +246,24 @@ export const resourceService = {
 
     if (entity === 'materials') {
       values.status = materialStockStatus(values.quantity, values.min_level, values.status);
+    }
+
+    if (entity === 'payments') {
+      const incidentRef = String(values.incident_ref ?? '').trim();
+      const jobOrderRef = String(values.job_order_ref ?? '').trim();
+      if (!jobOrderRef) throw badRequest('A completed Job Order is required to issue a final bill.');
+      const completedJob = (await repo.findRowsBy('job_orders', 'ref_code', jobOrderRef))[0];
+      if (!completedJob) throw badRequest(`Job order "${jobOrderRef}" was not found.`);
+      if (completedJob.status !== 'completed') throw conflict('The linked Job Order must be Completed before a final bill can be issued.');
+      const linkedIncidentRef = String(completedJob.incident_ref ?? '').trim();
+      if (!linkedIncidentRef) throw badRequest('The completed Job Order is not linked to an incident.');
+      if (incidentRef && incidentRef !== linkedIncidentRef) throw badRequest('The bill incident does not match the Job Order incident.');
+      const incident = (await repo.findRowsBy('incidents', 'ref_code', linkedIncidentRef))[0];
+      if (!incident) throw badRequest(`The Job Order's linked incident "${linkedIncidentRef}" was not found.`);
+      values.incident_ref = linkedIncidentRef;
+      const existingBills = await repo.findRowsBy('payments', 'job_order_ref', jobOrderRef);
+      if (existingBills.length > 0) throw conflict('A bill has already been issued for this Job Order.');
+      values.status = 'unpaid';
     }
 
     // One active job order per incident — reject duplicates even if the UI is
@@ -274,9 +311,29 @@ export const resourceService = {
 
   async update(entity: string, user: PublicUser, id: string, body: Record<string, unknown>): Promise<Row> {
     const def = getDef(entity);
-    if (!canWrite(def, user.role)) throw forbidden('You do not have permission to update this record.');
+    const isCustomerPayment = entity === 'payments' && user.role === 'customer';
+    if (!canWrite(def, user.role) && !isCustomerPayment) throw forbidden('You do not have permission to update this record.');
 
     const values = sanitize(def, body);
+    if (isCustomerPayment) {
+      const current = await repo.getRowById(def.table, id);
+      if (!current || String(current.customer_email ?? '').trim().toLowerCase() !== user.email.trim().toLowerCase()) {
+        throw notFound('Bill not found.');
+      }
+      if (!['pending', 'unpaid', 'overdue', 'rejected'].includes(String(current.status))) {
+        throw conflict('This bill is not accepting a payment submission.');
+      }
+      const allowed = new Set(['payment_method', 'amount_paid', 'payment_date', 'payment_reference', 'payment_proof']);
+      for (const key of Object.keys(values)) if (!allowed.has(key)) delete values[key];
+      if (!values.payment_method || !values.payment_reference || !values.payment_proof || !values.amount_paid || !values.payment_date) {
+        throw badRequest('Payment method, amount, date, reference number, and proof are required.');
+      }
+      values.status = 'for_verification';
+      values.verification_notes = '';
+    }
+    if (entity === 'payments' && user.role === 'general-manager' && values.status === 'paid') {
+      values.paid_date = new Date().toISOString().slice(0, 10);
+    }
     if (def.touch) values[def.touch] = new Date().toISOString();
     if (Object.keys(values).length === 0) throw badRequest('No valid fields to update.');
 

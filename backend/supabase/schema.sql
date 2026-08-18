@@ -225,6 +225,33 @@ create table if not exists public.payments (
   created_at      timestamptz not null default now()
 );
 alter table public.payments add column if not exists archived boolean not null default false;
+alter table public.payments add column if not exists incident_ref text;
+alter table public.payments add column if not exists job_order_ref text;
+alter table public.payments add column if not exists service_description text;
+alter table public.payments add column if not exists payment_method text;
+alter table public.payments add column if not exists account_name text;
+alter table public.payments add column if not exists account_number text;
+alter table public.payments add column if not exists payment_qr jsonb not null default '[]'::jsonb;
+alter table public.payments add column if not exists amount_paid numeric(12,2);
+alter table public.payments add column if not exists payment_date date;
+alter table public.payments add column if not exists payment_reference text;
+alter table public.payments add column if not exists payment_proof jsonb not null default '[]'::jsonb;
+alter table public.payments add column if not exists verification_notes text;
+alter table public.payments drop constraint if exists payments_status_check;
+alter table public.payments add constraint payments_status_check
+  check (status in ('pending','unpaid','for_verification','paid','rejected','late','overdue'));
+
+-- Reusable payment destinations configured by the General Manager.
+create table if not exists public.payment_methods (
+  id              uuid primary key default gen_random_uuid(),
+  name            text not null,
+  payment_method  text not null,
+  account_name    text not null,
+  account_number  text,
+  payment_qr      jsonb not null default '[]'::jsonb,
+  archived        boolean not null default false,
+  created_at      timestamptz not null default now()
+);
 
 -- --------------------------------------------- Supply requests --------------
 create table if not exists public.supply_requests (
@@ -253,6 +280,7 @@ alter table public.audit_logs           enable row level security;
 alter table public.suppliers            enable row level security;
 alter table public.purchase_requests    enable row level security;
 alter table public.payments             enable row level security;
+alter table public.payment_methods      enable row level security;
 alter table public.supply_requests      enable row level security;
 alter table public.pending_registrations enable row level security;
 

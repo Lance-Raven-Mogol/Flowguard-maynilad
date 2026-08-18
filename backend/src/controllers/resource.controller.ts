@@ -5,9 +5,10 @@ import { unauthorized } from '../utils/httpError.js';
 
 export const resourceController = {
   async list(req: Request, res: Response): Promise<void> {
+    if (!req.user) throw unauthorized();
     const q = req.query.archived;
     const archived = q === 'only' ? 'only' : q === 'all' ? 'all' : undefined;
-    const rows = await resourceService.list(req.params.entity, archived);
+    const rows = await resourceService.list(req.params.entity, req.user, archived);
     res.json({ data: rows });
   },
 

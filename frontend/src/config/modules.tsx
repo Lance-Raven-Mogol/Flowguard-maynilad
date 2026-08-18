@@ -12,7 +12,7 @@ import { useToast } from '../controllers/ToastContext';
 import { useStats } from '../controllers/StatsContext';
 import { api, ApiError } from '../services/apiClient';
 import { resourceService, type EntityRow } from '../services/resourceService';
-import { LiveModule, StatusSelect, type ModuleColumn, type ModuleField, type RowActionCtx } from '../views/components/LiveModule';
+import { ImageUpload, LiveModule, StatusSelect, type ModuleColumn, type ModuleField, type RowActionCtx } from '../views/components/LiveModule';
 import { DataTable } from '../views/components/DataTable';
 import { Modal } from '../views/components/Modal';
 import { ActionButton, PanelHead } from '../views/components/panels';
@@ -394,16 +394,19 @@ function IncidentViewButton({
   c,
   canEditRemarks,
   canCreateJobOrder = false,
+  showCustomerBilling = false,
 }: {
   c: RowActionCtx;
   canEditRemarks: boolean;
   canCreateJobOrder?: boolean;
+  showCustomerBilling?: boolean;
 }) {
   const { stats } = useStats();
   const [open, setOpen] = useState(false);
   const [showJobForm, setShowJobForm] = useState(false);
   const [remarks, setRemarks] = useState('');
   const [saving, setSaving] = useState(false);
+  const [bills, setBills] = useState<EntityRow[]>([]);
   const editable = canEditRemarks && !c.archived;
 
   const hasRemarks = String(c.row.remarks ?? '').trim() !== '';
@@ -422,9 +425,15 @@ function IncidentViewButton({
     await c.reload();
   };
 
+  const loadBills = async () => {
+    if (!showCustomerBilling) return;
+    const rows = await resourceService.list('payments');
+    setBills(rows.filter((bill) => String(bill.incident_ref ?? '') === String(c.row.ref_code ?? '')));
+  };
   const openModal = () => {
     setRemarks(String(c.row.remarks ?? ''));
     setOpen(true);
+    void loadBills();
   };
   const save = async () => {
     setSaving(true);
@@ -456,6 +465,17 @@ function IncidentViewButton({
           submitting={saving}
         >
           <IncidentDetail row={c.row} hideRemarks={editable} />
+          {showCustomerBilling && bills.length > 0 && (
+            <div className="complaint-billing-summary">
+              <p className="detail-section-title">Billing for this Complaint</p>
+              {bills.map((bill) => (
+                <div className="complaint-bill-row" key={bill.id}>
+                  <div><strong>{String(bill.ref_code)}</strong><span>{money(bill.amount)} · Due {dateShort(bill.due_date)} · {billingStatusLabel(bill.status)}</span></div>
+                  <CustomerBillingAction c={{ row: bill, busy: false, archived: false, update: async () => {}, remove: () => {}, archive: () => {}, restore: () => {}, edit: () => {}, reload: loadBills }} />
+                </div>
+              ))}
+            </div>
+          )}
           {editable && (
             <div className="form-group" style={{ marginTop: 18, marginBottom: 0 }}>
               <label>Zone Specialist Remarks</label>
@@ -521,11 +541,12 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
   const actions = canWrite
     ? (c: RowActionCtx) => (
         <>
-          {manage && (
+          {(manage || role === 'customer') && (
             <IncidentViewButton
               c={c}
               canEditRemarks={role === 'zone-specialist'}
               canCreateJobOrder={role === 'general-manager'}
+              showCustomerBilling={role === 'customer'}
             />
           )}
           {manage && !c.archived && !(role === 'general-manager' && c.row.status === 'under_verification') && (
@@ -2093,7 +2114,7 @@ const PAYMENT_STATUS = [
   { value: 'overdue', label: 'Overdue' },
 ];
 
-export function PaymentsModule({ filter }: ModuleProps) {
+export function LegacyPaymentsModule({ filter }: ModuleProps) {
   const { user } = useAuth();
   const role = user!.role;
   const canWrite = WRITE.payments.includes(role);
@@ -2157,6 +2178,305 @@ export function PaymentsModule({ filter }: ModuleProps) {
       )}
     />
   );
+}
+
+const billingStatusLabel = (value: unknown): string => {
+  const status = String(value ?? 'unpaid');
+  if (status === 'pending') return 'Unpaid';
+  if (status === 'for_verification') return 'For Verification';
+  if (status === 'rejected') return 'Payment Rejected';
+  return titleCase(status);
+};
+
+function BillingDetails({ row, customer = false }: { row: EntityRow; customer?: boolean }) {
+  return (
+    <>
+      <div className="billing-amount-card">
+        <span>Amount Due</span><strong>{money(row.amount)}</strong><small>Due {dateShort(row.due_date)}</small>
+      </div>
+      {customer && row.status === 'rejected' && (
+        <div className="payment-rejection-notice" role="alert">
+          <strong>Payment was declined</strong>
+          <p>{String(row.verification_notes || 'Please review your payment details and submit a new proof of payment.')}</p>
+        </div>
+      )}
+      <dl className="detail-list">
+        <DetailRow label="Bill Reference">{String(row.ref_code ?? '')}</DetailRow>
+        <DetailRow label="Incident">{String(row.incident_ref ?? '—')}</DetailRow>
+        <DetailRow label="Job Order">{String(row.job_order_ref ?? '—')}</DetailRow>
+        <DetailRow label="Service">{String(row.service_description ?? row.notes ?? '—')}</DetailRow>
+        {!customer && <DetailRow label="Customer">{String(row.customer_name ?? '')}</DetailRow>}
+        {!customer && <DetailRow label="Email">{String(row.customer_email ?? '')}</DetailRow>}
+        <DetailRow label="Status">{billingStatusLabel(row.status)}</DetailRow>
+        <DetailRow label="Payment Method">{String(row.payment_method ?? '—')}</DetailRow>
+        <DetailRow label="Account Name">{String(row.account_name ?? '—')}</DetailRow>
+        <DetailRow label="Account Number">{String(row.account_number ?? '—')}</DetailRow>
+        {Boolean(row.payment_reference) && <DetailRow label="Submitted Reference">{String(row.payment_reference)}</DetailRow>}
+        {row.amount_paid != null && <DetailRow label="Amount Submitted">{money(row.amount_paid)}</DetailRow>}
+        {Boolean(row.payment_date) && <DetailRow label="Payment Date">{dateShort(row.payment_date)}</DetailRow>}
+        {Boolean(row.verification_notes) && <DetailRow label="Verification Notes">{String(row.verification_notes)}</DetailRow>}
+      </dl>
+      {Array.isArray(row.payment_qr) && row.payment_qr.length > 0 && <><p className="detail-section-title">Scan to Pay</p><ImageGallery images={row.payment_qr} /></>}
+      {Array.isArray(row.payment_proof) && row.payment_proof.length > 0 && <><p className="detail-section-title">Payment Proof</p><ImageGallery images={row.payment_proof} /></>}
+    </>
+  );
+}
+
+function CustomerBillingAction({ c }: { c: RowActionCtx }) {
+  const { notify } = useToast();
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [method, setMethod] = useState(String(c.row.payment_method ?? 'GCash'));
+  const [amount, setAmount] = useState(String(c.row.amount ?? ''));
+  const [paymentDate, setPaymentDate] = useState(todayISO());
+  const [reference, setReference] = useState('');
+  const [proof, setProof] = useState<string[]>([]);
+  const payable = ['pending', 'unpaid', 'overdue', 'rejected'].includes(String(c.row.status));
+
+  const submit = async () => {
+    if (!method.trim() || !(Number(amount) > 0) || !paymentDate || !reference.trim() || proof.length === 0) {
+      notify('Complete every payment field and attach a screenshot.', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      await resourceService.update('payments', c.row.id, {
+        payment_method: method, amount_paid: Number(amount), payment_date: paymentDate,
+        payment_reference: reference.trim(), payment_proof: proof,
+      });
+      await c.reload();
+      notify('Payment proof submitted for verification.');
+      setOpen(false);
+    } catch (cause) {
+      notify(cause instanceof ApiError ? cause.message : 'Could not submit payment proof.', 'error');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <>
+      <button className="btn-action" type="button" onClick={() => setOpen(true)}>{payable ? 'View / Pay' : 'View Bill'}</button>
+      <Modal title={`Bill ${c.row.ref_code}`} open={open} wide onClose={() => setOpen(false)} onSubmit={payable ? submit : undefined} submitText="Submit Payment Proof" submitting={saving}>
+        <BillingDetails row={c.row} customer />
+        {payable && <div className="payment-submission-form">
+          <p className="detail-section-title">Submit Payment</p>
+          <div className="form-grid">
+            <div className="form-group"><label>Payment Method</label><input value={method} onChange={(e) => setMethod(e.target.value)} placeholder="GCash / Maya / Bank" /></div>
+            <div className="form-group"><label>Amount Paid</label><input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
+            <div className="form-group"><label>Payment Date</label><input type="date" max={todayISO()} value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} /></div>
+            <div className="form-group"><label>Reference Number</label><input value={reference} onChange={(e) => setReference(e.target.value)} /></div>
+          </div>
+          <div className="form-group"><label>Screenshot / Proof of Payment</label><ImageUpload value={proof} onChange={setProof} /></div>
+        </div>}
+      </Modal>
+    </>
+  );
+}
+
+function BillingReviewAction({ c }: { c: RowActionCtx }) {
+  const { notify } = useToast();
+  const [open, setOpen] = useState(false);
+  const [notes, setNotes] = useState(String(c.row.verification_notes ?? ''));
+  const [saving, setSaving] = useState(false);
+  const reviewable = c.row.status === 'for_verification';
+  const decide = async (status: 'paid' | 'rejected') => {
+    if (status === 'rejected' && !notes.trim()) return notify('Enter a rejection reason for the customer.', 'error');
+    setSaving(true);
+    try {
+      await resourceService.update('payments', c.row.id, { status, verification_notes: notes.trim() });
+      await c.reload();
+      notify(status === 'paid' ? 'Payment verified as Paid.' : 'Payment rejected; customer may resubmit.');
+      setOpen(false);
+    } catch (cause) {
+      notify(cause instanceof ApiError ? cause.message : 'Could not review payment.', 'error');
+    } finally { setSaving(false); }
+  };
+  return <>
+    <button className="btn-action" type="button" onClick={() => setOpen(true)}>{reviewable ? 'Review' : 'View'}</button>
+    <Modal title={`${reviewable ? 'Review' : 'Payment'} ${c.row.ref_code}`} open={open} wide onClose={() => setOpen(false)}>
+      <BillingDetails row={c.row} />
+      {reviewable && <div className="payment-review-controls">
+        <div className="form-group"><label>Verification Notes / Rejection Reason</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Required when rejecting" /></div>
+        <div className="payment-review-actions">
+          <button className="btn-secondary payment-reject" disabled={saving} onClick={() => void decide('rejected')}>Reject Payment</button>
+          <button className="btn-primary" disabled={saving} onClick={() => void decide('paid')}>Verify as Paid</button>
+        </div>
+      </div>}
+    </Modal>
+  </>;
+}
+
+interface BillingUser { fullName: string; email: string; role: string }
+interface BillableWork { key: string; label: string; incident: EntityRow; job?: EntityRow }
+
+function BillingControls({ onCreated }: { onCreated: () => Promise<void> }) {
+  const { notify } = useToast();
+  const [issueOpen, setIssueOpen] = useState(false);
+  const [profilesOpen, setProfilesOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [works, setWorks] = useState<BillableWork[]>([]);
+  const [profiles, setProfiles] = useState<EntityRow[]>([]);
+  const [users, setUsers] = useState<BillingUser[]>([]);
+  const [workKey, setWorkKey] = useState('');
+  const [profileId, setProfileId] = useState('');
+  const [amount, setAmount] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [profileMethod, setProfileMethod] = useState('GCash');
+  const [accountName, setAccountName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [profileQr, setProfileQr] = useState<string[]>([]);
+
+  const loadOptions = async () => {
+    setLoading(true);
+    try {
+      const [incidents, jobs, bills, savedProfiles, userResponse] = await Promise.all([
+        resourceService.list('incidents'), resourceService.list('job-orders'), resourceService.list('payments'),
+        resourceService.list('payment-methods'), api.get<{ data: BillingUser[] }>('/users'),
+      ]);
+      const billedJobs = new Set(bills.map((bill) => String(bill.job_order_ref ?? '')).filter(Boolean));
+      const jobWorks: BillableWork[] = jobs
+        .filter((job) => job.status === 'completed' && !billedJobs.has(String(job.ref_code)))
+        .map((job) => ({ job, incident: incidents.find((incident) => String(incident.ref_code) === String(job.incident_ref)) }))
+        .filter((item): item is { job: EntityRow; incident: EntityRow } => Boolean(item.incident))
+        .map(({ job, incident }) => ({ key: `job:${job.id}`, label: `${job.ref_code} — ${job.title} — ${incident.reported_by}`, job, incident }));
+      setWorks(jobWorks);
+      setProfiles(savedProfiles);
+      setUsers(userResponse.data);
+      if (!profileId && savedProfiles[0]) setProfileId(String(savedProfiles[0].id));
+    } catch (cause) {
+      notify(cause instanceof ApiError ? cause.message : 'Could not load bill options.', 'error');
+    } finally { setLoading(false); }
+  };
+
+  const openIssue = () => { setIssueOpen(true); void loadOptions(); };
+  const selectedWork = works.find((work) => work.key === workKey);
+  const selectedProfile = profiles.find((profile) => profile.id === profileId);
+  const customerName = String(selectedWork?.incident.reported_by ?? '');
+  const customer = users.find((candidate) => candidate.fullName.trim().toLowerCase() === customerName.trim().toLowerCase());
+
+  const selectWork = (key: string) => {
+    setWorkKey(key);
+    const work = works.find((item) => item.key === key);
+    setDescription(String(work?.job?.title ?? work?.incident.description ?? ''));
+  };
+
+  const issueBill = async () => {
+    if (!selectedWork || !customer?.email || !selectedProfile || !(Number(amount) > 0) || !dueDate) {
+      notify(!customer?.email && selectedWork ? 'No customer account email matches the complaint reporter.' : 'Complete the Job Order, amount, due date, and payment profile.', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      await resourceService.create('payments', {
+        customer_name: customerName, customer_email: customer.email,
+        incident_ref: selectedWork.incident.ref_code,
+        job_order_ref: selectedWork.job?.ref_code ?? '', service_description: description,
+        amount: Number(amount), due_date: dueDate,
+        payment_method: selectedProfile.payment_method, account_name: selectedProfile.account_name,
+        account_number: selectedProfile.account_number, payment_qr: selectedProfile.payment_qr,
+      });
+      await onCreated();
+      notify('Final bill issued to the customer.');
+      setIssueOpen(false); setWorkKey(''); setAmount(''); setDueDate(''); setDescription('');
+    } catch (cause) {
+      notify(cause instanceof ApiError ? cause.message : 'Could not issue the bill.', 'error');
+    } finally { setSaving(false); }
+  };
+
+  const addProfile = async () => {
+    if (!profileName.trim() || !profileMethod.trim() || !accountName.trim()) {
+      notify('Profile name, payment method, and account name are required.', 'error'); return;
+    }
+    setSaving(true);
+    try {
+      await resourceService.create('payment-methods', {
+        name: profileName, payment_method: profileMethod, account_name: accountName,
+        account_number: accountNumber, payment_qr: profileQr,
+      });
+      await loadOptions();
+      notify('Payment information saved.');
+      setProfileName(''); setAccountName(''); setAccountNumber(''); setProfileQr([]);
+    } catch (cause) {
+      notify(cause instanceof ApiError ? cause.message : 'Could not save payment information.', 'error');
+    } finally { setSaving(false); }
+  };
+
+  return <>
+    <div className="panel-head-actions">
+      <ActionButton label="Payment Information" icon="wallet" variant="secondary" onClick={() => { setProfilesOpen(true); void loadOptions(); }} />
+      <ActionButton label="Issue Final Bill" icon="plus-circle" onClick={openIssue} />
+    </div>
+    <Modal title="Issue Final Bill" open={issueOpen} wide onClose={() => setIssueOpen(false)} onSubmit={issueBill} submitText="Issue Bill" submitting={saving}>
+      {loading ? <p className="billing-helper">Loading completed Job Orders…</p> : <>
+        <div className="form-group"><label>Completed Job Order</label><select value={workKey} onChange={(e) => selectWork(e.target.value)}><option value="">Select Job Order</option>{works.map((work) => <option key={work.key} value={work.key}>{work.label}</option>)}</select></div>
+        {selectedWork && <div className="billing-customer-preview"><span>Customer</span><strong>{customerName || 'Unknown customer'}</strong><small>{customer?.email ?? 'No matching registered email'}</small></div>}
+        <div className="form-grid">
+          <div className="form-group"><label>Final Amount</label><div className="peso-input"><span>₱</span><input type="text" inputMode="decimal" value={amount} onChange={(e) => { const next = e.target.value; if (/^\d*(\.\d{0,2})?$/.test(next)) setAmount(next); }} onKeyDown={(e) => { if (['-', '+', 'e', 'E'].includes(e.key)) e.preventDefault(); }} placeholder="0.00" /></div></div>
+          <div className="form-group"><label>Due Date</label><input type="date" min={todayISO()} value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
+        </div>
+        <div className="form-group"><label>Saved Payment Information</label><select value={profileId} onChange={(e) => setProfileId(e.target.value)}><option value="">Select payment profile</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{String(profile.name)} — {String(profile.payment_method)}</option>)}</select>{profiles.length === 0 && <small>Add payment information first before issuing a bill.</small>}</div>
+        {selectedProfile && <div className="selected-payment-profile">
+          <div className="selected-payment-icon">{Array.isArray(selectedProfile.payment_qr) && selectedProfile.payment_qr[0] ? <img src={String(selectedProfile.payment_qr[0])} alt={`${selectedProfile.name} QR code`} /> : <span>₱</span>}</div>
+          <div className="selected-payment-copy"><small>Selected payment destination</small><strong>{String(selectedProfile.name)}</strong><span>{String(selectedProfile.payment_method)}</span></div>
+          <dl><div><dt>Account name</dt><dd>{String(selectedProfile.account_name)}</dd></div><div><dt>Account number</dt><dd>{String(selectedProfile.account_number || 'Not provided')}</dd></div></dl>
+        </div>}
+        <div className="form-group"><label>Service Description</label><textarea value={description} onChange={(e) => setDescription(e.target.value)} /></div>
+      </>}
+    </Modal>
+    <Modal title="Saved Payment Information" open={profilesOpen} wide onClose={() => setProfilesOpen(false)} onSubmit={addProfile} submitText="Save Payment Info" submitting={saving}>
+      {profiles.length > 0 && <div className="saved-payment-list">{profiles.map((profile) => <div key={profile.id}><strong>{String(profile.name)}</strong><span>{String(profile.payment_method)} · {String(profile.account_name)} · {String(profile.account_number ?? 'No account number')}</span></div>)}</div>}
+      <p className="detail-section-title">Add Payment Information</p>
+      <div className="form-grid">
+        <div className="form-group"><label>Profile Name</label><input value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="Main GCash" /></div>
+        <div className="form-group"><label>Payment Method</label><input value={profileMethod} onChange={(e) => setProfileMethod(e.target.value)} /></div>
+        <div className="form-group"><label>Account Name</label><input value={accountName} onChange={(e) => setAccountName(e.target.value)} /></div>
+        <div className="form-group"><label>Account Number</label><input value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} /></div>
+      </div>
+      <div className="form-group"><label>QR Code</label><ImageUpload value={profileQr} onChange={setProfileQr} /></div>
+    </Modal>
+  </>;
+}
+
+export function BillingModule({ filter }: ModuleProps) {
+  const { user } = useAuth();
+  const customer = user!.role === 'customer';
+  const columns: ModuleColumn[] = [
+    { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
+    ...(!customer ? [{ header: 'Customer', cell: (r: EntityRow) => String(r.customer_name ?? '') }] : []),
+    { header: 'Service Ref', cell: (r) => String(r.job_order_ref || r.incident_ref || '—') },
+    { header: 'Amount', cell: (r) => money(r.amount) },
+    { header: 'Due Date', cell: (r) => dateShort(r.due_date) },
+    { header: 'Status', cell: (r) => ({ ...statusCell(r.status), text: billingStatusLabel(r.status) }) },
+  ];
+  const fields: ModuleField[] = [
+    { name: 'customer_name', label: 'Customer Name' },
+    { name: 'customer_email', label: 'Customer Email', placeholder: 'Customer account email' },
+    { name: 'incident_ref', label: 'Resolved Incident Ref', placeholder: 'INC-XXXX (use this or Job Order)' },
+    { name: 'job_order_ref', label: 'Completed Job Order Ref', placeholder: 'JO-XXXX (use this or Incident)' },
+    { name: 'service_description', label: 'Service Description', kind: 'textarea' },
+    { name: 'amount', label: 'Final Amount (PHP)', kind: 'number' },
+    { name: 'due_date', label: 'Due Date', kind: 'date' },
+    { name: 'payment_method', label: 'Payment Method', placeholder: 'GCash / Maya / Bank Transfer' },
+    { name: 'account_name', label: 'Account Name' },
+    { name: 'account_number', label: 'Account Number' },
+    { name: 'payment_qr', label: 'Payment QR Code', kind: 'images' },
+    { name: 'notes', label: 'Billing Notes', kind: 'textarea' },
+  ];
+  return <LiveModule
+    entity="payments" title={customer ? 'My Billing' : 'Billing'} createLabel="Issue Final Bill"
+    columns={columns} fields={customer ? [] : fields} canWrite={!customer} filter={filter} archivable={!customer}
+    tableClassName="billing-table"
+    renderCreate={!customer ? ({ reload }) => <BillingControls onCreated={reload} /> : undefined}
+    metrics={(rows) => [
+      metric('bill1', customer ? 'My Bills' : 'Total Bills', String(rows.length), 'credit-card', 'customers'),
+      metric('bill2', 'Unpaid', count(rows, (r) => ['pending', 'unpaid'].includes(String(r.status))), 'clock', 'revenue'),
+      metric('bill3', 'For Verification', count(rows, (r) => r.status === 'for_verification'), 'shield', 'profit'),
+      metric('bill4', 'Paid', count(rows, (r) => r.status === 'paid'), 'check-circle', 'invoices'),
+    ]}
+    actions={(c) => customer ? <CustomerBillingAction c={c} /> : <><BillingReviewAction c={c} /><EditBtn c={c} /><ArchiveBtn c={c} /></>}
+  />;
 }
 
 /* --------------------------------------------------- Supply Requests */

@@ -13,11 +13,11 @@ import {
   AdvisoriesModule,
   AssetsModule,
   AuditLogsModule,
+  BillingModule,
   IncidentsModule,
   JobOrdersModule,
   MaterialRequestsModule,
   MaterialsModule,
-  PaymentsModule,
   PurchaseRequestsModule,
   SupplyRequestsModule,
   SuppliersModule,
@@ -88,6 +88,10 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter }) => <IncidentsModule filter={filter} mine />,
       },
       {
+        id: 'billing', label: 'My Billing', icon: 'credit-card', group: 'main',
+        render: ({ filter }) => <BillingModule filter={filter} />,
+      },
+      {
         id: 'supply-requests', label: 'Supply Requests', icon: 'package', group: 'main',
         render: ({ filter }) => <SupplyRequestsModule filter={filter} />,
       },
@@ -141,8 +145,8 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter }) => <SuppliersModule filter={filter} />,
       },
       {
-        id: 'payments', label: 'E-Billing', icon: 'credit-card', group: 'main',
-        render: ({ filter }) => <PaymentsModule filter={filter} />,
+        id: 'payments', label: 'Billing', icon: 'credit-card', group: 'main',
+        render: ({ filter }) => <BillingModule filter={filter} />,
       },
       {
         id: 'supply-requests', label: 'Supply Requests', icon: 'package', group: 'main',

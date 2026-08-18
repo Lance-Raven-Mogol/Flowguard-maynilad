@@ -129,11 +129,23 @@ export const RESOURCES: Record<string, ResourceDef> = {
   payments: {
     table: 'payments',
     writeRoles: ['general-manager'],
-    allowed: ['customer_name', 'customer_email', 'amount', 'due_date', 'paid_date', 'status', 'notes', 'archived'],
-    required: ['customer_name', 'amount'],
-    numeric: ['amount'],
-    nullable: ['due_date', 'paid_date'],
+    allowed: [
+      'customer_name', 'customer_email', 'incident_ref', 'job_order_ref', 'service_description',
+      'amount', 'due_date', 'paid_date', 'status', 'notes', 'archived',
+      'payment_method', 'account_name', 'account_number', 'payment_qr',
+      'amount_paid', 'payment_date', 'payment_reference', 'payment_proof', 'verification_notes',
+    ],
+    required: ['customer_name', 'customer_email', 'amount'],
+    numeric: ['amount', 'amount_paid'],
+    nullable: ['due_date', 'paid_date', 'payment_date'],
     autoKeys: [{ column: 'ref_code', prefix: 'PAY', digits: 5 }],
+  },
+
+  'payment-methods': {
+    table: 'payment_methods',
+    writeRoles: ['general-manager'],
+    allowed: ['name', 'payment_method', 'account_name', 'account_number', 'payment_qr', 'archived'],
+    required: ['name', 'payment_method', 'account_name'],
   },
 
   'supply-requests': {
