@@ -145,7 +145,7 @@ function enrich(entity: string, row: Row): Row {
  * (external procurement) settle without touching inventory. Throws when the
  * requested quantity exceeds available stock, blocking the approval.
  */
-async function settleStockDeduction(mrfId: string): Promise<void> {
+async function settleStockDeduction(mrfId: string, user: PublicUser): Promise<void> {
   const current = await repo.getRowById('material_requests', mrfId);
   if (!current) throw notFound('Material request not found.');
   if (current.stock_deducted) return; // already settled — no double deduction
@@ -184,6 +184,17 @@ async function settleStockDeduction(mrfId: string): Promise<void> {
   }
   await repo.updateRow('materials', String(material.id), patch);
   await repo.updateRow('material_requests', mrfId, { stock_deducted: true });
+  await logAudit('materials', String(material.id), 'stock_movement', user.fullName, user.role, {
+    movement_type: 'stock_out',
+    material_name: material.name,
+    sku: material.sku,
+    previous_quantity: available,
+    new_quantity: remaining,
+    quantity_change: -qty,
+    unit: material.unit,
+    reference: current.ref_code,
+    reason: 'Material request released',
+  });
 }
 
 export const resourceService = {
@@ -232,7 +243,18 @@ export const resourceService = {
 
     try {
       const row = await writeResilient(values, (v) => repo.insertRow(def.table, v), def.critical);
-      await logAudit(entity, String(row.id ?? ''), 'create', user.fullName, user.role, values);
+      const auditDetails = entity === 'materials'
+        ? {
+            ...values,
+            movement_type: 'initial_stock',
+            material_name: row.name,
+            sku: row.sku,
+            previous_quantity: 0,
+            new_quantity: Number(row.quantity ?? 0),
+            quantity_change: Number(row.quantity ?? 0),
+          }
+        : values;
+      await logAudit(entity, String(row.id ?? ''), 'create', user.fullName, user.role, auditDetails);
       // A job order dispatched for an incident schedules that incident.
       if (incidentRef) {
         try {
@@ -250,16 +272,19 @@ export const resourceService = {
     }
   },
 
-  async update(entity: string, role: Role, id: string, body: Record<string, unknown>): Promise<Row> {
+  async update(entity: string, user: PublicUser, id: string, body: Record<string, unknown>): Promise<Row> {
     const def = getDef(entity);
-    if (!canWrite(def, role)) throw forbidden('You do not have permission to update this record.');
+    if (!canWrite(def, user.role)) throw forbidden('You do not have permission to update this record.');
 
     const values = sanitize(def, body);
     if (def.touch) values[def.touch] = new Date().toISOString();
     if (Object.keys(values).length === 0) throw badRequest('No valid fields to update.');
 
+    const currentMaterial = entity === 'materials' ? await repo.getRowById(def.table, id) : null;
+    if (entity === 'materials' && !currentMaterial) throw notFound('Record not found.');
+
     if (entity === 'materials' && ('quantity' in values || 'min_level' in values)) {
-      const current = await repo.getRowById(def.table, id);
+      const current = currentMaterial!;
       if (!current) throw notFound('Record not found.');
       values.status = materialStockStatus(
         values.quantity ?? current.quantity,
@@ -271,13 +296,31 @@ export const resourceService = {
     // Approving/releasing a material request deducts its quantity from stock —
     // once. Runs before the status write so insufficient stock blocks approval.
     if (entity === 'material-requests' && (values.status === 'approved' || values.status === 'released')) {
-      await settleStockDeduction(id);
+      await settleStockDeduction(id, user);
     }
 
     try {
       const row = await writeResilient(values, (v) => repo.updateRow(def.table, id, v), def.critical);
       if (!row) throw notFound('Record not found.');
-      await logAudit(entity, id, 'update', undefined, role, values);
+      const previousQuantity = Number(currentMaterial?.quantity ?? 0);
+      const newQuantity = Number(row.quantity ?? previousQuantity);
+      const quantityChange = newQuantity - previousQuantity;
+      const auditDetails = entity === 'materials'
+        ? {
+            ...values,
+            movement_type: 'quantity' in values
+              ? quantityChange > 0 ? 'stock_in' : quantityChange < 0 ? 'stock_out' : 'adjustment'
+              : 'details_update',
+            material_name: row.name,
+            sku: row.sku,
+            previous_quantity: previousQuantity,
+            new_quantity: newQuantity,
+            quantity_change: quantityChange,
+            unit: row.unit,
+            supplier: row.supplier,
+          }
+        : values;
+      await logAudit(entity, id, 'update', user.fullName, user.role, auditDetails);
       return enrich(entity, row);
     } catch (err) {
       if (err instanceof Error && err.name === 'HttpError') throw err;

@@ -5,7 +5,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
-import type { BadgeTone, Metric, StatusTone, TableCell } from '../models/types';
+import type { BadgeTone, Metric, ResourceTable, StatusTone, TableCell } from '../models/types';
 import { ROLES } from '../models/types';
 import { useAuth } from '../controllers/AuthContext';
 import { useToast } from '../controllers/ToastContext';
@@ -748,6 +748,79 @@ function useSupplierOptions() {
     .map((supplier) => ({ value: String(supplier.id), label: String(supplier.name) }));
 }
 
+function RestockBtn({ c }: { c: RowActionCtx }) {
+  const { notify } = useToast();
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [saving, setSaving] = useState(false);
+  const current = Number(c.row.quantity ?? 0);
+  const added = Number(amount || 0);
+  const unit = String(c.row.unit ?? 'units');
+
+  const close = () => {
+    if (saving) return;
+    setOpen(false);
+    setAmount('');
+  };
+
+  const save = async () => {
+    if (!Number.isFinite(added) || added <= 0) {
+      notify('Enter a restock quantity greater than zero.', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      await resourceService.update('materials', c.row.id, { quantity: current + added });
+      await c.reload();
+      notify(`${c.row.name ?? 'Material'} restocked by ${added} ${unit}.`);
+      setOpen(false);
+      setAmount('');
+    } catch (cause) {
+      notify(cause instanceof ApiError ? cause.message : 'Restock failed.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <button className="btn-action btn-restock" type="button" onClick={() => setOpen(true)} disabled={c.busy}>
+        Restock
+      </button>
+      <Modal title="Restock Material" open={open} onClose={close} onSubmit={save} submitText="Add to Stock" submitting={saving}>
+        <div className="restock-material-card">
+          <span>Material</span>
+          <strong>{String(c.row.name ?? 'Unnamed material')}</strong>
+          <small>{String(c.row.sku ?? '')}</small>
+        </div>
+        <div className="restock-stock-summary" aria-label="Stock calculation">
+          <div><span>Current stock</span><strong>{current} {unit}</strong></div>
+          <b>+</b>
+          <div><span>To add</span><strong>{added > 0 ? added : 0} {unit}</strong></div>
+          <b>=</b>
+          <div className="restock-new-total"><span>New stock</span><strong>{current + (added > 0 ? added : 0)} {unit}</strong></div>
+        </div>
+        <div className="form-group restock-quantity-field">
+          <label htmlFor={`restock-${c.row.id}`}>Quantity to add</label>
+          <input
+            id={`restock-${c.row.id}`}
+            type="number"
+            min="0.01"
+            step="any"
+            inputMode="decimal"
+            autoFocus
+            placeholder="Enter quantity"
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') void save(); }}
+          />
+          <small>This amount will be added to the current stock and recorded in Inventory History.</small>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
 function categoryColor(category: unknown, explicitColor?: unknown): string {
   const supplied = String(explicitColor ?? '').trim();
   if (/^(#[0-9a-f]{3,8}|[a-z]+|hsl\(.+\)|rgb\(.+\))$/i.test(supplied)) return supplied;
@@ -766,11 +839,82 @@ function materialStockStatus(quantity: unknown, minLevel: unknown, requestedStat
   return 'in_stock';
 }
 
+function InventoryHistory({ filter }: ModuleProps) {
+  const [logs, setLogs] = useState<EntityRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    resourceService.list('audit-logs')
+      .then((rows) => {
+        if (!active) return;
+        setLogs(rows.filter((row) => {
+          if (row.entity !== 'materials') return false;
+          const details = (row.details ?? {}) as Record<string, unknown>;
+          return row.action === 'stock_movement' || row.action === 'create' ||
+            (row.action === 'update' && ('quantity_change' in details || 'quantity' in details));
+        }));
+      })
+      .catch((cause) => {
+        if (active) setError(cause instanceof ApiError ? cause.message : 'Unable to load inventory history.');
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const table = useMemo<ResourceTable>(() => ({
+    id: 'inventory-history',
+    columns: ['Date & Time', 'Material', 'Movement', 'Change', 'Previous', 'New Stock', 'Supplier / Reference', 'Performed By'],
+    rows: logs.map((row) => {
+      const details = (row.details ?? {}) as Record<string, unknown>;
+      const previous = details.previous_quantity;
+      const next = details.new_quantity ?? details.quantity;
+      const rawChange = details.quantity_change;
+      const change = rawChange === undefined && previous !== undefined && next !== undefined
+        ? Number(next) - Number(previous)
+        : Number(rawChange ?? 0);
+      const movement = String(details.movement_type ?? (row.action === 'create' ? 'initial_stock' : 'adjustment'));
+      const movementLabel = movement === 'stock_out' ? 'Stock Out' : movement === 'initial_stock' ? 'Initial Stock' : change > 0 ? 'Stock In' : change < 0 ? 'Stock Out' : 'Adjustment';
+      const unit = String(details.unit ?? '').trim();
+      const formatQty = (value: unknown) => value === undefined || value === null ? '—' : `${Number(value)}${unit ? ` ${unit}` : ''}`;
+      const when = row.created_at ? new Date(String(row.created_at)) : null;
+      const timestamp = when && !Number.isNaN(when.getTime())
+        ? when.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })
+        : '—';
+      return {
+        id: String(row.id),
+        cells: [
+          { text: timestamp },
+          { text: String(details.material_name ?? details.name ?? details.sku ?? 'Unknown material'), strong: true },
+          { text: movementLabel, badge: change < 0 ? 'high' : change > 0 ? 'low' : 'medium' },
+          { text: `${change > 0 ? '+' : ''}${formatQty(change)}`, strong: true },
+          { text: formatQty(previous) },
+          { text: formatQty(next) },
+          { text: String(details.supplier ?? details.reference ?? details.source ?? '—') },
+          { text: String(row.actor ?? titleCase(row.actor_role ?? 'System')) },
+        ],
+      };
+    }),
+  }), [logs]);
+
+  if (loading) return <p style={{ color: 'var(--muted)', padding: '8px 2px' }}>Loading inventory history…</p>;
+  if (error) return <p style={{ color: '#e25577', padding: '8px 2px' }}>{error}</p>;
+  return (
+    <>
+      <PanelHead title="Inventory Movement History" />
+      <DataTable table={table} filter={filter} className="inventory-history-table" />
+    </>
+  );
+}
+
 export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps & { readOnly?: boolean; title?: string }) {
   const { user } = useAuth();
   const role = user!.role;
   const canWrite = !readOnly && WRITE.materials.includes(role);
   const supplierOptions = useSupplierOptions();
+  const [activeTab, setActiveTab] = useState<'inventory' | 'history'>('inventory');
 
   const columns: ModuleColumn[] = [
     { header: 'SKU', cell: (r) => ({ text: String(r.sku), strong: true }) },
@@ -823,9 +967,18 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
   ];
 
   return (
-    <LiveModule
-      entity="materials"
-      title={title ?? 'Material List & Stock Levels'}
+    <>
+      <div className="inventory-tabs" role="tablist" aria-label="Inventory views">
+        <button type="button" role="tab" aria-selected={activeTab === 'inventory'} className={activeTab === 'inventory' ? 'active' : ''} onClick={() => setActiveTab('inventory')}>Current Inventory</button>
+        <button type="button" role="tab" aria-selected={activeTab === 'history'} className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>Inventory History</button>
+      </div>
+      {activeTab === 'history' ? (
+        <InventoryHistory filter={filter} />
+      ) : (
+        <LiveModule
+          entity="materials"
+          title={title ?? 'Material List & Stock Levels'}
+          tableClassName="inventory-materials-table"
       createLabel="Add New Item"
       columns={columns}
       fields={fields}
@@ -857,13 +1010,16 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
         canWrite
           ? (c) => (
               <>
+                <RestockBtn c={c} />
                 <EditBtn c={c} />
                 <ArchiveBtn c={c} />
               </>
             )
           : undefined
       }
-    />
+        />
+      )}
+    </>
   );
 }
 

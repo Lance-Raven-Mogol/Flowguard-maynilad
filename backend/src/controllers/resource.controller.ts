@@ -19,7 +19,7 @@ export const resourceController = {
 
   async update(req: Request, res: Response): Promise<void> {
     if (!req.user) throw unauthorized();
-    const row = await resourceService.update(req.params.entity, req.user.role, req.params.id, req.body ?? {});
+    const row = await resourceService.update(req.params.entity, req.user, req.params.id, req.body ?? {});
     res.json({ data: row });
   },
 
