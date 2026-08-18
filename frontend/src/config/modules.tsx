@@ -528,7 +528,7 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
               canCreateJobOrder={role === 'general-manager'}
             />
           )}
-          {manage && !c.archived && (
+          {manage && !c.archived && !(role === 'general-manager' && c.row.status === 'under_verification') && (
             <StatusSelect value={String(c.row.status)} options={INCIDENT_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />
           )}
           <EditBtn c={c} />
@@ -543,7 +543,7 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
       title={title ?? (mine ? 'My Complaints & Inquiries' : 'Incident Management')}
       createLabel="File Complaint"
       columns={columns}
-      tableClassName={role === 'general-manager' ? 'gm-incidents-table' : undefined}
+      tableClassName="incidents-table"
       fields={fields}
       canWrite={canWrite}
       filter={filter}
@@ -702,6 +702,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
       title={title ?? 'Job Order Management'}
       createLabel="Create Job Order"
       columns={columns}
+      tableClassName="job-orders-table"
       fields={fields}
       canWrite={canWrite}
       filter={filter}

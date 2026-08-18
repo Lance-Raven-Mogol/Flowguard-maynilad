@@ -1217,6 +1217,40 @@ td strong {
   white-space: nowrap;
 }
 
+.job-orders-table table {
+  table-layout: fixed;
+  min-width: 1040px;
+}
+
+.job-orders-table th:nth-child(1) { width: 115px; }
+.job-orders-table th:nth-child(2) { width: 185px; }
+.job-orders-table th:nth-child(3) { width: 145px; }
+.job-orders-table th:nth-child(4) { width: 180px; }
+.job-orders-table th:nth-child(5) { width: 120px; }
+.job-orders-table th:nth-child(6) { width: 115px; }
+.job-orders-table th:nth-child(7) { width: 120px; }
+.job-orders-table th:last-child { width: 260px; }
+
+.job-orders-table td {
+  height: 58px;
+  max-height: 58px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.job-orders-table td > *:not(.action-group) {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.job-orders-table .action-group {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
 /* ------------------------------------------------------------- Bill / invoice */
 .bill-summary {
   display: grid;
@@ -2839,6 +2873,48 @@ td strong {
   .gm-incidents-table {
     padding-inline: 14px;
   }
+}
+
+/* Incidents use the same stable, single-line table rhythm as Inventory and JOs. */
+.incidents-table table {
+  table-layout: fixed;
+  min-width: 1270px;
+}
+
+.incidents-table th:nth-child(1) { width: 110px; }
+.incidents-table th:nth-child(2) { width: 125px; }
+.incidents-table th:nth-child(3) { width: 250px; }
+.incidents-table th:nth-child(4) { width: 180px; }
+.incidents-table th:nth-child(5) { width: 100px; }
+.incidents-table th:nth-child(6) { width: 145px; }
+.incidents-table th:last-child { width: 360px; }
+
+.incidents-table td {
+  height: 58px;
+  max-height: 58px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.incidents-table td > *:not(.action-group) {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.incidents-table .action-group {
+  display: flex;
+  flex-wrap: nowrap;
+  width: max-content;
+  white-space: nowrap;
+}
+
+.incidents-table .action-group .btn-action {
+  width: auto;
+  flex: 0 0 auto;
 }
 
 /* ---------------------------------------------------------- Toggle switch */

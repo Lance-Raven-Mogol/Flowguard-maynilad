@@ -280,6 +280,17 @@ export const resourceService = {
     if (def.touch) values[def.touch] = new Date().toISOString();
     if (Object.keys(values).length === 0) throw badRequest('No valid fields to update.');
 
+    // Complaints awaiting verification belong to the Zone Specialist's triage
+    // step. The General Manager must wait for the specialist's remarks, which
+    // advance the complaint to In Progress, before changing its workflow state.
+    if (entity === 'incidents' && user.role === 'general-manager' && 'status' in values) {
+      const currentIncident = await repo.getRowById(def.table, id);
+      if (!currentIncident) throw notFound('Record not found.');
+      if (currentIncident.status === 'under_verification' && values.status !== 'under_verification') {
+        throw forbidden('Only the Zone Specialist can verify this incident and move it from Under Verification.');
+      }
+    }
+
     const currentMaterial = entity === 'materials' ? await repo.getRowById(def.table, id) : null;
     if (entity === 'materials' && !currentMaterial) throw notFound('Record not found.');
 
