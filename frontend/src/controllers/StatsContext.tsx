@@ -13,9 +13,7 @@ export interface DashboardStats {
   materialRequests: EntityRow[];
   assets: EntityRow[];
   advisories: EntityRow[];
-  purchaseRequests: EntityRow[];
   payments: EntityRow[];
-  supplyRequests: EntityRow[];
 }
 
 const EMPTY: DashboardStats = {
@@ -25,9 +23,7 @@ const EMPTY: DashboardStats = {
   materialRequests: [],
   assets: [],
   advisories: [],
-  purchaseRequests: [],
   payments: [],
-  supplyRequests: [],
 };
 
 const ENTITIES: [keyof DashboardStats, string][] = [
@@ -37,9 +33,7 @@ const ENTITIES: [keyof DashboardStats, string][] = [
   ['materialRequests', 'material-requests'],
   ['assets', 'assets'],
   ['advisories', 'advisories'],
-  ['purchaseRequests', 'purchase-requests'],
   ['payments', 'payments'],
-  ['supplyRequests', 'supply-requests'],
 ];
 
 interface StatsValue {
@@ -172,9 +166,9 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
   const criticalAssets = stats.assets.filter((a) => Number(a.health_score) < 15 || a.condition === 'dispose' || a.condition === 'needs_replacement');
   const openIncidents = stats.incidents.filter(isOpen);
   const draftAdvisories = stats.advisories.filter((a) => a.status !== 'published');
-  const pendingPurchases = stats.purchaseRequests.filter((r) => r.status === 'pending');
+  const pendingPurchases = stats.materialRequests.filter((r) => r.request_type === 'purchase' && r.status === 'pending');
   const overduePayments = stats.payments.filter((p) => p.status === 'overdue' || p.status === 'late');
-  const pendingSupplies = stats.supplyRequests.filter((r) => r.status === 'pending');
+  const pendingSupplies = stats.materialRequests.filter((r) => r.request_type === 'general' && r.status === 'pending');
 
   // Which sidebar view each alert kind opens, per role.
   const incView = role === 'general-manager' ? 'incidents' : role === 'zone-specialist' ? 'investigations' : 'joborders';
@@ -193,9 +187,9 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
         tone: 'info',
       }),
     );
-    const mySupplies = stats.supplyRequests.filter((r) => String(r.requested_by ?? '').toLowerCase() === fullName.toLowerCase() && r.status !== 'fulfilled');
+    const mySupplies = stats.materialRequests.filter((r) => r.request_type === 'general' && String(r.requested_by ?? '').toLowerCase() === fullName.toLowerCase() && r.status !== 'released');
     mySupplies.forEach((s) =>
-      alerts.push({ key: `supply:${s.id}:${s.status}`, view: 'supply-requests', icon: 'package', title: `Supply request ${s.ref_code} is ${s.status}`, detail: String(s.item_name ?? ''), tone: s.status === 'rejected' ? 'danger' : 'info' }),
+      alerts.push({ key: `supply:${s.id}:${s.status}`, view: 'requests', icon: 'package', title: `Request ${s.ref_code} is ${s.status}`, detail: String(s.material_name ?? ''), tone: s.status === 'rejected' ? 'danger' : 'info' }),
     );
     stats.advisories
       .filter((a) => a.status === 'published')
@@ -232,7 +226,7 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
   if (role === 'general-manager') {
     if (draftAdvisories.length) alerts.push({ key: aggKey('draftadv', draftAdvisories), view: 'advisories', icon: 'megaphone', title: `${draftAdvisories.length} advisory(ies) awaiting publish`, detail: 'Review and approve', tone: 'info' });
     if (overduePayments.length) alerts.push({ key: aggKey('overdue', overduePayments), view: 'payments', icon: 'credit-card', title: `${overduePayments.length} payment(s) overdue`, detail: 'Follow up required', tone: 'danger' });
-    if (pendingSupplies.length) alerts.push({ key: aggKey('supplies', pendingSupplies), view: 'supply-requests', icon: 'package', title: `${pendingSupplies.length} supply request(s) pending`, detail: 'Awaiting fulfillment', tone: 'warn' });
+    if (pendingSupplies.length) alerts.push({ key: aggKey('supplies', pendingSupplies), view: 'requests', icon: 'package', title: `${pendingSupplies.length} supply request(s) pending`, detail: 'Awaiting fulfillment', tone: 'warn' });
   }
   return alerts;
 }
@@ -251,24 +245,24 @@ export function buildBadgeItems(stats: DashboardStats, role: string, fullName: s
   const lowStock = ids(stats.materials.filter((m) => m.status === 'low_stock'));
   const activeJobs = ids(stats.jobOrders.filter((j) => j.status === 'pending' || j.status === 'in_progress'));
   const draftAdv = ids(stats.advisories.filter((a) => a.status !== 'published'));
-  const pendingPurchases = ids(stats.purchaseRequests.filter((r) => r.status === 'pending'));
+  const pendingPurchases = ids(stats.materialRequests.filter((r) => r.request_type === 'purchase' && r.status === 'pending'));
   const overduePayments = ids(stats.payments.filter((p) => p.status === 'overdue' || p.status === 'late'));
-  const pendingSupplies = ids(stats.supplyRequests.filter((r) => r.status === 'pending'));
+  const pendingSupplies = ids(stats.materialRequests.filter((r) => r.request_type === 'general' && r.status === 'pending'));
 
   switch (role) {
     case 'customer':
       return {
         complaints: ids(stats.incidents.filter((i) => String(i.reported_by).toLowerCase() === fullName.toLowerCase() && isOpen(i))),
-        'supply-requests': ids(stats.supplyRequests.filter((r) => String(r.requested_by ?? '').toLowerCase() === fullName.toLowerCase() && r.status !== 'fulfilled')),
+        requests: ids(stats.materialRequests.filter((r) => r.request_type === 'general' && String(r.requested_by ?? '').toLowerCase() === fullName.toLowerCase() && r.status !== 'released')),
       };
     case 'zone-specialist':
       return { investigations: open };
     case 'technical-team':
       return { joborders: activeJobs };
     case 'inventory-officer':
-      return { materials: [...outOfStock, ...lowStock], mrf: pendingMrf, purchase: pendingPurchases };
+      return { materials: [...outOfStock, ...lowStock], mrf: [...pendingMrf, ...pendingPurchases] };
     case 'general-manager':
-      return { incidents: open, requests: pendingMrf, advisories: draftAdv, purchase: pendingPurchases, payments: overduePayments, 'supply-requests': pendingSupplies, inventory: [...outOfStock, ...lowStock] };
+      return { incidents: open, requests: [...pendingMrf, ...pendingSupplies, ...pendingPurchases], advisories: draftAdv, payments: overduePayments, inventory: [...outOfStock, ...lowStock] };
     default:
       return {};
   }

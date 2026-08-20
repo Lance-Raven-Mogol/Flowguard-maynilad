@@ -84,11 +84,28 @@ export const RESOURCES: Record<string, ResourceDef> = {
 
   'material-requests': {
     table: 'material_requests',
-    writeRoles: ['technical-team', 'inventory-officer'],
-    allowed: ['material_sku', 'material_name', 'job_order_ref', 'quantity', 'requested_by', 'status', 'archived'],
+    // All roles can create requests; request_type determines the form variant:
+    //   'mrf'      — formal Material Request Form, linked to inventory SKU / job order (technical-team, inventory-officer)
+    //   'general'  — informal supply request open to all roles including customers
+    //   'purchase' — procurement request with pricing & supplier (inventory-officer only, enforced frontend-side)
+    writeRoles: ['customer', 'zone-specialist', 'technical-team', 'inventory-officer'],
+    allowed: [
+      // shared
+      'material_name', 'quantity', 'requested_by', 'requested_by_id', 'status', 'archived', 'request_type',
+      // mrf
+      'material_sku', 'job_order_ref',
+      // general
+      'reason',
+      // general (customer fulfilment)
+      'payment_option', 'delivery_address',
+      // purchase
+      'category', 'description', 'unit', 'min_level', 'weight_kg', 'size', 'color',
+      'unit_price', 'total_cost', 'source', 'supplier', 'supplier_id', 'justification',
+    ],
     required: ['material_name'],
-    numeric: ['quantity'],
-    autoKeys: [{ column: 'ref_code', prefix: 'MR', digits: 4 }],
+    numeric: ['quantity', 'min_level', 'weight_kg', 'unit_price', 'total_cost'],
+    nullable: ['supplier_id'],
+    autoKeys: [{ column: 'ref_code', prefix: 'REQ', digits: 4 }],
   },
 
   assets: {
@@ -116,19 +133,9 @@ export const RESOURCES: Record<string, ResourceDef> = {
     required: ['entity', 'action'],
   },
 
-  'purchase-requests': {
-    table: 'purchase_requests',
-    writeRoles: ['inventory-officer'],
-    allowed: ['material_name', 'category', 'description', 'quantity', 'min_level', 'unit', 'weight_kg', 'size', 'color', 'unit_price', 'total_cost', 'source', 'supplier', 'supplier_id', 'justification', 'requested_by', 'status', 'archived'],
-    required: ['material_name'],
-    numeric: ['quantity', 'min_level', 'weight_kg', 'unit_price', 'total_cost'],
-    nullable: ['supplier_id'],
-    autoKeys: [{ column: 'ref_code', prefix: 'PR', digits: 4 }],
-  },
-
   payments: {
     table: 'payments',
-    writeRoles: ['general-manager'],
+    writeRoles: ['general-manager', 'inventory-officer'],
     allowed: [
       'customer_name', 'customer_email', 'incident_ref', 'job_order_ref', 'service_description',
       'amount', 'due_date', 'paid_date', 'status', 'notes', 'archived',
@@ -148,14 +155,6 @@ export const RESOURCES: Record<string, ResourceDef> = {
     required: ['name', 'payment_method', 'account_name'],
   },
 
-  'supply-requests': {
-    table: 'supply_requests',
-    writeRoles: ['customer', 'zone-specialist', 'technical-team', 'inventory-officer'],
-    allowed: ['item_name', 'quantity', 'reason', 'requested_by', 'requested_by_id', 'status', 'archived'],
-    required: ['item_name'],
-    numeric: ['quantity'],
-    autoKeys: [{ column: 'ref_code', prefix: 'SR', digits: 4 }],
-  },
 };
 
 export type ResourceSlug = keyof typeof RESOURCES;

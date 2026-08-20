@@ -149,7 +149,7 @@ function ManagerOverview({ stats }: { stats: DashboardStats }) {
             { icon: 'clipboard-list', color: 'var(--blue)', label: 'Pending Job Orders', value: String(pendingJobs.length) },
             { icon: 'wrench', color: '#16a34a', label: 'Ongoing Job Orders', value: String(ongoingJobs.length) },
             { icon: 'file-input', color: '#f59e0b', label: 'Pending MRFs', value: String(n(stats.materialRequests, (r) => r.status === 'pending')) },
-            { icon: 'shopping-cart', color: 'var(--pink)', label: 'Pending Purchases', value: String(n(stats.purchaseRequests, (r) => r.status === 'pending')) },
+            { icon: 'shopping-cart', color: 'var(--pink)', label: 'Pending Purchases', value: String(n(stats.materialRequests.filter((r) => r.request_type === 'purchase'), (r) => r.status === 'pending')) },
           ]}
         />
       </section>

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Operational module configurations — thin wrappers over <LiveModule> that map
  * each FlowGuard module from the paper (incidents, job orders, inventory,
  * material requests, assets + health scoring, advisories, users) to live data.
@@ -12,7 +12,7 @@ import { useToast } from '../controllers/ToastContext';
 import { useStats } from '../controllers/StatsContext';
 import { api, ApiError } from '../services/apiClient';
 import { resourceService, type EntityRow } from '../services/resourceService';
-import { ImageUpload, LiveModule, StatusSelect, type ModuleColumn, type ModuleField, type RowActionCtx } from '../views/components/LiveModule';
+import { ImageUpload, LiveModule, StatusSelect, type ModuleColumn, type ModuleField, type RowActionCtx, AutocompleteInput } from '../views/components/LiveModule';
 import { DataTable } from '../views/components/DataTable';
 import { Modal } from '../views/components/Modal';
 import { ActionButton, PanelHead } from '../views/components/panels';
@@ -20,8 +20,8 @@ import { ActionButton, PanelHead } from '../views/components/panels';
 const roleLabel = (role: unknown): string => ROLES.find((r) => r.value === role)?.label ?? String(role ?? '');
 
 /* ------------------------------------------------------------------ helpers */
-const GREEN = new Set(['active', 'resolved', 'completed', 'released', 'published', 'approved', 'in_stock', 'good']);
-const RED = new Set(['inactive', 'rejected', 'cancelled', 'needs_replacement', 'dispose', 'defective', 'overdue', 'critical', 'out_of_stock']);
+const GREEN = new Set(['active', 'resolved', 'completed', 'released', 'published', 'approved', 'in_stock', 'good', 'paid']);
+const RED = new Set(['inactive', 'rejected', 'cancelled', 'needs_replacement', 'dispose', 'defective', 'overdue', 'critical', 'out_of_stock', 'unpaid']);
 
 function statusTone(v: unknown): StatusTone {
   const k = String(v ?? '').toLowerCase();
@@ -56,12 +56,10 @@ const WRITE: Record<string, string[]> = {
   'job-orders': ['technical-team', 'general-manager'],
   materials: ['inventory-officer', 'general-manager'],
   suppliers: ['inventory-officer', 'general-manager'],
-  'material-requests': ['technical-team', 'inventory-officer', 'general-manager'],
+  'material-requests': ['customer', 'zone-specialist', 'technical-team', 'inventory-officer', 'general-manager'],
   assets: ['technical-team', 'zone-specialist', 'general-manager'],
   advisories: ['technical-team', 'general-manager'],
-  'purchase-requests': ['inventory-officer', 'general-manager'],
   payments: ['general-manager'],
-  'supply-requests': ['customer', 'zone-specialist', 'technical-team', 'inventory-officer', 'general-manager'],
 };
 
 interface ModuleProps {
@@ -406,14 +404,14 @@ function IncidentViewButton({
   const [showJobForm, setShowJobForm] = useState(false);
   const [remarks, setRemarks] = useState('');
   const [saving, setSaving] = useState(false);
-  const [bills, setBills] = useState<EntityRow[]>([]);
   const editable = canEditRemarks && !c.archived;
 
   const hasRemarks = String(c.row.remarks ?? '').trim() !== '';
   // A job order already exists for this incident — no second one may be created.
-  const hasJobOrder = stats.jobOrders.some(
+  const linkedJobOrder = stats.jobOrders.find(
     (j) => String(j.incident_ref ?? '') === String(c.row.ref_code ?? ''),
   );
+  const hasJobOrder = Boolean(linkedJobOrder);
   // The general manager can dispatch a crew once, and only while a complaint is
   // triaged (has a remark, still "in progress", and not yet scheduled/ordered).
   const canDispatch =
@@ -425,15 +423,9 @@ function IncidentViewButton({
     await c.reload();
   };
 
-  const loadBills = async () => {
-    if (!showCustomerBilling) return;
-    const rows = await resourceService.list('payments');
-    setBills(rows.filter((bill) => String(bill.incident_ref ?? '') === String(c.row.ref_code ?? '')));
-  };
   const openModal = () => {
     setRemarks(String(c.row.remarks ?? ''));
     setOpen(true);
-    void loadBills();
   };
   const save = async () => {
     setSaving(true);
@@ -465,16 +457,24 @@ function IncidentViewButton({
           submitting={saving}
         >
           <IncidentDetail row={c.row} hideRemarks={editable} />
-          {showCustomerBilling && bills.length > 0 && (
-            <div className="complaint-billing-summary">
-              <p className="detail-section-title">Billing for this Complaint</p>
-              {bills.map((bill) => (
-                <div className="complaint-bill-row" key={bill.id}>
-                  <div><strong>{String(bill.ref_code)}</strong><span>{money(bill.amount)} · Due {dateShort(bill.due_date)} · {billingStatusLabel(bill.status)}</span></div>
-                  <CustomerBillingAction c={{ row: bill, busy: false, archived: false, update: async () => {}, remove: () => {}, archive: () => {}, restore: () => {}, edit: () => {}, reload: loadBills }} />
-                </div>
-              ))}
-            </div>
+          {showCustomerBilling && linkedJobOrder && (
+            <>
+              <p className="detail-section-title">Work Order</p>
+              <dl className="detail-list">
+                <DetailRow label="Reference">{String(linkedJobOrder.ref_code ?? '')}</DetailRow>
+                <DetailRow label="Status">{titleCase(linkedJobOrder.status)}</DetailRow>
+                <DetailRow label="Scope of Work">{String(linkedJobOrder.scope ?? '—')}</DetailRow>
+                <DetailRow label="Team">{String(linkedJobOrder.team_name || titleCase(linkedJobOrder.team) || '—')}</DetailRow>
+                <DetailRow label="Team Leader">{String(linkedJobOrder.team_leader ?? '—')}</DetailRow>
+                <DetailRow label="Scheduled Date">{dateShort(linkedJobOrder.scheduled_date)}</DetailRow>
+                <DetailRow label="Estimated Cost">{money(linkedJobOrder.estimated_cost)}</DetailRow>
+              </dl>
+            </>
+          )}
+          {showCustomerBilling && !linkedJobOrder && c.row.status !== 'under_verification' && c.row.status !== 'resolved' && (
+            <p style={{ marginTop: 14, color: 'var(--muted)', fontSize: 13 }}>
+              No work order has been dispatched for this complaint yet.
+            </p>
           )}
           {editable && (
             <div className="form-group" style={{ marginTop: 18, marginBottom: 0 }}>
@@ -541,19 +541,21 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
   const actions = canWrite
     ? (c: RowActionCtx) => (
         <>
-          {(manage || role === 'customer') && (
-            <IncidentViewButton
-              c={c}
-              canEditRemarks={role === 'zone-specialist'}
-              canCreateJobOrder={role === 'general-manager'}
-              showCustomerBilling={role === 'customer'}
-            />
-          )}
           {manage && !c.archived && !(role === 'general-manager' && c.row.status === 'under_verification') && (
             <StatusSelect value={String(c.row.status)} options={INCIDENT_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />
           )}
-          <EditBtn c={c} />
-          <ArchiveBtn c={c} />
+          <div className="btn-row">
+            {(manage || role === 'customer') && (
+              <IncidentViewButton
+                c={c}
+                canEditRemarks={role === 'zone-specialist'}
+                canCreateJobOrder={role === 'general-manager'}
+                showCustomerBilling={role === 'customer'}
+              />
+            )}
+            <EditBtn c={c} />
+            <ArchiveBtn c={c} />
+          </div>
         </>
       )
     : undefined;
@@ -644,6 +646,7 @@ function JobOrderDetail({ row }: { row: EntityRow }) {
 function JobOrderViewButton({ row, onReload }: { row: EntityRow; onReload: () => Promise<void> }) {
   const { user } = useAuth();
   const canRequest = WRITE['material-requests'].includes(user!.role);
+  const isActive = ['pending', 'in_progress'].includes(String(row.status));
   const [open, setOpen] = useState(false);
   const [reqOpen, setReqOpen] = useState(false);
   return (
@@ -654,7 +657,7 @@ function JobOrderViewButton({ row, onReload }: { row: EntityRow; onReload: () =>
       {open && (
         <Modal title={`Job Order ${row.ref_code}`} open wide onClose={() => setOpen(false)} closeText="Close">
           <JobOrderDetail row={row} />
-          {canRequest && (
+          {canRequest && isActive && (
             <div style={{ marginTop: 18 }}>
               <ActionButton label="Request Materials" icon="hammer" onClick={() => setReqOpen(true)} />
             </div>
@@ -662,7 +665,7 @@ function JobOrderViewButton({ row, onReload }: { row: EntityRow; onReload: () =>
         </Modal>
       )}
       {reqOpen && (
-        <MaterialRequestForm
+        <RequestForm
           lockedJobOrderRef={String(row.ref_code)}
           onClose={() => setReqOpen(false)}
           onCreated={onReload}
@@ -672,16 +675,24 @@ function JobOrderViewButton({ row, onReload }: { row: EntityRow; onReload: () =>
   );
 }
 
+/** Status options the technical-team team leader can choose from (no pending). */
+const JOB_STATUS_TECH = [
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
 export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps & { readOnly?: boolean; title?: string }) {
   const { user } = useAuth();
   const role = user!.role;
   const canWrite = !readOnly && WRITE['job-orders'].includes(role);
   // The general manager creates + assigns job orders through the team form.
   const canAssign = role === 'general-manager';
+  const isTechTeam = role === 'technical-team';
   // Technical-team members only see the job orders their crew is assigned to.
   const me = user!.fullName.toLowerCase();
   const rowFilter =
-    role === 'technical-team'
+    isTechTeam
       ? (r: EntityRow) => {
           const leader = String(r.team_leader ?? '').toLowerCase();
           const members = Array.isArray(r.team_members)
@@ -713,9 +724,33 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
     { name: 'status', label: 'Status', kind: 'select', optionList: JOB_STATUS },
   ];
 
-  // The technical team's tab is view-only: every row exposes a full-detail View
-  // (job order + linked complaint + remarks) plus a "Request Materials" action.
+  // View button: full detail + "Request Materials" for all roles.
   const viewAction = (c: RowActionCtx) => <JobOrderViewButton row={c.row} onReload={c.reload} />;
+
+  /**
+   * For tech-team: the StatusSelect (in_progress/completed/cancelled) is only
+   * shown to the team leader of the specific row (not regular members).
+   */
+  const techTeamActions = (c: RowActionCtx) => {
+    const isLeader = String(c.row.team_leader ?? '').toLowerCase() === me;
+    const canChangeStatus = isLeader && !c.archived && c.row.status === 'in_progress';
+    return (
+      <>
+        {canChangeStatus && (
+          <StatusSelect
+            value={String(c.row.status)}
+            options={JOB_STATUS_TECH}
+            disabled={c.busy}
+            onChange={(s) => c.update({ status: s })}
+          />
+        )}
+        <div className="btn-row">
+          {viewAction(c)}
+          <ArchiveBtn c={c} />
+        </div>
+      </>
+    );
+  };
 
   return (
     <LiveModule
@@ -728,8 +763,8 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
       canWrite={canWrite}
       filter={filter}
       rowFilter={rowFilter}
-      actionLabel={readOnly ? 'Details' : 'Action'}
-      archivable={!readOnly}
+      actionLabel="Action"
+      archivable={canWrite}
       renderCreate={
         canAssign
           ? ({ reload }) => <CreateJobOrderButton onCreated={reload} />
@@ -742,18 +777,27 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
         metric('j4', 'Completed', count(rows, (r) => r.status === 'completed'), 'check-circle', 'invoices'),
       ]}
       actions={
-        readOnly
-          ? viewAction
+        isTechTeam
+          ? techTeamActions
           : canWrite
           ? (c) => (
               <>
-                {viewAction(c)}
-                {!c.archived && <StatusSelect value={String(c.row.status)} options={JOB_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />}
-                <EditBtn c={c} />
-                <ArchiveBtn c={c} />
+                {!c.archived && (
+                  <StatusSelect
+                    value={String(c.row.status)}
+                    options={JOB_STATUS}
+                    disabled={c.busy}
+                    onChange={(s) => c.update({ status: s })}
+                  />
+                )}
+                <div className="btn-row">
+                  {viewAction(c)}
+                  <EditBtn c={c} />
+                  <ArchiveBtn c={c} />
+                </div>
               </>
             )
-          : undefined
+          : viewAction
       }
     />
   );
@@ -1031,11 +1075,11 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
       actions={
         canWrite
           ? (c) => (
-              <>
+              <div className="btn-row">
                 <RestockBtn c={c} />
                 <EditBtn c={c} />
                 <ArchiveBtn c={c} />
-              </>
+              </div>
             )
           : undefined
       }
@@ -1046,34 +1090,7 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
 }
 
 /* ------------------------------------------------------- Material Requests */
-const MR_STATUS = [
-  { value: 'pending', label: 'Ongoing' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'released', label: 'Released' },
-  { value: 'rejected', label: 'Rejected' },
-];
 
-/** Full MRF detail incl. which job order the material is allocated to. */
-function MrfDetail({ row }: { row: EntityRow }) {
-  const { stats } = useStats();
-  const jo = stats.jobOrders.find((j) => String(j.ref_code) === String(row.job_order_ref));
-  return (
-    <>
-      <p className="detail-section-title">Material Request</p>
-      <dl className="detail-list">
-        <DetailRow label="Reference">{String(row.ref_code ?? '')}</DetailRow>
-        <DetailRow label="Material">{String(row.material_name ?? '')}</DetailRow>
-        <DetailRow label="SKU">{String(row.material_sku ?? '')}</DetailRow>
-        <DetailRow label="Quantity">{String(row.quantity ?? 0)}</DetailRow>
-        <DetailRow label="Job Order Ref">{String(row.job_order_ref ?? '')}</DetailRow>
-        <DetailRow label="Used On (Job Order)">{jo ? String(jo.title ?? '') : row.job_order_ref ? 'Not found' : '—'}</DetailRow>
-        <DetailRow label="Requested By">{String(row.requested_by ?? '')}</DetailRow>
-        <DetailRow label="Status">{titleCase(row.status)}</DetailRow>
-        <DetailRow label="Requested On">{dateShort(row.created_at)}</DetailRow>
-      </dl>
-    </>
-  );
-}
 
 /**
  * Searchable Material field — a combobox that lets the user either pick an
@@ -1356,12 +1373,14 @@ function JobOrderCombobox({
 }
 
 /**
- * The Material Request (MRF) create modal — the single source of truth for
- * filing a request, reused by the "New Request" button on the Material Requests
- * tab and the "Request Materials" button inside a Job Order. When opened from a
- * job order, `lockedJobOrderRef` pre-fills and locks the Job Order Ref field.
+ * Unified Request create modal — handles both MRF-type requests (linked to
+ * job orders / inventory SKUs, for Technical Team) and General requests
+ * (informal supply requests, open to all roles including customers).
+ *
+ * When opened from a job order, `lockedJobOrderRef` pre-fills and locks the
+ * Job Order Ref field and forces request_type to 'mrf'.
  */
-function MaterialRequestForm({
+function RequestForm({
   lockedJobOrderRef,
   onClose,
   onCreated,
@@ -1375,38 +1394,108 @@ function MaterialRequestForm({
   const { stats } = useStats();
   const role = user!.role;
 
-  // Only active, in-stock (non-defective, non-out-of-stock) inventory can be requested by SKU.
+  // MRF type is only relevant for roles that deal with inventory/job orders.
+  const canUseMrf = role === 'technical-team' || role === 'inventory-officer' || role === 'general-manager';
+  const defaultType = canUseMrf ? 'mrf' : 'general';
+
+  // Only active, in-stock inventory can be requested by SKU.
   const inventory = stats.materials.filter(
     (m) => !m.archived && m.status !== 'defective' && m.status !== 'out_of_stock' && Number(m.quantity ?? 0) > 0,
   );
-  // Active (open) job orders available to link a request to.
+  // Active job orders available to link to an MRF.
   const activeJobOrders = stats.jobOrders.filter((j) =>
     ['pending', 'in_progress'].includes(String(j.status)),
   );
+  const supplierOptions = useSupplierOptions();
 
   const [form, setForm] = useState({
+    request_type: lockedJobOrderRef ? 'mrf' : defaultType,
     material_name: '',
     material_sku: '',
     quantity: '1',
     job_order_ref: lockedJobOrderRef ?? '',
+    reason: '',
+    // general: price info auto-filled from inventory when an item is picked
+    unit_price: '',
+    linked_unit: '',
+    // customer general-request fulfilment fields
+    payment_option: 'cash_on_delivery',
+    delivery_address: user!.barangay ?? '',
+    // purchase fields
+    category: '',
+    description: '',
+    unit: 'units',
+    min_level: '10',
+    weight_kg: '',
+    size: '',
+    color: '',
+    source: 'external',
+    supplier_id: '',
+    justification: '',
   });
   const [saving, setSaving] = useState(false);
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  const isMrf = form.request_type === 'mrf';
+  const isGeneral = form.request_type === 'general';
+  const isPurchase = form.request_type === 'purchase';
+
   const save = async () => {
-    if (!form.material_name.trim()) return notify('Material name is required.', 'error');
+    if (!form.material_name.trim()) return notify('Item name is required.', 'error');
     setSaving(true);
     try {
-      await resourceService.create('material-requests', {
+      const base = {
+        request_type: form.request_type,
         material_name: form.material_name.trim(),
-        // SKU is set only when an inventory item was picked from the combobox.
-        material_sku: form.material_sku,
         quantity: form.quantity,
-        job_order_ref: form.job_order_ref,
         requested_by: user!.fullName,
-      });
-      notify('Record created successfully!');
+        requested_by_id: user!.id,
+      };
+      const payload = isMrf
+        ? { ...base, material_sku: form.material_sku, job_order_ref: form.job_order_ref }
+        : isGeneral
+        ? {
+            ...base,
+            reason: form.reason.trim(),
+            // Include SKU, unit price, and total cost when an inventory item was linked.
+            ...(form.material_sku ? { material_sku: form.material_sku } : {}),
+            ...(Number(form.unit_price) > 0
+              ? {
+                  unit_price: form.unit_price,
+                  total_cost: String(Number(form.quantity || 0) * Number(form.unit_price)),
+                }
+              : {}),
+            // Customer fulfilment fields (only populated for customers; harmless for other roles).
+            ...(role === 'customer'
+              ? {
+                  payment_option: form.payment_option,
+                  delivery_address: form.delivery_address.trim(),
+                }
+              : {}),
+          }
+        : {
+            // purchase
+            ...base,
+            category: form.category.trim(),
+            description: form.description.trim(),
+            unit: form.unit,
+            min_level: form.min_level,
+            weight_kg: form.weight_kg,
+            size: form.size.trim(),
+            color: form.color.trim(),
+            unit_price: form.unit_price,
+            total_cost: String(Number(form.quantity || 0) * Number(form.unit_price || 0)),
+            source: form.source,
+            supplier_id: form.source === 'external' ? form.supplier_id : null,
+            supplier: form.source === 'external'
+              ? supplierOptions.find((s) => s.value === form.supplier_id)?.label ?? ''
+              : 'Mother Company',
+            justification: form.justification.trim(),
+          };
+
+      await resourceService.create('material-requests', payload);
+      notify('Request submitted successfully!');
       await onCreated();
       onClose();
     } catch (e) {
@@ -1417,37 +1506,203 @@ function MaterialRequestForm({
   };
 
   return (
-    <Modal title="New Request" open onClose={onClose} onSubmit={save} submitText="Create" submitting={saving}>
+    <Modal title="New Request" open onClose={onClose} onSubmit={save} submitText="Submit" submitting={saving}>
+      {/* Request type switcher */}
+      {canUseMrf && !lockedJobOrderRef && (
+        <div className="form-group">
+          <label>Request Type</label>
+          <select value={form.request_type} onChange={set('request_type')}>
+            <option value="mrf">Material Request Form (MRF) — linked to inventory / job order</option>
+            <option value="general">General Request — informal supply request</option>
+            <option value="purchase">Purchase Request — procurement with pricing &amp; supplier</option>
+          </select>
+        </div>
+      )}
+
+      {/* ── Item name ── */}
       <div className="form-group">
-        <label>Material</label>
-        <MaterialCombobox
-          inventory={inventory}
-          value={{ name: form.material_name, sku: form.material_sku }}
-          onChange={(next) => setForm((f) => ({ ...f, material_name: next.name, material_sku: next.sku }))}
-        />
+        <label>{isMrf ? 'Material' : isPurchase ? 'Material to Purchase' : 'Item Name'}</label>
+        {isMrf || isGeneral ? (
+          <MaterialCombobox
+            inventory={inventory}
+            value={{ name: form.material_name, sku: form.material_sku }}
+            onChange={(next) => {
+              // When an inventory item is picked, pull its unit price and unit
+              // so the estimated total can be shown. Clear them on custom text.
+              const picked = inventory.find((m) => String(m.sku) === next.sku);
+              setForm((f) => ({
+                ...f,
+                material_name: next.name,
+                material_sku: next.sku,
+                unit_price: picked ? String(picked.unit_price ?? '') : '',
+                linked_unit: picked ? String(picked.unit ?? '') : '',
+              }));
+            }}
+          />
+        ) : (
+          <input
+            value={form.material_name}
+            onChange={(e) => setForm((f) => ({ ...f, material_name: e.target.value }))}
+            placeholder={isPurchase ? 'e.g. Gate Valve 50mm' : 'What do you need?'}
+          />
+        )}
       </div>
 
+      {/* ── Purchase: category + description ── */}
+      {isPurchase && (
+        <>
+          <div className="form-group">
+            <label>Category</label>
+            <AutocompleteInput
+              value={form.category}
+              suggestions={Array.from(new Set(
+                stats.materials
+                  .map((m) => String(m.category ?? '').trim())
+                  .filter(Boolean),
+              )).sort((a, b) => a.localeCompare(b))}
+              placeholder="Pipes / Valves / Meters…"
+              onChange={(v) => setForm((f) => ({ ...f, category: v }))}
+            />
+          </div>
+          <div className="form-group">
+            <label>Description</label>
+            <textarea value={form.description} onChange={set('description')} rows={2} placeholder="Additional details" />
+          </div>
+        </>
+      )}
+
+      {/* ── Quantity + unit ── */}
       <div className="form-group">
         <label>Quantity</label>
         <input type="number" min={1} value={form.quantity} onChange={set('quantity')} />
       </div>
-      <div className="form-group">
-        <label>Job Order Ref (optional)</label>
-        {lockedJobOrderRef ? (
-          <>
-            <input value={form.job_order_ref} readOnly />
-            <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>
-              Linked to this job order.
-            </small>
-          </>
-        ) : (
-          <JobOrderCombobox
-            jobOrders={activeJobOrders}
-            value={form.job_order_ref}
-            onChange={(ref) => setForm((f) => ({ ...f, job_order_ref: ref }))}
+      {isPurchase && (
+        <div className="form-group">
+          <label>Unit</label>
+          <input value={form.unit} onChange={set('unit')} placeholder="pcs / meters / kg…" />
+        </div>
+      )}
+
+      {/* ── General: estimated total (shown only when an inventory item with a price is linked) ── */}
+      {isGeneral && Number(form.unit_price) > 0 && (
+        <div className="form-group">
+          <label>Estimated Total</label>
+          <input
+            value={`₱ ${(Number(form.quantity || 0) * Number(form.unit_price)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`}
+            readOnly
           />
-        )}
-      </div>
+          <small style={{ display: 'block', marginTop: 4, color: 'var(--muted)' }}>
+            {Number(form.quantity || 0)} {form.linked_unit || 'unit(s)'} × ₱{Number(form.unit_price).toLocaleString('en-PH', { minimumFractionDigits: 2 })} per {form.linked_unit || 'unit'}
+          </small>
+        </div>
+      )}
+
+      {/* ── MRF: job order link ── */}
+      {isMrf && (
+        <div className="form-group">
+          <label>Job Order Ref (optional)</label>
+          {lockedJobOrderRef ? (
+            <>
+              <input value={form.job_order_ref} readOnly />
+              <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>Linked to this job order.</small>
+            </>
+          ) : (
+            <JobOrderCombobox
+              jobOrders={activeJobOrders}
+              value={form.job_order_ref}
+              onChange={(ref) => setForm((f) => ({ ...f, job_order_ref: ref }))}
+            />
+          )}
+        </div>
+      )}
+
+      {/* ── General: reason ── */}
+      {isGeneral && (
+        <div className="form-group">
+          <label>Reason</label>
+          <textarea value={form.reason} onChange={set('reason')} placeholder="Why do you need this?" rows={3} />
+        </div>
+      )}
+
+      {/* ── Customer general: payment option + delivery address ── */}
+      {isGeneral && role === 'customer' && (
+        <>
+          <div className="form-group">
+            <label>Payment Option</label>
+            <select value={form.payment_option} onChange={set('payment_option')}>
+              <option value="cash_on_delivery">Cash on Delivery (Pay upon delivery)</option>
+              <option value="gcash">GCash (Online Payment)</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Delivery Address</label>
+            <input
+              value={form.delivery_address}
+              onChange={set('delivery_address')}
+              placeholder="e.g. Brgy. Sanzol, Boac, Marinduque"
+            />
+            <small style={{ display: 'block', marginTop: 4, color: 'var(--muted)' }}>
+              Auto-filled from your account's address. Edit if delivery is to a different location.
+            </small>
+          </div>
+        </>
+      )}
+
+      {/* ── Purchase: specs + pricing ── */}
+      {isPurchase && (
+        <>
+          <div className="form-group">
+            <label>Minimum Stock Level</label>
+            <input type="number" min={0} value={form.min_level} onChange={set('min_level')} />
+            <small style={{ display: 'block', marginTop: 4, color: 'var(--muted)' }}>Minimum level to set when this item is added to inventory.</small>
+          </div>
+          <div className="form-group">
+            <label>Weight (kg)</label>
+            <input type="number" min={0} step="0.01" value={form.weight_kg} onChange={set('weight_kg')} />
+          </div>
+          <div className="form-group">
+            <label>Size</label>
+            <input value={form.size} onChange={set('size')} placeholder="e.g. 50mm, 4 inches" />
+          </div>
+          <div className="form-group">
+            <label>Color</label>
+            <input value={form.color} onChange={set('color')} placeholder="e.g. Blue, Red" />
+          </div>
+          <div className="form-group">
+            <label>Unit Price (₱)</label>
+            <input type="number" min={0} step="0.01" value={form.unit_price} onChange={set('unit_price')} />
+          </div>
+          <div className="form-group">
+            <label>Estimated Total</label>
+            <input
+              value={`₱ ${(Number(form.quantity || 0) * Number(form.unit_price || 0)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`}
+              readOnly
+            />
+          </div>
+          <div className="form-group">
+            <label>Source</label>
+            <select value={form.source} onChange={set('source')}>
+              <option value="external">External Supplier</option>
+              <option value="mother-company">Mother Company</option>
+            </select>
+          </div>
+          {form.source === 'external' && (
+            <div className="form-group">
+              <label>Supplier</label>
+              <select value={form.supplier_id} onChange={set('supplier_id')}>
+                <option value="">Select supplier</option>
+                {supplierOptions.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </div>
+          )}
+          <div className="form-group">
+            <label>Justification</label>
+            <textarea value={form.justification} onChange={set('justification')} placeholder="Why is this purchase needed?" rows={3} />
+          </div>
+        </>
+      )}
+
+      {/* ── Requested by (always) ── */}
       <div className="form-group">
         <label>Requested By</label>
         <input value={user!.fullName} readOnly />
@@ -1459,8 +1714,8 @@ function MaterialRequestForm({
   );
 }
 
-/** Trigger button that opens the shared Material Request modal. */
-function MaterialRequestButton({
+/** Trigger button that opens the unified Request modal. */
+function RequestButton({
   onCreated,
   lockedJobOrderRef,
   label = 'New Request',
@@ -1476,7 +1731,7 @@ function MaterialRequestButton({
     <>
       <ActionButton label={label} icon={icon} onClick={() => setOpen(true)} />
       {open && (
-        <MaterialRequestForm
+        <RequestForm
           lockedJobOrderRef={lockedJobOrderRef}
           onClose={() => setOpen(false)}
           onCreated={onCreated}
@@ -1486,68 +1741,405 @@ function MaterialRequestButton({
   );
 }
 
-export function MaterialRequestsModule({ filter, title }: ModuleProps & { title?: string }) {
+// Legacy alias so Job Order inline "Request Materials" buttons still compile.
+export const MaterialRequestButton = RequestButton;
+
+const MRF_STATUS = [
+  { value: 'pending', label: 'Ongoing' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'released', label: 'Released' },
+  { value: 'rejected', label: 'Rejected' },
+];
+
+const GENERAL_STATUS = [
+  { value: 'pending', label: 'Ongoing' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'released', label: 'Released' },
+  { value: 'rejected', label: 'Rejected' },
+];
+
+const PURCHASE_STATUS = [
+  { value: 'pending', label: 'Ongoing' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'ordered', label: 'Ordered' },
+  { value: 'received', label: 'Received' },
+  { value: 'rejected', label: 'Rejected' },
+];
+
+const requestStatusOptions = (requestType: string) =>
+  requestType === 'purchase' ? PURCHASE_STATUS : requestType === 'general' ? GENERAL_STATUS : MRF_STATUS;
+
+/**
+ * Row-level component that owns the "Approve → issue bill" interaction for a
+ * single general customer request. Rendered inside the actions callback so
+ * each row has its own independent modal state.
+ *
+ * Behaviour:
+ *   • Clicking the StatusSelect to "Approved" on a general customer request
+ *     (one with payment_option set) updates the status then opens this modal.
+ *   • Modal lets the approver set amount (pre-filled from total_cost) + due date.
+ *   • Cash on Delivery → bill with payment_method "Cash on Delivery", no QR needed.
+ *   • GCash → load saved payment profiles, pick one.
+ *   • Closing without submitting is fine — status is already approved.
+ */
+function ApprovalBillingRow({
+  c,
+  canApprove,
+}: {
+  c: RowActionCtx;
+  canApprove: boolean;
+}) {
+  const { notify } = useToast();
+  const t = String(c.row.request_type ?? 'mrf');
+  const isCustomerGeneral = t === 'general' && String(c.row.payment_option ?? '').trim() !== '';
+
+  const [billingOpen, setBillingOpen] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [profileId, setProfileId] = useState('');
+  const [profiles, setProfiles] = useState<EntityRow[]>([]);
+  const [loadingProfiles, setLoadingProfiles] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const isCod = String(c.row.payment_option ?? '') === 'cash_on_delivery';
+
+  const openBilling = () => {
+    // Pre-fill defaults.
+    setAmount(Number(c.row.total_cost ?? 0) > 0 ? String(c.row.total_cost) : '');
+    const due = new Date();
+    due.setDate(due.getDate() + 7);
+    setDueDate(due.toISOString().slice(0, 10));
+
+    if (!isCod) {
+      setLoadingProfiles(true);
+      resourceService
+        .list('payment-methods')
+        .then((rows) => {
+          const active = rows.filter((p) => !p.archived);
+          setProfiles(active);
+          if (active[0]) setProfileId(String(active[0].id));
+        })
+        .catch(() => {/* non-fatal */})
+        .finally(() => setLoadingProfiles(false));
+    }
+    setBillingOpen(true);
+  };
+
+  const handleStatusChange = (s: string) => {
+    if (s === 'approved' && isCustomerGeneral && c.row.status !== 'approved') {
+      // Update status first, then open billing modal.
+      void c.update({ status: 'approved' }).then(openBilling);
+    } else {
+      void c.update({ status: s });
+    }
+  };
+
+  const selectedProfile = profiles.find((p) => String(p.id) === profileId);
+
+  const issueBill = async () => {
+    if (!(Number(amount) > 0)) { notify('Enter the billing amount.', 'error'); return; }
+    if (!dueDate) { notify('Set a due date.', 'error'); return; }
+    if (!isCod && !selectedProfile) {
+      notify('Select a GCash payment profile, or add one in Billing → Payment Information.', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      // Look up customer email (GM-only endpoint — non-fatal if it fails).
+      const customerName = String(c.row.requested_by ?? '');
+      let customerEmail = '';
+      try {
+        const r = await api.get<{ data: Array<{ fullName: string; email: string }> }>('/users');
+        customerEmail = r.data.find(
+          (u) => u.fullName.trim().toLowerCase() === customerName.trim().toLowerCase(),
+        )?.email ?? '';
+      } catch { /* ok */ }
+
+      const paymentFields = isCod
+        ? { payment_method: 'Cash on Delivery', account_name: '', account_number: '', payment_qr: [] }
+        : {
+            payment_method: String(selectedProfile!.payment_method ?? 'GCash'),
+            account_name: String(selectedProfile!.account_name ?? ''),
+            account_number: String(selectedProfile!.account_number ?? ''),
+            payment_qr: selectedProfile!.payment_qr ?? [],
+          };
+
+      await resourceService.create('payments', {
+        customer_name: customerName,
+        customer_email: customerEmail,
+        service_description: `Item Request — ${String(c.row.material_name ?? c.row.ref_code ?? '')}` +
+          (Number(c.row.quantity ?? 0) > 0 ? ` × ${c.row.quantity}${c.row.unit ? ` ${c.row.unit}` : ''}` : ''),
+        notes: isCod
+          ? `Cash on Delivery — deliver to: ${String(c.row.delivery_address ?? '').trim() || 'address on file'}`
+          : '',
+        amount: Number(amount),
+        due_date: dueDate,
+        status: 'pending',
+        ...paymentFields,
+      });
+
+      notify(`Bill issued to ${customerName || 'customer'}.`);
+      await c.reload();
+      setBillingOpen(false);
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not create the bill.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      {canApprove && !c.archived && (
+        <StatusSelect
+          value={String(c.row.status)}
+          options={requestStatusOptions(t)}
+          disabled={c.busy}
+          onChange={handleStatusChange}
+        />
+      )}
+
+      {billingOpen && (
+        <Modal
+          title={`Issue Bill — ${String(c.row.ref_code ?? '')}`}
+          open
+          wide
+          onClose={() => setBillingOpen(false)}
+          onSubmit={issueBill}
+          submitText="Issue Bill"
+          submitting={saving}
+        >
+          {/* Request summary */}
+          <div className="billing-customer-preview">
+            <span>Customer</span>
+            <strong>{String(c.row.requested_by ?? '—')}</strong>
+            <small>
+              {String(c.row.material_name ?? '')}
+              {Number(c.row.quantity ?? 0) > 0 ? ` · ${c.row.quantity}${c.row.unit ? ` ${c.row.unit}` : ''}` : ''}
+            </small>
+          </div>
+
+          {/* Payment option (read-only — set by the customer) */}
+          <div className="form-group">
+            <label>Customer's Payment Option</label>
+            <input value={isCod ? 'Cash on Delivery' : 'GCash (Online Payment)'} readOnly />
+            {isCod && String(c.row.delivery_address ?? '').trim() && (
+              <small style={{ display: 'block', marginTop: 4, color: 'var(--muted)' }}>
+                Delivery address: {String(c.row.delivery_address)}
+              </small>
+            )}
+          </div>
+
+          {/* Amount */}
+          <div className="form-group">
+            <label>Billing Amount (₱)</label>
+            <div className="peso-input">
+              <span>₱</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={amount}
+                placeholder="0.00"
+                onChange={(e) => { if (/^\d*(\.\d{0,2})?$/.test(e.target.value)) setAmount(e.target.value); }}
+                onKeyDown={(e) => { if (['-', '+', 'e', 'E'].includes(e.key)) e.preventDefault(); }}
+              />
+            </div>
+            {Number(c.row.total_cost ?? 0) > 0 && (
+              <small style={{ display: 'block', marginTop: 4, color: 'var(--muted)' }}>
+                Pre-filled from estimated total. Adjust if needed.
+              </small>
+            )}
+          </div>
+
+          {/* Due date */}
+          <div className="form-group">
+            <label>Due Date</label>
+            <input type="date" min={todayISO()} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          </div>
+
+          {/* GCash payment profile */}
+          {!isCod && (
+            loadingProfiles ? (
+              <p style={{ color: 'var(--muted)', fontSize: 13 }}>Loading payment profiles…</p>
+            ) : profiles.length === 0 ? (
+              <p style={{ color: '#e25577', fontSize: 13 }}>
+                No GCash payment profile found. Add one in <strong>Billing → Payment Information</strong> first.
+              </p>
+            ) : (
+              <>
+                <div className="form-group">
+                  <label>GCash Payment Profile</label>
+                  <select value={profileId} onChange={(e) => setProfileId(e.target.value)}>
+                    {profiles.map((p) => (
+                      <option key={String(p.id)} value={String(p.id)}>
+                        {String(p.name)} — {String(p.payment_method)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {selectedProfile && (
+                  <div className="selected-payment-profile">
+                    <div className="selected-payment-icon">
+                      {Array.isArray(selectedProfile.payment_qr) && selectedProfile.payment_qr[0]
+                        ? <img src={String(selectedProfile.payment_qr[0])} alt="QR" />
+                        : <span>₱</span>}
+                    </div>
+                    <div className="selected-payment-copy">
+                      <small>GCash payment destination</small>
+                      <strong>{String(selectedProfile.name)}</strong>
+                      <span>{String(selectedProfile.payment_method)}</span>
+                    </div>
+                    <dl>
+                      <div><dt>Account name</dt><dd>{String(selectedProfile.account_name)}</dd></div>
+                      <div><dt>Account number</dt><dd>{String(selectedProfile.account_number || 'Not provided')}</dd></div>
+                    </dl>
+                  </div>
+                )}
+              </>
+            )
+          )}
+
+        </Modal>
+      )}
+    </>
+  );
+}
+
+/**
+ * Unified Requests module — MRF, General, and Purchase requests in one table.
+ * Replaces MaterialRequestsModule, SupplyRequestsModule, and PurchaseRequestsModule.
+ */
+export function RequestsModule({ filter, title }: ModuleProps & { title?: string }) {
   const { user } = useAuth();
   const role = user!.role;
   const canWrite = WRITE['material-requests'].includes(role);
   const canApprove = role === 'inventory-officer' || role === 'general-manager';
 
+  // Non-GM roles see only their own requests. The General Manager sees all so
+  // they can review, approve, and release requests from every department.
+  const isGM = role === 'general-manager';
+  const rowFilter = isGM
+    ? undefined
+    : (row: EntityRow) => {
+        // Match by stored ID first; fall back to name for legacy rows.
+        if (String(row.requested_by_id ?? '').trim() === user!.id) return true;
+        return (
+          String(row.requested_by ?? '').trim().toLowerCase() ===
+          user!.fullName.trim().toLowerCase()
+        );
+      };
+
   const columns: ModuleColumn[] = [
     { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
-    { header: 'Material', cell: (r) => String(r.material_name ?? r.material_sku ?? '') },
-    { header: 'Qty', cell: (r) => String(r.quantity ?? 0) },
-    { header: 'Job Order', cell: (r) => String(r.job_order_ref ?? '—') },
+    {
+      header: 'Type',
+      cell: (r) => {
+        const t = String(r.request_type ?? 'mrf');
+        if (t === 'mrf') return 'MRF';
+        if (t === 'purchase') return 'Purchase';
+        return 'General';
+      },
+    },
+    { header: 'Item', cell: (r) => String(r.material_name ?? r.material_sku ?? '') },
+    {
+      header: 'Qty',
+      cell: (r) => `${r.quantity ?? 0}${r.unit ? ` ${r.unit}` : ''}`.trim(),
+    },
+    {
+      header: 'Details',
+      cell: (r) => {
+        const t = String(r.request_type ?? 'mrf');
+        if (t === 'mrf') return String(r.job_order_ref ?? '—');
+        if (t === 'purchase') return String(r.total_cost ? `₱ ${Number(r.total_cost).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—');
+        return String(r.reason ?? '—');
+      },
+    },
     { header: 'Requested By', cell: (r) => String(r.requested_by ?? '—') },
     { header: 'Status', cell: (r) => workflowStatusCell(r.status) },
-  ];
-
-  const fields: ModuleField[] = [
-    { name: 'material_name', label: 'Material', placeholder: 'Material name' },
-    { name: 'material_sku', label: 'SKU', placeholder: 'SKU-XXXX (optional)' },
-    { name: 'quantity', label: 'Quantity', kind: 'number', default: '1' },
-    { name: 'job_order_ref', label: 'Job Order Ref', placeholder: 'JO-XXXX (optional)' },
-    {
-      name: 'requested_by',
-      label: 'Requested By',
-      default: user!.fullName,
-      readOnly: true,
-      hint: `${user!.fullName} · ${roleLabel(role)} (auto-filled from your account)`,
-    },
   ];
 
   return (
     <LiveModule
       entity="material-requests"
-      title={title ?? 'Material Request Forms (MRF)'}
+      title={title ?? 'Requests'}
       createLabel="New Request"
       columns={columns}
-      fields={fields}
+      fields={[]}
       canWrite={canWrite}
       filter={filter}
-      renderCreate={({ reload }) => <MaterialRequestButton onCreated={reload} />}
+      rowFilter={rowFilter}
+      renderCreate={({ reload }) => <RequestButton onCreated={reload} />}
       metrics={(rows) => [
-        metric('r1', 'Total Requests', String(rows.length), 'file-input', 'customers'),
-        metric('r2', 'Ongoing', count(rows, (r) => r.status === 'pending'), 'clock', 'revenue'),
-        metric('r3', 'Approved', count(rows, (r) => r.status === 'approved'), 'check-circle', 'profit'),
-        metric('r4', 'Released', count(rows, (r) => r.status === 'released'), 'package-check', 'invoices'),
+        metric('req1', 'Total Requests', String(rows.length), 'file-input', 'customers'),
+        metric('req2', 'Ongoing', count(rows, (r) => r.status === 'pending'), 'clock', 'revenue'),
+        metric('req3', 'Approved', count(rows, (r) => r.status === 'approved'), 'check-circle', 'profit'),
+        metric('req4', 'Released / Received', count(rows, (r) => r.status === 'released' || r.status === 'received'), 'package-check', 'invoices'),
       ]}
-      actions={(c) => (
-        <>
-          <ViewAction title={`Material Request ${c.row.ref_code}`} wide>
-            <MrfDetail row={c.row} />
-          </ViewAction>
-          {canWrite && (
-            <>
-              {canApprove && !c.archived && <StatusSelect value={String(c.row.status)} options={MR_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />}
-              <EditBtn c={c} />
-              <ArchiveBtn c={c} />
-            </>
-          )}
-        </>
-      )}
+      actions={(c) => {
+        const t = String(c.row.request_type ?? 'mrf');
+        return (
+          <>
+            <ViewAction title={`Request ${c.row.ref_code}`} wide>
+              <dl className="detail-list">
+                <DetailRow label="Reference">{String(c.row.ref_code ?? '')}</DetailRow>
+                <DetailRow label="Type">
+                  {t === 'mrf' ? 'Material Request Form (MRF)' : t === 'purchase' ? 'Purchase Request' : 'General Request'}
+                </DetailRow>
+                <DetailRow label="Item">{String(c.row.material_name ?? c.row.material_sku ?? '—')}</DetailRow>
+                {String(c.row.material_sku ?? '') && <DetailRow label="SKU">{String(c.row.material_sku)}</DetailRow>}
+                <DetailRow label="Quantity">{`${c.row.quantity ?? 0}${c.row.unit ? ` ${c.row.unit}` : ''}`}</DetailRow>
+                {/* MRF fields */}
+                {String(c.row.job_order_ref ?? '') && <DetailRow label="Job Order">{String(c.row.job_order_ref)}</DetailRow>}
+                {/* General fields */}
+                {String(c.row.reason ?? '') && <DetailRow label="Reason">{String(c.row.reason)}</DetailRow>}
+                {/* General: customer fulfilment fields */}
+                {t === 'general' && String(c.row.payment_option ?? '') && (
+                  <DetailRow label="Payment Option">
+                    {c.row.payment_option === 'cash_on_delivery' ? 'Cash on Delivery (Pay upon delivery)' : c.row.payment_option === 'gcash' ? 'GCash (Online Payment)' : String(c.row.payment_option)}
+                  </DetailRow>
+                )}
+                {t === 'general' && String(c.row.delivery_address ?? '') && (
+                  <DetailRow label="Delivery Address">{String(c.row.delivery_address)}</DetailRow>
+                )}
+                {/* Estimated total for general requests linked to inventory */}
+                {t === 'general' && Number(c.row.total_cost ?? 0) > 0 && (
+                  <DetailRow label="Estimated Total">{money(c.row.total_cost)}</DetailRow>
+                )}
+                {/* Purchase fields */}
+                {t === 'purchase' && (<>
+                  {String(c.row.category ?? '') && <DetailRow label="Category">{String(c.row.category)}</DetailRow>}
+                  {String(c.row.description ?? '') && <DetailRow label="Description">{String(c.row.description)}</DetailRow>}
+                  {Number(c.row.min_level ?? 0) > 0 && <DetailRow label="Min Level">{String(c.row.min_level)}</DetailRow>}
+                  {Number(c.row.weight_kg ?? 0) > 0 && <DetailRow label="Weight">{`${c.row.weight_kg} kg`}</DetailRow>}
+                  {String(c.row.size ?? '') && <DetailRow label="Size">{String(c.row.size)}</DetailRow>}
+                  {String(c.row.color ?? '') && <DetailRow label="Color">{String(c.row.color)}</DetailRow>}
+                  <DetailRow label="Unit Price">{money(c.row.unit_price)}</DetailRow>
+                  <DetailRow label="Total Cost">{money(c.row.total_cost)}</DetailRow>
+                  <DetailRow label="Source">{titleCase(c.row.source ?? 'external')}</DetailRow>
+                  <DetailRow label="Supplier">{String(c.row.supplier ?? '—')}</DetailRow>
+                  {String(c.row.justification ?? '') && <DetailRow label="Justification">{String(c.row.justification)}</DetailRow>}
+                </>)}
+                <DetailRow label="Requested By">{String(c.row.requested_by ?? '—')}</DetailRow>
+                <DetailRow label="Status">{workflowStatusLabel(c.row.status)}</DetailRow>
+                <DetailRow label="Submitted On">{dateShort(c.row.created_at)}</DetailRow>
+              </dl>
+            </ViewAction>
+            {canWrite && (
+              <>
+                <ApprovalBillingRow c={c} canApprove={canApprove} />
+                <ArchiveBtn c={c} />
+              </>
+            )}
+          </>
+        );
+      }}
     />
   );
 }
+
+// Legacy aliases
+export const MaterialRequestsModule = RequestsModule;
+export const PurchaseRequestsModule = RequestsModule;
 
 /* ------------------------------------------------------- Assets + Health */
 const CONDITION = [
@@ -1995,117 +2587,6 @@ export function SuppliersModule({ filter }: ModuleProps) {
   );
 }
 
-/* --------------------------------------------------- Purchase Requests */
-const PR_STATUS = [
-  { value: 'pending', label: 'Ongoing' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'ordered', label: 'Ordered' },
-  { value: 'received', label: 'Received' },
-  { value: 'rejected', label: 'Rejected' },
-];
-
-export function PurchaseRequestsModule({ filter }: ModuleProps) {
-  const { user } = useAuth();
-  const role = user!.role;
-  const canWrite = WRITE['purchase-requests'].includes(role);
-  const canApprove = role === 'general-manager';
-  const supplierOptions = useSupplierOptions();
-
-  const columns: ModuleColumn[] = [
-    { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
-    { header: 'Material', cell: (r) => String(r.material_name ?? '') },
-    { header: 'Category', cell: (r) => String(r.category ?? '—') },
-    { header: 'Qty', cell: (r) => `${r.quantity ?? 0} ${r.unit ?? ''}`.trim() },
-    { header: 'Weight', cell: (r) => Number(r.weight_kg ?? 0) > 0 ? `${r.weight_kg} kg` : '—' },
-    { header: 'Unit Price', cell: (r) => money(r.unit_price) },
-    { header: 'Total', cell: (r) => money(r.total_cost) },
-    { header: 'Supplier', cell: (r) => String(r.supplier ?? '—') },
-    { header: 'Requested By', cell: (r) => String(r.requested_by ?? '—') },
-    { header: 'Status', cell: (r) => workflowStatusCell(r.status) },
-  ];
-
-  const fields: ModuleField[] = [
-    { name: 'material_name', label: 'Material Name', placeholder: 'Material to purchase' },
-    { name: 'category', label: 'Category', placeholder: 'Pipes / Valves / Meters…' },
-    { name: 'description', label: 'Description', kind: 'textarea' },
-    { name: 'quantity', label: 'Quantity', kind: 'number', default: '1' },
-    { name: 'min_level', label: 'Minimum Level', kind: 'number', default: '10', hint: 'Minimum stock level to use when this item is added to inventory.' },
-    { name: 'unit', label: 'Unit', default: 'units' },
-    { name: 'weight_kg', label: 'Weight (kg)', kind: 'number' },
-    { name: 'size', label: 'Size', placeholder: 'e.g. 50mm, 4 inches' },
-    { name: 'color', label: 'Color', placeholder: 'e.g. Blue, Red' },
-    { name: 'unit_price', label: 'Unit Price (₱)', kind: 'number' },
-    {
-      name: 'source',
-      label: 'Source',
-      kind: 'select',
-      styledSelect: true,
-      optionList: [{ value: 'mother-company', label: 'Mother Company' }, { value: 'external', label: 'External Supplier' }],
-      default: 'external',
-    },
-    { name: 'supplier_id', label: 'Supplier', kind: 'select', optionList: [{ value: '', label: 'Select external supplier' }, ...supplierOptions], visibleWhen: (values) => values.source === 'external' },
-    { name: 'justification', label: 'Justification', kind: 'textarea', placeholder: 'Why is this purchase needed?' },
-    { name: 'requested_by', label: 'Requested By', default: user!.fullName, readOnly: true },
-  ];
-
-  return (
-    <LiveModule
-      entity="purchase-requests"
-      title="Purchase Requests"
-      createLabel="New Purchase Request"
-      columns={columns}
-      fields={fields}
-      prepareValues={(values) => ({
-        ...values,
-        total_cost: Number(values.quantity || 0) * Number(values.unit_price || 0),
-        supplier_id: values.source === 'external' ? values.supplier_id : null,
-        supplier: values.source === 'external'
-          ? supplierOptions.find((supplier) => supplier.value === values.supplier_id)?.label ?? ''
-          : 'Mother Company',
-      })}
-      canWrite={canWrite}
-      filter={filter}
-      metrics={(rows) => [
-        metric('pr1', 'Total Requests', String(rows.length), 'shopping-cart', 'customers'),
-        metric('pr2', 'Ongoing', count(rows, (r) => r.status === 'pending'), 'clock', 'revenue'),
-        metric('pr3', 'Approved', count(rows, (r) => r.status === 'approved'), 'check-circle', 'profit'),
-        metric('pr4', 'Total Value', money(rows.reduce((s, r) => s + Number(r.total_cost || 0), 0)), 'wallet', 'invoices'),
-      ]}
-      actions={(c) => (
-        <>
-          <ViewAction title={`Purchase Request ${c.row.ref_code}`} wide>
-            <dl className="detail-list">
-              <DetailRow label="Reference">{String(c.row.ref_code ?? '')}</DetailRow>
-              <DetailRow label="Material">{String(c.row.material_name ?? '')}</DetailRow>
-              <DetailRow label="Category">{String(c.row.category ?? '—')}</DetailRow>
-              <DetailRow label="Description">{String(c.row.description ?? '—')}</DetailRow>
-              <DetailRow label="Quantity">{`${c.row.quantity ?? 0} ${c.row.unit ?? ''}`}</DetailRow>
-              <DetailRow label="Minimum Level">{String(c.row.min_level ?? 10)}</DetailRow>
-              <DetailRow label="Weight">{Number(c.row.weight_kg ?? 0) > 0 ? `${c.row.weight_kg} kg` : '—'}</DetailRow>
-              <DetailRow label="Size">{String(c.row.size ?? '—')}</DetailRow>
-              <DetailRow label="Color">{String(c.row.color ?? '—')}</DetailRow>
-              <DetailRow label="Unit Price">{money(c.row.unit_price)}</DetailRow>
-              <DetailRow label="Total Cost">{money(c.row.total_cost)}</DetailRow>
-              <DetailRow label="Source">{titleCase(c.row.source ?? 'external')}</DetailRow>
-              <DetailRow label="Supplier">{String(c.row.supplier ?? '—')}</DetailRow>
-              <DetailRow label="Justification">{String(c.row.justification ?? '—')}</DetailRow>
-              <DetailRow label="Requested By">{String(c.row.requested_by ?? '—')}</DetailRow>
-              <DetailRow label="Status">{workflowStatusLabel(c.row.status)}</DetailRow>
-            </dl>
-          </ViewAction>
-          {canWrite && (
-            <>
-              {canApprove && !c.archived && <StatusSelect value={String(c.row.status)} options={PR_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />}
-              <EditBtn c={c} />
-              <ArchiveBtn c={c} />
-            </>
-          )}
-        </>
-      )}
-    />
-  );
-}
-
 /* ------------------------------------------------------- E-Billing / Payments */
 const PAYMENT_STATUS = [
   { value: 'pending', label: 'Pending' },
@@ -2195,9 +2676,8 @@ function BillingDetails({ row, customer = false }: { row: EntityRow; customer?: 
         <span>Amount Due</span><strong>{money(row.amount)}</strong><small>Due {dateShort(row.due_date)}</small>
       </div>
       {customer && row.status === 'rejected' && (
-        <div className="payment-rejection-notice" role="alert">
-          <strong>Payment was declined</strong>
-          <p>{String(row.verification_notes || 'Please review your payment details and submit a new proof of payment.')}</p>
+        <div className="payment-resubmit-hint" role="alert" style={{ marginBottom: 16 }}>
+          Your previous payment was declined. See the reason above and resubmit below.
         </div>
       )}
       <dl className="detail-list">
@@ -2225,13 +2705,28 @@ function BillingDetails({ row, customer = false }: { row: EntityRow; customer?: 
 function CustomerBillingAction({ c }: { c: RowActionCtx }) {
   const { notify } = useToast();
   const [open, setOpen] = useState(false);
+  const [resubmitOpen, setResubmitOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const isRejected = String(c.row.status) === 'rejected';
   const [method, setMethod] = useState(String(c.row.payment_method ?? 'GCash'));
   const [amount, setAmount] = useState(String(c.row.amount ?? ''));
   const [paymentDate, setPaymentDate] = useState(todayISO());
   const [reference, setReference] = useState('');
   const [proof, setProof] = useState<string[]>([]);
-  const payable = ['pending', 'unpaid', 'overdue', 'rejected'].includes(String(c.row.status));
+  const payable = ['pending', 'unpaid', 'overdue'].includes(String(c.row.status));
+
+  const resetForm = () => {
+    setMethod(String(c.row.payment_method ?? 'GCash'));
+    setAmount(String(c.row.amount ?? ''));
+    setPaymentDate(todayISO());
+    setReference('');
+    setProof([]);
+  };
+
+  const openResubmit = () => {
+    resetForm();
+    setResubmitOpen(true);
+  };
 
   const submit = async () => {
     if (!method.trim() || !(Number(amount) > 0) || !paymentDate || !reference.trim() || proof.length === 0) {
@@ -2243,9 +2738,11 @@ function CustomerBillingAction({ c }: { c: RowActionCtx }) {
       await resourceService.update('payments', c.row.id, {
         payment_method: method, amount_paid: Number(amount), payment_date: paymentDate,
         payment_reference: reference.trim(), payment_proof: proof,
+        status: 'for_verification',
       });
       await c.reload();
       notify('Payment proof submitted for verification.');
+      setResubmitOpen(false);
       setOpen(false);
     } catch (cause) {
       notify(cause instanceof ApiError ? cause.message : 'Could not submit payment proof.', 'error');
@@ -2254,19 +2751,84 @@ function CustomerBillingAction({ c }: { c: RowActionCtx }) {
 
   return (
     <>
-      <button className="btn-action" type="button" onClick={() => setOpen(true)}>{payable ? 'View / Pay' : 'View Bill'}</button>
-      <Modal title={`Bill ${c.row.ref_code}`} open={open} wide onClose={() => setOpen(false)} onSubmit={payable ? submit : undefined} submitText="Submit Payment Proof" submitting={saving}>
-        <BillingDetails row={c.row} customer />
-        {payable && <div className="payment-submission-form">
-          <p className="detail-section-title">Submit Payment</p>
-          <div className="form-grid">
-            <div className="form-group"><label>Payment Method</label><input value={method} onChange={(e) => setMethod(e.target.value)} placeholder="GCash / Maya / Bank" /></div>
-            <div className="form-group"><label>Amount Paid</label><input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
-            <div className="form-group"><label>Payment Date</label><input type="date" max={todayISO()} value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} /></div>
-            <div className="form-group"><label>Reference Number</label><input value={reference} onChange={(e) => setReference(e.target.value)} /></div>
+      <button className="btn-action" type="button" onClick={() => setOpen(true)}>
+        {payable || isRejected ? 'View / Pay' : 'View Bill'}
+      </button>
+
+      {/* ── Main bill modal ── */}
+      <Modal
+        title={`Bill ${c.row.ref_code}`}
+        open={open}
+        wide
+        onClose={() => setOpen(false)}
+        closeText="Close"
+      >
+        {/* Rejection banner */}
+        {isRejected && (
+          <div className="billing-rejected-banner" role="alert">
+            <div className="billing-rejected-icon">✕</div>
+            <div>
+              <strong>Your payment was declined</strong>
+              <p>{String(c.row.verification_notes || 'Please review your payment details and resubmit.')}</p>
+            </div>
           </div>
-          <div className="form-group"><label>Screenshot / Proof of Payment</label><ImageUpload value={proof} onChange={setProof} /></div>
-        </div>}
+        )}
+
+        <BillingDetails row={c.row} customer />
+
+        {/* Action buttons at bottom */}
+        {(payable || isRejected) && (
+          <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end' }}>
+            <button className="btn-primary" type="button" onClick={isRejected ? openResubmit : () => { setOpen(false); setResubmitOpen(true); resetForm(); }}>
+              {isRejected ? 'Resubmit Payment' : 'Submit Payment'}
+            </button>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Resubmit / pay modal ── */}
+      <Modal
+        title={isRejected ? 'Resubmit Payment' : 'Submit Payment'}
+        open={resubmitOpen}
+        wide
+        onClose={() => setResubmitOpen(false)}
+        onSubmit={submit}
+        submitText={isRejected ? 'Resubmit' : 'Submit Proof'}
+        submitting={saving}
+      >
+        <div className="billing-amount-card" style={{ marginBottom: 20 }}>
+          <span>Amount Due</span>
+          <strong>{money(c.row.amount)}</strong>
+          <small>Bill {String(c.row.ref_code)} · Due {dateShort(c.row.due_date)}</small>
+        </div>
+        {Array.isArray(c.row.payment_qr) && (c.row.payment_qr as string[]).length > 0 && (
+          <>
+            <p className="detail-section-title">Scan to Pay</p>
+            <ImageGallery images={c.row.payment_qr} />
+          </>
+        )}
+        <div className="form-grid">
+          <div className="form-group">
+            <label>Payment Method</label>
+            <input value={method} onChange={(e) => setMethod(e.target.value)} placeholder="GCash / Maya / Bank" />
+          </div>
+          <div className="form-group">
+            <label>Amount Paid (₱)</label>
+            <input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>Payment Date</label>
+            <input type="date" max={todayISO()} value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>Reference Number</label>
+            <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Transaction / confirmation number" />
+          </div>
+        </div>
+        <div className="form-group">
+          <label>Screenshot / Proof of Payment</label>
+          <ImageUpload value={proof} onChange={setProof} />
+        </div>
       </Modal>
     </>
   );
@@ -2306,7 +2868,17 @@ function BillingReviewAction({ c }: { c: RowActionCtx }) {
 }
 
 interface BillingUser { fullName: string; email: string; role: string }
-interface BillableWork { key: string; label: string; incident: EntityRow; job?: EntityRow }
+interface BillableWork {
+  key: string;
+  label: string;
+  /** Present for job-order-backed billing. */
+  incident?: EntityRow;
+  job?: EntityRow;
+  /** Present for approved general-request billing. */
+  request?: EntityRow;
+  /** True when a payment record already references this work item. */
+  alreadyBilled?: boolean;
+}
 
 function BillingControls({ onCreated }: { onCreated: () => Promise<void> }) {
   const { notify } = useToast();
@@ -2317,34 +2889,78 @@ function BillingControls({ onCreated }: { onCreated: () => Promise<void> }) {
   const [profiles, setProfiles] = useState<EntityRow[]>([]);
   const [users, setUsers] = useState<BillingUser[]>([]);
   const [workKey, setWorkKey] = useState('');
-  const [profileId, setProfileId] = useState('');
+  const [profileIds, setProfileIds] = useState<string[]>([]);
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
+  const [existingBills, setExistingBills] = useState<EntityRow[]>([]);
   const [profileName, setProfileName] = useState('');
   const [profileMethod, setProfileMethod] = useState('GCash');
   const [accountName, setAccountName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [profileQr, setProfileQr] = useState<string[]>([]);
 
+  // All bills loaded for the "already billed" check and display.
+  const [allBills, setAllBills] = useState<EntityRow[]>([]);
+
   const loadOptions = async () => {
     setLoading(true);
     try {
-      const [incidents, jobs, bills, savedProfiles, userResponse] = await Promise.all([
-        resourceService.list('incidents'), resourceService.list('job-orders'), resourceService.list('payments'),
-        resourceService.list('payment-methods'), api.get<{ data: BillingUser[] }>('/users'),
+      const [incidents, jobs, bills, savedProfiles, requests, userResponse] = await Promise.all([
+        resourceService.list('incidents'),
+        resourceService.list('job-orders'),
+        resourceService.list('payments'),
+        resourceService.list('payment-methods'),
+        resourceService.list('material-requests'),
+        api.get<{ data: BillingUser[] }>('/users'),
       ]);
-      const billedJobs = new Set(bills.map((bill) => String(bill.job_order_ref ?? '')).filter(Boolean));
+
+      setAllBills(bills);
+
+      // --- Job-order-backed billable work (include already-billed ones too — show status) ---
       const jobWorks: BillableWork[] = jobs
-        .filter((job) => job.status === 'completed' && !billedJobs.has(String(job.ref_code)))
-        .map((job) => ({ job, incident: incidents.find((incident) => String(incident.ref_code) === String(job.incident_ref)) }))
+        .filter((job) => job.status === 'completed')
+        .map((job) => ({ job, incident: incidents.find((i) => String(i.ref_code) === String(job.incident_ref)) }))
         .filter((item): item is { job: EntityRow; incident: EntityRow } => Boolean(item.incident))
-        .map(({ job, incident }) => ({ key: `job:${job.id}`, label: `${job.ref_code} — ${job.title} — ${incident.reported_by}`, job, incident }));
-      setWorks(jobWorks);
-      setProfiles(savedProfiles);
+        .map(({ job, incident }) => {
+          const alreadyBilled = bills.some((b) => String(b.job_order_ref ?? '') === String(job.ref_code));
+          return {
+            key: `job:${job.id}`,
+            label: `[Job Order] ${job.ref_code} — ${job.title} (${incident.reported_by})${alreadyBilled ? ' ✓ Billed' : ''}`,
+            job,
+            incident,
+            alreadyBilled,
+          };
+        });
+
+      // --- Approved general-request-backed billable work ---
+      const billedReqRefs = new Set(
+        bills
+          .map((b) => { const m = String(b.service_description ?? '').match(/REQ-\d+/i); return m ? m[0].toUpperCase() : ''; })
+          .filter(Boolean),
+      );
+      const requestWorks: BillableWork[] = requests
+        .filter(
+          (r) =>
+            String(r.request_type ?? '') === 'general' &&
+            String(r.status ?? '') === 'approved' &&
+            String(r.payment_option ?? '').trim() !== '' &&
+            !r.archived,
+        )
+        .map((r) => {
+          const alreadyBilled = billedReqRefs.has(String(r.ref_code ?? '').toUpperCase());
+          return {
+            key: `req:${r.id}`,
+            label: `[Item Request] ${r.ref_code} — ${r.material_name} (${r.requested_by})${alreadyBilled ? ' ✓ Billed' : ''}`,
+            request: r,
+            alreadyBilled,
+          };
+        });
+
+      setWorks([...jobWorks, ...requestWorks]);
+      setProfiles(savedProfiles.filter((p) => !p.archived));
       setUsers(userResponse.data);
-      if (!profileId && savedProfiles[0]) setProfileId(String(savedProfiles[0].id));
     } catch (cause) {
       notify(cause instanceof ApiError ? cause.message : 'Could not load bill options.', 'error');
     } finally { setLoading(false); }
@@ -2352,34 +2968,89 @@ function BillingControls({ onCreated }: { onCreated: () => Promise<void> }) {
 
   const openIssue = () => { setIssueOpen(true); void loadOptions(); };
   const selectedWork = works.find((work) => work.key === workKey);
-  const selectedProfile = profiles.find((profile) => profile.id === profileId);
-  const customerName = String(selectedWork?.incident.reported_by ?? '');
-  const customer = users.find((candidate) => candidate.fullName.trim().toLowerCase() === customerName.trim().toLowerCase());
+  const selectedProfiles = profiles.filter((p) => profileIds.includes(String(p.id)));
+
+  // Derive customer name from whichever work type is selected.
+  const customerName = selectedWork?.request
+    ? String(selectedWork.request.requested_by ?? '')
+    : String(selectedWork?.incident?.reported_by ?? '');
+
+  const customer = users.find(
+    (u) => u.fullName.trim().toLowerCase() === customerName.trim().toLowerCase(),
+  );
+
+  const selectedRequest = selectedWork?.request ?? null;
+  const isCodRequest = String(selectedRequest?.payment_option ?? '') === 'cash_on_delivery';
+  const needsProfile = !selectedRequest || !isCodRequest;
+
+  // Existing bills for the currently selected work item.
+  useEffect(() => {
+    if (!selectedWork) { setExistingBills([]); return; }
+    if (selectedWork.job) {
+      setExistingBills(allBills.filter((b) => String(b.job_order_ref ?? '') === String(selectedWork.job!.ref_code)));
+    } else if (selectedWork.request) {
+      const ref = String(selectedWork.request.ref_code ?? '').toUpperCase();
+      setExistingBills(allBills.filter((b) => String(b.service_description ?? '').toUpperCase().includes(ref)));
+    } else {
+      setExistingBills([]);
+    }
+  }, [workKey, allBills]);
 
   const selectWork = (key: string) => {
     setWorkKey(key);
     const work = works.find((item) => item.key === key);
-    setDescription(String(work?.job?.title ?? work?.incident.description ?? ''));
+    if (work?.request) {
+      setDescription(
+        `Item Request — ${String(work.request.material_name ?? '')}` +
+          (Number(work.request.quantity ?? 0) > 0 ? ` × ${work.request.quantity}${work.request.unit ? ` ${work.request.unit}` : ''}` : ''),
+      );
+      setAmount(Number(work.request.total_cost ?? 0) > 0 ? String(work.request.total_cost) : '');
+    } else {
+      setDescription(String(work?.job?.title ?? work?.incident?.description ?? ''));
+      setAmount('');
+    }
   };
 
+  const toggleProfile = (id: string) =>
+    setProfileIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+
   const issueBill = async () => {
-    if (!selectedWork || !customer?.email || !selectedProfile || !(Number(amount) > 0) || !dueDate) {
-      notify(!customer?.email && selectedWork ? 'No customer account email matches the complaint reporter.' : 'Complete the Job Order, amount, due date, and payment profile.', 'error');
-      return;
+    if (!selectedWork) { notify('Select a completed job order or approved item request.', 'error'); return; }
+    if (!customer?.email) { notify('No registered account email found for this customer.', 'error'); return; }
+    if (!(Number(amount) > 0)) { notify('Enter the billing amount.', 'error'); return; }
+    if (!dueDate) { notify('Set a due date.', 'error'); return; }
+    if (needsProfile && selectedProfiles.length === 0) {
+      notify('Select at least one payment profile, or add one via Payment Information.', 'error'); return;
     }
+
     setSaving(true);
     try {
+      const paymentFields = isCodRequest
+        ? { payment_method: 'Cash on Delivery', account_name: '', account_number: '', payment_qr: [] }
+        : {
+            payment_method: selectedProfiles.map((p) => String(p.payment_method)).join(' / '),
+            account_name: selectedProfiles.map((p) => String(p.account_name)).join(' / '),
+            account_number: selectedProfiles.map((p) => String(p.account_number || '')).filter(Boolean).join(' / '),
+            payment_qr: selectedProfiles.flatMap((p) => Array.isArray(p.payment_qr) ? p.payment_qr as string[] : []),
+          };
+
+      const isReq = Boolean(selectedRequest);
       await resourceService.create('payments', {
-        customer_name: customerName, customer_email: customer.email,
-        incident_ref: selectedWork.incident.ref_code,
-        job_order_ref: selectedWork.job?.ref_code ?? '', service_description: description,
-        amount: Number(amount), due_date: dueDate,
-        payment_method: selectedProfile.payment_method, account_name: selectedProfile.account_name,
-        account_number: selectedProfile.account_number, payment_qr: selectedProfile.payment_qr,
+        customer_name: customerName,
+        customer_email: customer.email,
+        incident_ref: isReq ? '' : String(selectedWork.incident?.ref_code ?? ''),
+        job_order_ref: isReq ? '' : String(selectedWork.job?.ref_code ?? ''),
+        service_description: description,
+        notes: isCodRequest ? `Cash on Delivery — deliver to: ${String(selectedRequest?.delivery_address ?? '').trim() || 'address on file'}` : '',
+        amount: Number(amount),
+        due_date: dueDate,
+        ...paymentFields,
       });
+
       await onCreated();
       notify('Final bill issued to the customer.');
-      setIssueOpen(false); setWorkKey(''); setAmount(''); setDueDate(''); setDescription('');
+      setIssueOpen(false);
+      setWorkKey(''); setAmount(''); setDueDate(''); setDescription(''); setProfileIds([]);
     } catch (cause) {
       notify(cause instanceof ApiError ? cause.message : 'Could not issue the bill.', 'error');
     } finally { setSaving(false); }
@@ -2409,20 +3080,121 @@ function BillingControls({ onCreated }: { onCreated: () => Promise<void> }) {
       <ActionButton label="Issue Final Bill" icon="plus-circle" onClick={openIssue} />
     </div>
     <Modal title="Issue Final Bill" open={issueOpen} wide onClose={() => setIssueOpen(false)} onSubmit={issueBill} submitText="Issue Bill" submitting={saving}>
-      {loading ? <p className="billing-helper">Loading completed Job Orders…</p> : <>
-        <div className="form-group"><label>Completed Job Order</label><select value={workKey} onChange={(e) => selectWork(e.target.value)}><option value="">Select Job Order</option>{works.map((work) => <option key={work.key} value={work.key}>{work.label}</option>)}</select></div>
-        {selectedWork && <div className="billing-customer-preview"><span>Customer</span><strong>{customerName || 'Unknown customer'}</strong><small>{customer?.email ?? 'No matching registered email'}</small></div>}
+      {loading ? <p className="billing-helper">Loading billable work…</p> : <>
+        {/* Work selector — only show unbilled items */}
+        <div className="form-group">
+          <label>Completed Job Order or Approved Item Request</label>
+          <select value={workKey} onChange={(e) => selectWork(e.target.value)}>
+            <option value="">Select…</option>
+            {works.filter((w) => w.job && !w.alreadyBilled).length > 0 && (
+              <optgroup label="Completed Job Orders">
+                {works.filter((w) => w.job && !w.alreadyBilled).map((work) => (
+                  <option key={work.key} value={work.key}>{work.label}</option>
+                ))}
+              </optgroup>
+            )}
+            {works.filter((w) => w.request && !w.alreadyBilled).length > 0 && (
+              <optgroup label="Approved Item Requests">
+                {works.filter((w) => w.request && !w.alreadyBilled).map((work) => (
+                  <option key={work.key} value={work.key}>{work.label}</option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+          {works.length > 0 && works.every((w) => w.alreadyBilled) && (
+            <small style={{ color: 'var(--muted)' }}>All completed work has already been billed.</small>
+          )}
+        </div>
+
+        {/* Existing bills for selected work */}
+        {existingBills.length > 0 && (
+          <div className="billing-existing-bills">
+            <p className="detail-section-title" style={{ marginTop: 0 }}>
+              Existing Bill{existingBills.length > 1 ? 's' : ''} for this {selectedWork?.job ? 'Job Order' : 'Request'}
+            </p>
+            {existingBills.map((b) => (
+              <div key={String(b.id)} className="billing-existing-bill-row">
+                <span className="billing-existing-ref">{String(b.ref_code ?? '')}</span>
+                <span className="billing-existing-amount">{money(b.amount)}</span>
+                <span className="billing-existing-due">Due {dateShort(b.due_date)}</span>
+                <span className={`billing-existing-status status-${String(b.status ?? 'pending')}`}>
+                  {billingStatusLabel(b.status)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {selectedWork && (
+          <div className="billing-customer-preview">
+            <span>Customer</span>
+            <strong>{customerName || 'Unknown customer'}</strong>
+            <small>{customer?.email ?? 'No matching registered email'}</small>
+          </div>
+        )}
+
+        {/* Customer payment option for item requests */}
+        {selectedRequest && (
+          <div className="form-group">
+            <label>Customer's Payment Option</label>
+            <input value={isCodRequest ? 'Cash on Delivery' : 'GCash (Online Payment)'} readOnly />
+            {isCodRequest && String(selectedRequest.delivery_address ?? '').trim() && (
+              <small style={{ display: 'block', marginTop: 4, color: 'var(--muted)' }}>
+                Delivery address: {String(selectedRequest.delivery_address)}
+              </small>
+            )}
+          </div>
+        )}
+
         <div className="form-grid">
           <div className="form-group"><label>Final Amount</label><div className="peso-input"><span>₱</span><input type="text" inputMode="decimal" value={amount} onChange={(e) => { const next = e.target.value; if (/^\d*(\.\d{0,2})?$/.test(next)) setAmount(next); }} onKeyDown={(e) => { if (['-', '+', 'e', 'E'].includes(e.key)) e.preventDefault(); }} placeholder="0.00" /></div></div>
           <div className="form-group"><label>Due Date</label><input type="date" min={todayISO()} value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
         </div>
-        <div className="form-group"><label>Saved Payment Information</label><select value={profileId} onChange={(e) => setProfileId(e.target.value)}><option value="">Select payment profile</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{String(profile.name)} — {String(profile.payment_method)}</option>)}</select>{profiles.length === 0 && <small>Add payment information first before issuing a bill.</small>}</div>
-        {selectedProfile && <div className="selected-payment-profile">
-          <div className="selected-payment-icon">{Array.isArray(selectedProfile.payment_qr) && selectedProfile.payment_qr[0] ? <img src={String(selectedProfile.payment_qr[0])} alt={`${selectedProfile.name} QR code`} /> : <span>₱</span>}</div>
-          <div className="selected-payment-copy"><small>Selected payment destination</small><strong>{String(selectedProfile.name)}</strong><span>{String(selectedProfile.payment_method)}</span></div>
-          <dl><div><dt>Account name</dt><dd>{String(selectedProfile.account_name)}</dd></div><div><dt>Account number</dt><dd>{String(selectedProfile.account_number || 'Not provided')}</dd></div></dl>
-        </div>}
-        <div className="form-group"><label>Service Description</label><textarea value={description} onChange={(e) => setDescription(e.target.value)} /></div>
+
+        {/* Payment profile multi-select — card-click style, hidden for COD */}
+        {needsProfile && (
+          <div className="form-group">
+            <label>Payment Information {profileIds.length > 0 && <span className="profile-count-badge">{profileIds.length} selected</span>}</label>
+            {profiles.length === 0 ? (
+              <small style={{ color: '#e25577' }}>No payment profiles saved. Add one via Payment Information first.</small>
+            ) : (
+              <div className="profile-card-list">
+                {profiles.map((p) => {
+                  const selected = profileIds.includes(String(p.id));
+                  return (
+                    <div
+                      key={String(p.id)}
+                      className={`selected-payment-profile profile-card-selectable${selected ? ' profile-card-active' : ''}`}
+                      onClick={() => toggleProfile(String(p.id))}
+                      role="checkbox"
+                      aria-checked={selected}
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleProfile(String(p.id)); } }}
+                    >
+                      {selected && <span className="profile-card-check" aria-hidden="true">✓</span>}
+                      <div className="selected-payment-icon">
+                        {Array.isArray(p.payment_qr) && p.payment_qr[0]
+                          ? <img src={String(p.payment_qr[0])} alt={` QR`} />
+                          : <span>₱</span>}
+                      </div>
+                      <div className="selected-payment-copy">
+                        <small>{selected ? 'Selected — click to remove' : 'Click to select'}</small>
+                        <strong>{String(p.name)}</strong>
+                        <span>{String(p.payment_method)}</span>
+                      </div>
+                      <dl>
+                        <div><dt>Account name</dt><dd>{String(p.account_name)}</dd></div>
+                        <div><dt>Account number</dt><dd>{String(p.account_number || 'Not provided')}</dd></div>
+                      </dl>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+                <div className="form-group"><label>Service Description</label><textarea value={description} onChange={(e) => setDescription(e.target.value)} /></div>
       </>}
     </Modal>
     <Modal title="Saved Payment Information" open={profilesOpen} wide onClose={() => setProfilesOpen(false)} onSubmit={addProfile} submitText="Save Payment Info" submitting={saving}>
@@ -2438,6 +3210,8 @@ function BillingControls({ onCreated }: { onCreated: () => Promise<void> }) {
     </Modal>
   </>;
 }
+
+
 
 export function BillingModule({ filter }: ModuleProps) {
   const { user } = useAuth();
@@ -2480,71 +3254,8 @@ export function BillingModule({ filter }: ModuleProps) {
 }
 
 /* --------------------------------------------------- Supply Requests */
-const SR_STATUS = [
-  { value: 'pending', label: 'Ongoing' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'fulfilled', label: 'Fulfilled' },
-  { value: 'rejected', label: 'Rejected' },
-];
-
-export function SupplyRequestsModule({ filter }: ModuleProps) {
-  const { user } = useAuth();
-  const role = user!.role;
-  const canWrite = WRITE['supply-requests'].includes(role);
-  const canApprove = role === 'inventory-officer' || role === 'general-manager';
-
-  const columns: ModuleColumn[] = [
-    { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
-    { header: 'Item', cell: (r) => String(r.item_name ?? '') },
-    { header: 'Qty', cell: (r) => String(r.quantity ?? 0) },
-    { header: 'Reason', cell: (r) => String(r.reason ?? '—') },
-    { header: 'Requested By', cell: (r) => String(r.requested_by ?? '—') },
-    { header: 'Status', cell: (r) => workflowStatusCell(r.status) },
-  ];
-
-  const fields: ModuleField[] = [
-    { name: 'item_name', label: 'Item Name', placeholder: 'What do you need?' },
-    { name: 'quantity', label: 'Quantity', kind: 'number', default: '1' },
-    { name: 'reason', label: 'Reason', kind: 'textarea', placeholder: 'Why do you need this?' },
-    { name: 'requested_by', label: 'Requested By', default: user!.fullName, readOnly: true },
-  ];
-
-  return (
-    <LiveModule
-      entity="supply-requests"
-      title="Supplies Request"
-      createLabel="New Supply Request"
-      columns={columns}
-      fields={fields}
-      canWrite={canWrite}
-      filter={filter}
-      metrics={(rows) => [
-        metric('sr1', 'Total Requests', String(rows.length), 'package', 'customers'),
-        metric('sr2', 'Ongoing', count(rows, (r) => r.status === 'pending'), 'clock', 'revenue'),
-        metric('sr3', 'Fulfilled', count(rows, (r) => r.status === 'fulfilled'), 'check-circle', 'profit'),
-        metric('sr4', 'Rejected', count(rows, (r) => r.status === 'rejected'), 'x-circle', 'invoices'),
-      ]}
-      actions={(c) => (
-        <>
-          <ViewAction title={`Supply Request ${c.row.ref_code}`}>
-            <dl className="detail-list">
-              <DetailRow label="Reference">{String(c.row.ref_code ?? '')}</DetailRow>
-              <DetailRow label="Item">{String(c.row.item_name ?? '')}</DetailRow>
-              <DetailRow label="Quantity">{String(c.row.quantity ?? 0)}</DetailRow>
-              <DetailRow label="Reason">{String(c.row.reason ?? '—')}</DetailRow>
-              <DetailRow label="Requested By">{String(c.row.requested_by ?? '—')}</DetailRow>
-              <DetailRow label="Status">{workflowStatusLabel(c.row.status)}</DetailRow>
-            </dl>
-          </ViewAction>
-          {canWrite && (
-            <>
-              {canApprove && !c.archived && <StatusSelect value={String(c.row.status)} options={SR_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />}
-              <EditBtn c={c} />
-              <ArchiveBtn c={c} />
-            </>
-          )}
-        </>
-      )}
-    />
-  );
-}
+// SupplyRequestsModule is superseded by RequestsModule (which handles both
+// MRF and General/supply request types in one unified view). This alias is
+// kept so existing imports in roleViews.tsx continue to compile while the
+// transition is completed.
+export const SupplyRequestsModule = RequestsModule;

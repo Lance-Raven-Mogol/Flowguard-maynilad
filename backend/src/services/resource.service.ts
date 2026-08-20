@@ -197,6 +197,100 @@ async function settleStockDeduction(mrfId: string, user: PublicUser): Promise<vo
   });
 }
 
+/**
+ * When a purchase request is marked "received", add its quantity to inventory.
+ * If a material with the same name already exists, restock it. Otherwise,
+ * create a new inventory item using the purchase request's specs.
+ * Idempotent via `stock_deducted` flag (reused as a "settled" marker).
+ */
+async function settlePurchaseReceived(prId: string, user: PublicUser): Promise<void> {
+  const pr = await repo.getRowById('material_requests', prId);
+  if (!pr) throw notFound('Purchase request not found.');
+  if (pr.stock_deducted) return; // already settled — no double stock-in
+
+  const name = String(pr.material_name ?? '').trim();
+  const qty = Number(pr.quantity ?? 0);
+  if (!name || !(qty > 0)) {
+    await repo.updateRow('material_requests', prId, { stock_deducted: true });
+    return;
+  }
+
+  // Try to find an existing non-archived material with the same name (case-insensitive).
+  const allMaterials = await repo.listRows('materials', {});
+  const existing = allMaterials.find(
+    (m) => !m.archived && String(m.name ?? '').trim().toLowerCase() === name.toLowerCase(),
+  );
+
+  if (existing) {
+    // Restock existing inventory item.
+    const previous = Number(existing.quantity ?? 0);
+    const newQty = previous + qty;
+    const minLevel = Number(existing.min_level ?? 0);
+    const patch: Row = {
+      quantity: newQty,
+      status: existing.status === 'defective' ? existing.status
+        : newQty <= 0 ? 'out_of_stock'
+        : newQty <= minLevel ? 'low_stock'
+        : 'in_stock',
+    };
+    await repo.updateRow('materials', String(existing.id), patch);
+    await repo.updateRow('material_requests', prId, { stock_deducted: true });
+    await logAudit('materials', String(existing.id), 'stock_movement', user.fullName, user.role, {
+      movement_type: 'stock_in',
+      material_name: existing.name,
+      sku: existing.sku,
+      previous_quantity: previous,
+      new_quantity: newQty,
+      quantity_change: qty,
+      unit: existing.unit,
+      reference: pr.ref_code,
+      reason: 'Purchase request received',
+    });
+  } else {
+    // Create a new inventory item from the purchase request's specs.
+    // Generate a SKU for it.
+    const existingSkus = allMaterials.map((m) => String(m.sku ?? ''));
+    let skuNum = Math.floor(10000 + Math.random() * 90000);
+    let sku = `SKU-${skuNum}`;
+    while (existingSkus.includes(sku)) {
+      skuNum = Math.floor(10000 + Math.random() * 90000);
+      sku = `SKU-${skuNum}`;
+    }
+    const minLevel = Number(pr.min_level ?? 10);
+    const newItem: Row = {
+      sku,
+      name,
+      category: pr.category ?? null,
+      description: pr.description ?? null,
+      quantity: qty,
+      unit: pr.unit ?? 'units',
+      unit_price: pr.unit_price ?? 0,
+      supplier: pr.supplier ?? null,
+      supplier_id: pr.supplier_id ?? null,
+      source: pr.source ?? 'external',
+      min_level: minLevel,
+      weight_kg: pr.weight_kg ?? 0,
+      size: pr.size ?? null,
+      color: pr.color ?? null,
+      status: qty <= 0 ? 'out_of_stock' : qty <= minLevel ? 'low_stock' : 'in_stock',
+      archived: false,
+    };
+    const created = await repo.insertRow('materials', newItem);
+    await repo.updateRow('material_requests', prId, { stock_deducted: true });
+    await logAudit('materials', String(created?.id ?? ''), 'create', user.fullName, user.role, {
+      movement_type: 'initial_stock',
+      material_name: name,
+      sku,
+      previous_quantity: 0,
+      new_quantity: qty,
+      quantity_change: qty,
+      unit: newItem.unit,
+      reference: pr.ref_code,
+      reason: 'New item added from purchase request',
+    });
+  }
+}
+
 export const resourceService = {
   async list(entity: string, user: PublicUser, archived?: 'only' | 'all'): Promise<Row[]> {
     const def = getDef(entity);
@@ -210,6 +304,16 @@ export const resourceService = {
     if (entity === 'payments' && user.role === 'customer') {
       const email = user.email.trim().toLowerCase();
       rows = rows.filter((row) => String(row.customer_email ?? '').trim().toLowerCase() === email);
+    }
+    // Non-GM roles only see their own material/purchase requests. The GM sees all
+    // so they can review, approve, and release requests from every department.
+    if (entity === 'material-requests' && user.role !== 'general-manager') {
+      rows = rows.filter(
+        (row) =>
+          String(row.requested_by_id ?? '').trim() === user.id ||
+          // Fallback for older rows that were saved before requested_by_id was added.
+          String(row.requested_by ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase(),
+      );
     }
     if (entity === 'payments') {
       const today = new Date().toISOString().slice(0, 10);
@@ -251,18 +355,23 @@ export const resourceService = {
     if (entity === 'payments') {
       const incidentRef = String(values.incident_ref ?? '').trim();
       const jobOrderRef = String(values.job_order_ref ?? '').trim();
-      if (!jobOrderRef) throw badRequest('A completed Job Order is required to issue a final bill.');
-      const completedJob = (await repo.findRowsBy('job_orders', 'ref_code', jobOrderRef))[0];
-      if (!completedJob) throw badRequest(`Job order "${jobOrderRef}" was not found.`);
-      if (completedJob.status !== 'completed') throw conflict('The linked Job Order must be Completed before a final bill can be issued.');
-      const linkedIncidentRef = String(completedJob.incident_ref ?? '').trim();
-      if (!linkedIncidentRef) throw badRequest('The completed Job Order is not linked to an incident.');
-      if (incidentRef && incidentRef !== linkedIncidentRef) throw badRequest('The bill incident does not match the Job Order incident.');
-      const incident = (await repo.findRowsBy('incidents', 'ref_code', linkedIncidentRef))[0];
-      if (!incident) throw badRequest(`The Job Order's linked incident "${linkedIncidentRef}" was not found.`);
-      values.incident_ref = linkedIncidentRef;
-      const existingBills = await repo.findRowsBy('payments', 'job_order_ref', jobOrderRef);
-      if (existingBills.length > 0) throw conflict('A bill has already been issued for this Job Order.');
+
+      if (jobOrderRef) {
+        // Job-order-backed bill: full validation chain.
+        const completedJob = (await repo.findRowsBy('job_orders', 'ref_code', jobOrderRef))[0];
+        if (!completedJob) throw badRequest(`Job order "${jobOrderRef}" was not found.`);
+        if (completedJob.status !== 'completed') throw conflict('The linked Job Order must be Completed before a final bill can be issued.');
+        const linkedIncidentRef = String(completedJob.incident_ref ?? '').trim();
+        if (!linkedIncidentRef) throw badRequest('The completed Job Order is not linked to an incident.');
+        if (incidentRef && incidentRef !== linkedIncidentRef) throw badRequest('The bill incident does not match the Job Order incident.');
+        const incident = (await repo.findRowsBy('incidents', 'ref_code', linkedIncidentRef))[0];
+        if (!incident) throw badRequest(`The Job Order's linked incident "${linkedIncidentRef}" was not found.`);
+        values.incident_ref = linkedIncidentRef;
+        const existingBills = await repo.findRowsBy('payments', 'job_order_ref', jobOrderRef);
+        if (existingBills.length > 0) throw conflict('A bill has already been issued for this Job Order.');
+      }
+      // Item-request-backed or manual bills (no job_order_ref) skip the above chain.
+
       values.status = 'unpaid';
     }
 
@@ -365,6 +474,14 @@ export const resourceService = {
     // once. Runs before the status write so insufficient stock blocks approval.
     if (entity === 'material-requests' && (values.status === 'approved' || values.status === 'released')) {
       await settleStockDeduction(id, user);
+    }
+
+    // Receiving a purchase request adds its quantity to inventory — once.
+    if (entity === 'material-requests' && values.status === 'received') {
+      const pr = await repo.getRowById('material_requests', id);
+      if (pr?.request_type === 'purchase') {
+        await settlePurchaseReceived(id, user);
+      }
     }
 
     try {

@@ -153,6 +153,35 @@ alter table public.material_requests add column if not exists archived boolean n
 -- Set once, server-side, when an approved request's stock has been deducted
 -- from inventory — guarantees the deduction happens exactly once.
 alter table public.material_requests add column if not exists stock_deducted boolean not null default false;
+-- Unified Requests migration: material_requests now absorbs supply_requests.
+-- request_type: 'mrf'      = formal Material Request Form (linked to job order / SKU)
+--               'general'  = informal supply/general request (formerly supply_requests)
+--               'purchase' = procurement request with pricing (formerly purchase_requests)
+alter table public.material_requests add column if not exists request_type    text not null default 'mrf'
+                                     check (request_type in ('mrf','general','purchase'));
+alter table public.material_requests add column if not exists reason          text;
+alter table public.material_requests add column if not exists requested_by_id uuid;
+-- Purchase-type columns (formerly in purchase_requests)
+alter table public.material_requests add column if not exists category    text;
+alter table public.material_requests add column if not exists description text;
+alter table public.material_requests add column if not exists unit        text default 'units';
+alter table public.material_requests add column if not exists min_level   integer default 10;
+alter table public.material_requests add column if not exists weight_kg   numeric(10,2) default 0;
+alter table public.material_requests add column if not exists size        text;
+alter table public.material_requests add column if not exists color       text;
+alter table public.material_requests add column if not exists unit_price  numeric(12,2) default 0;
+alter table public.material_requests add column if not exists total_cost  numeric(12,2) default 0;
+alter table public.material_requests add column if not exists source      text default 'external';
+alter table public.material_requests add column if not exists supplier    text;
+alter table public.material_requests add column if not exists supplier_id uuid references public.suppliers(id) on delete set null;
+alter table public.material_requests add column if not exists justification text;
+-- Customer general-request fulfillment fields
+--   payment_option: how the customer intends to pay ('cash_on_delivery' or 'gcash')
+--   delivery_address: where to deliver the requested item (pre-filled from the customer's barangay)
+alter table public.material_requests add column if not exists payment_option   text;
+alter table public.material_requests add column if not exists delivery_address text;
+-- supply_requests and purchase_requests are superseded by material_requests.
+-- Kept in schema for backward compatibility; no new rows should be written here.
 alter table public.assets            add column if not exists archived boolean not null default false;
 alter table public.advisories        add column if not exists archived boolean not null default false;
 

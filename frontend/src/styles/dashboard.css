@@ -1182,29 +1182,20 @@ td strong {
   box-shadow: 0 1px 0 var(--line);
 }
 
-.inventory-materials-table table {
-  table-layout: fixed;
-  min-width: 980px;
-}
-
-.inventory-materials-table th:nth-child(1) { width: 105px; }
-.inventory-materials-table th:nth-child(2) { width: 180px; }
-.inventory-materials-table th:nth-child(3) { width: 150px; }
-.inventory-materials-table th:nth-child(4) { width: 105px; }
-.inventory-materials-table th:nth-child(5) { width: 95px; }
-.inventory-materials-table th:nth-child(6) { width: 100px; }
-.inventory-materials-table th:nth-child(7) { width: 120px; }
-.inventory-materials-table th:nth-child(8) { width: 115px; }
-.inventory-materials-table th:last-child { width: 230px; }
-
+/* ─── Shared single-row cell behaviour for the three dense operational tables ─ */
+.incidents-table td,
+.job-orders-table td,
 .inventory-materials-table td {
-  height: 58px;
-  max-height: 58px;
+  height: 54px;
+  max-height: 54px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  vertical-align: middle;
 }
 
+.incidents-table td > *:not(.action-group),
+.job-orders-table td > *:not(.action-group),
 .inventory-materials-table td > *:not(.action-group) {
   max-width: 100%;
   overflow: hidden;
@@ -1212,44 +1203,98 @@ td strong {
   text-overflow: ellipsis;
 }
 
+/* Action column layout: status select full-width, buttons in a row below */
+.incidents-table .action-group,
+.job-orders-table .action-group,
 .inventory-materials-table .action-group {
-  flex-wrap: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+}
+
+.incidents-table .action-group select.btn-action,
+.job-orders-table .action-group select.btn-action,
+.inventory-materials-table .action-group select.btn-action {
+  width: 100%;
+  padding-inline: 8px;
+  font-size: 12px;
+}
+
+.incidents-table .action-group .btn-row,
+.job-orders-table .action-group .btn-row,
+.inventory-materials-table .action-group .btn-row {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+}
+.incidents-table .action-group .btn-row .btn-action,
+.job-orders-table .action-group .btn-row .btn-action,
+.inventory-materials-table .action-group .btn-row .btn-action {
+  flex: 1 1 0;
+  justify-content: center;
+  min-width: 0;
+  padding: 7px 8px;
+  font-size: 12px;
   white-space: nowrap;
 }
+
+/* Single button (e.g. View-only) — just full width */
+.incidents-table .action-group > .btn-action,
+.job-orders-table .action-group > .btn-action,
+.inventory-materials-table .action-group > .btn-action {
+  width: 100%;
+  justify-content: center;
+  padding: 7px 8px;
+  font-size: 12px;
+}
+
+/* ── Inventory table ── 8 data cols + 1 action */
+.inventory-materials-table table {
+  table-layout: fixed;
+  min-width: 920px;
+}
+
+.inventory-materials-table th:nth-child(1) { width: 100px; } /* SKU */
+.inventory-materials-table th:nth-child(2) { width: 160px; } /* Material */
+.inventory-materials-table th:nth-child(3) { width: 130px; } /* Category */
+.inventory-materials-table th:nth-child(4) { width: 90px;  } /* Stock */
+.inventory-materials-table th:nth-child(5) { width: 80px;  } /* Weight */
+.inventory-materials-table th:nth-child(6) { width: 80px;  } /* Size */
+.inventory-materials-table th:nth-child(7) { width: 105px; } /* Unit Price */
+.inventory-materials-table th:nth-child(8) { width: 110px; } /* Status */
+.inventory-materials-table th:last-child   { width: 200px; } /* Actions */
 
 .job-orders-table table {
   table-layout: fixed;
-  min-width: 1040px;
+  min-width: 920px;
 }
 
-.job-orders-table th:nth-child(1) { width: 115px; }
-.job-orders-table th:nth-child(2) { width: 185px; }
-.job-orders-table th:nth-child(3) { width: 145px; }
-.job-orders-table th:nth-child(4) { width: 180px; }
-.job-orders-table th:nth-child(5) { width: 120px; }
-.job-orders-table th:nth-child(6) { width: 115px; }
-.job-orders-table th:nth-child(7) { width: 120px; }
-.job-orders-table th:last-child { width: 260px; }
+.job-orders-table th:nth-child(1) { width: 105px; } /* Ref */
+.job-orders-table th:nth-child(2) { width: auto;  } /* Title — flex */
+.job-orders-table th:nth-child(3) { width: 120px; } /* Team */
+.job-orders-table th:nth-child(4) { width: 140px; } /* Assigned To */
+.job-orders-table th:nth-child(5) { width: 105px; } /* Est. Cost */
+.job-orders-table th:nth-child(6) { width: 100px; } /* Schedule */
+.job-orders-table th:nth-child(7) { width: 115px; } /* Status */
+.job-orders-table th:last-child   { width: 200px; } /* Actions */
 
-.job-orders-table td {
-  height: 58px;
-  max-height: 58px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+/* Incidents use the same stable, single-line table rhythm as Inventory and JOs. */
+.incidents-table table {
+  table-layout: fixed;
+  min-width: 920px;
 }
 
-.job-orders-table td > *:not(.action-group) {
-  max-width: 100%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
+.incidents-table th:nth-child(1) { width: 100px; } /* Ref */
+.incidents-table th:nth-child(2) { width: 110px; } /* Type */
+.incidents-table th:nth-child(3) { width: auto;  } /* Description — flex */
+.incidents-table th:nth-child(4) { width: 130px; } /* Location */
+.incidents-table th:nth-child(5) { width: 90px;  } /* Urgency */
+.incidents-table th:nth-child(6) { width: 130px; } /* Status */
+.incidents-table th:last-child   { width: 200px; } /* Actions */
 
-.job-orders-table .action-group {
-  flex-wrap: nowrap;
-  white-space: nowrap;
-}
+
 
 /* ------------------------------------------------------------- Bill / invoice */
 .bill-summary {
@@ -2214,10 +2259,11 @@ td strong {
 
 .detail-row {
   display: grid;
-  grid-template-columns: 150px 1fr;
-  gap: 16px;
+  grid-template-columns: 170px 1fr;
+  gap: 12px;
   padding: 11px 0;
   border-bottom: 1px solid var(--line);
+  align-items: start;
 }
 
 .detail-row:last-child {
@@ -2230,6 +2276,8 @@ td strong {
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  line-height: 1.4;
+  padding-top: 1px;
 }
 
 .detail-row dd {
@@ -2875,47 +2923,8 @@ td strong {
   }
 }
 
-/* Incidents use the same stable, single-line table rhythm as Inventory and JOs. */
-.incidents-table table {
-  table-layout: fixed;
-  min-width: 1270px;
-}
+/* (incidents-table layout defined above with inventory and job-orders) */
 
-.incidents-table th:nth-child(1) { width: 110px; }
-.incidents-table th:nth-child(2) { width: 125px; }
-.incidents-table th:nth-child(3) { width: 250px; }
-.incidents-table th:nth-child(4) { width: 180px; }
-.incidents-table th:nth-child(5) { width: 100px; }
-.incidents-table th:nth-child(6) { width: 145px; }
-.incidents-table th:last-child { width: 360px; }
-
-.incidents-table td {
-  height: 58px;
-  max-height: 58px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  vertical-align: middle;
-}
-
-.incidents-table td > *:not(.action-group) {
-  max-width: 100%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.incidents-table .action-group {
-  display: flex;
-  flex-wrap: nowrap;
-  width: max-content;
-  white-space: nowrap;
-}
-
-.incidents-table .action-group .btn-action {
-  width: auto;
-  flex: 0 0 auto;
-}
 
 .billing-table table { table-layout: fixed; min-width: 900px; }
 .billing-table th:nth-child(1) { width: 115px; }
@@ -2948,6 +2957,53 @@ td strong {
 .payment-rejection-notice { margin: -4px 0 20px; padding: 14px 16px; border: 1px solid #f2bdca; border-radius: 13px; background: #fff3f6; }
 .payment-rejection-notice strong { color: var(--bad); font-size: 14px; }
 .payment-rejection-notice p { margin: 5px 0 0; color: #8d3850; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+
+/* Prominent rejection banner at top of billing modal */
+.billing-rejected-banner {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 22px;
+  padding: 16px 18px;
+  border: 1.5px solid #f2bdca;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fff3f6, #fff8fa);
+}
+.billing-rejected-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bad);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+}
+.billing-rejected-banner strong {
+  display: block;
+  color: var(--bad);
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.billing-rejected-banner p {
+  margin: 0;
+  color: #8d3850;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.payment-resubmit-hint {
+  margin: -4px 0 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--blue-50);
+  border: 1px solid #bcd5ff;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
 .billing-helper { color: var(--muted); padding: 10px 0; }
 .billing-customer-preview { display: grid; gap: 3px; margin: 4px 0 18px; padding: 14px 16px; border: 1px solid #bcd5ff; border-radius: 13px; background: var(--blue-50); }
 .billing-customer-preview span { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .45px; text-transform: uppercase; }
@@ -2967,6 +3023,25 @@ td strong {
 .selected-payment-profile dl > div { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 8px; }
 .selected-payment-profile dt { color: var(--muted); font-size: 11px; }
 .selected-payment-profile dd { margin: 0; overflow-wrap: anywhere; color: var(--text); font-size: 12px; font-weight: 600; }
+/* Profile card-list multi-select */
+.profile-card-list { display: grid; gap: 10px; }
+.profile-card-selectable { position: relative; cursor: pointer; transition: box-shadow .15s, border-color .15s, background .15s; margin: 0; }
+.profile-card-selectable:hover { box-shadow: 0 0 0 2px #07867d44; border-color: #07867d88; }
+.profile-card-selectable:focus { outline: none; box-shadow: 0 0 0 3px #07867d55; }
+.profile-card-active { border-color: #07867d !important; background: linear-gradient(135deg, #e0f7f3, #fff) !important; box-shadow: 0 0 0 2px #07867d55; }
+.profile-card-check { position: absolute; top: 10px; right: 12px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: #07867d; color: #fff; font-size: 12px; font-weight: 800; }
+.profile-count-badge { display: inline-flex; align-items: center; justify-content: center; margin-left: 6px; padding: 1px 8px; border-radius: 99px; background: #07867d; color: #fff; font-size: 11px; font-weight: 700; }
+/* Existing bills for selected work */
+.billing-existing-bills { margin: -4px 0 18px; padding: 12px 14px; border: 1px solid #f5d8a0; border-radius: 13px; background: #fffbf0; }
+.billing-existing-bill-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid #f0e8d0; font-size: 13px; }
+.billing-existing-bill-row:last-child { border-bottom: none; padding-bottom: 0; }
+.billing-existing-ref { font-weight: 700; color: var(--text); min-width: 90px; }
+.billing-existing-amount { font-weight: 600; color: #07867d; min-width: 80px; }
+.billing-existing-due { color: var(--muted); font-size: 12px; flex: 1; }
+.billing-existing-status { padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
+.billing-existing-status.status-paid { background: #e3f8f0; color: #16a37b; }
+.billing-existing-status.status-pending, .billing-existing-status.status-for_verification { background: #fef2e3; color: #d98a2b; }
+.billing-existing-status.status-unpaid, .billing-existing-status.status-overdue, .billing-existing-status.status-rejected { background: #fdebf2; color: #d6447a; }
 .saved-payment-list { display: grid; gap: 8px; max-height: 190px; margin-bottom: 22px; overflow-y: auto; }
 .saved-payment-list > div { display: grid; gap: 3px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); }
 .saved-payment-list strong { color: var(--text); }

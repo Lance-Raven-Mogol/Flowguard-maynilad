@@ -89,7 +89,7 @@ export interface LiveModuleProps {
   renderCreate?: (ctx: { reload: () => Promise<void> }) => ReactNode;
 }
 
-function AutocompleteInput({
+export function AutocompleteInput({
   value,
   suggestions,
   placeholder,

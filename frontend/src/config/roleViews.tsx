@@ -16,10 +16,8 @@ import {
   BillingModule,
   IncidentsModule,
   JobOrdersModule,
-  MaterialRequestsModule,
   MaterialsModule,
-  PurchaseRequestsModule,
-  SupplyRequestsModule,
+  RequestsModule,
   SuppliersModule,
   UsersPanel,
 } from './modules';
@@ -92,8 +90,8 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter }) => <BillingModule filter={filter} />,
       },
       {
-        id: 'supply-requests', label: 'Supply Requests', icon: 'package', group: 'main',
-        render: ({ filter }) => <SupplyRequestsModule filter={filter} />,
+        id: 'requests', label: 'Requests', icon: 'package', group: 'main',
+        render: ({ filter }) => <RequestsModule filter={filter} title="My Requests" />,
       },
       {
         id: 'advisories', label: 'Service Advisories', icon: 'megaphone', group: 'main',
@@ -133,12 +131,8 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter }) => <MaterialsModule filter={filter} title="Central Inventory Overview" />,
       },
       {
-        id: 'requests', label: 'Material Requests', icon: 'file-input', group: 'main',
-        render: ({ filter }) => <MaterialRequestsModule filter={filter} />,
-      },
-      {
-        id: 'purchase', label: 'Purchase Requests', icon: 'shopping-cart', group: 'main',
-        render: ({ filter }) => <PurchaseRequestsModule filter={filter} />,
+        id: 'requests', label: 'Requests', icon: 'file-input', group: 'main',
+        render: ({ filter }) => <RequestsModule filter={filter} title="All Requests" />,
       },
       {
         id: 'suppliers', label: 'Suppliers', icon: 'truck', group: 'main',
@@ -147,10 +141,6 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       {
         id: 'payments', label: 'Billing', icon: 'credit-card', group: 'main',
         render: ({ filter }) => <BillingModule filter={filter} />,
-      },
-      {
-        id: 'supply-requests', label: 'Supply Requests', icon: 'package', group: 'main',
-        render: ({ filter }) => <SupplyRequestsModule filter={filter} />,
       },
       {
         id: 'assets', label: 'Asset Lifecycle', icon: 'box', group: 'main',
@@ -181,12 +171,8 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter }) => <MaterialsModule filter={filter} />,
       },
       {
-        id: 'mrf', label: 'MRF Requests', icon: 'file-input', group: 'main',
-        render: ({ filter }) => <MaterialRequestsModule filter={filter} />,
-      },
-      {
-        id: 'purchase', label: 'Purchase Requests', icon: 'shopping-cart', group: 'main',
-        render: ({ filter }) => <PurchaseRequestsModule filter={filter} />,
+        id: 'mrf', label: 'Requests', icon: 'file-input', group: 'main',
+        render: ({ filter }) => <RequestsModule filter={filter} title="Requests" />,
       },
       {
         id: 'suppliers', label: 'Suppliers', icon: 'truck', group: 'main',
@@ -211,11 +197,11 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       overview('My Tasks'),
       {
         id: 'joborders', label: 'Job Orders', icon: 'clipboard-list', group: 'main',
-        render: ({ filter }) => <JobOrdersModule filter={filter} readOnly title="In Progress Job Orders" />,
+        render: ({ filter }) => <JobOrdersModule filter={filter} title="In Progress Job Orders" />,
       },
       {
-        id: 'materials', label: 'Material Requests', icon: 'hammer', group: 'main',
-        render: ({ filter }) => <MaterialRequestsModule filter={filter} title="My Material Requests (MRF)" />,
+        id: 'materials', label: 'Requests', icon: 'hammer', group: 'main',
+        render: ({ filter }) => <RequestsModule filter={filter} title="My Requests" />,
       },
       {
         id: 'assets', label: 'Asset Registry', icon: 'box', group: 'main',
