@@ -941,7 +941,11 @@ function MaterialReturnModal({
         const qty = Number(item.returnQty);
         const status = item.isUsable ? 'returned' : 'discarded';
 
-        // Restock inventory only for usable items
+        // Restock inventory only for usable items.
+        // The backend automatically writes a materials/update audit log entry
+        // (action:'update', movement_type:'stock_in') when we update the quantity,
+        // so we must NOT also write a leftover_log for usable items — that would
+        // produce a duplicate row in Inventory History.
         if (item.isUsable) {
           const mat = allMaterials.find((m) => String(m.sku ?? '').trim() === item.sku);
           if (mat) {
@@ -951,27 +955,29 @@ function MaterialReturnModal({
           } else {
             notify(`${item.sku} not found — skipped restocking.`, 'error');
           }
+          // No leftover_log here — the backend's automatic stock_in audit covers it.
+        } else {
+          // Discarded items have no inventory change, so no automatic backend log.
+          // Write the leftover_log so the discard is recorded in Inventory History.
+          await resourceService.create('audit-logs', {
+            entity: 'material-requests',
+            entity_id: item.id,
+            action: 'leftover_log',
+            actor,
+            actor_role: actorRole,
+            details: {
+              description: `${actor} discarded ${qty} ${item.unit} of "${item.name}" (${item.sku}) — condition: ${item.quality}`,
+              job_order_ref: jobOrderRef,
+              material_name: item.name,
+              material_sku: item.sku,
+              qty_leftover: qty,
+              unit: item.unit,
+              condition: item.quality,
+              leftover_status: status,
+              restocked: false,
+            },
+          });
         }
-
-        // Write audit log entry regardless of usability
-        await resourceService.create('audit-logs', {
-          entity: 'material-requests',
-          entity_id: item.id,
-          action: 'leftover_log',
-          actor,
-          actor_role: actorRole,
-          details: {
-            description: `${actor} logged ${qty} ${item.unit} of "${item.name}" (${item.sku}) as leftover — condition: ${item.quality}, status: ${status}`,
-            job_order_ref: jobOrderRef,
-            material_name: item.name,
-            material_sku: item.sku,
-            qty_leftover: qty,
-            unit: item.unit,
-            condition: item.quality,
-            leftover_status: status,
-            restocked: item.isUsable,
-          },
-        });
       }
 
       const restocked = active.filter((r) => r.isUsable).length;
@@ -1427,6 +1433,15 @@ function RestockBtn({ c }: { c: RowActionCtx }) {
   );
 }
 
+/** Derive a display colour from a material's own `color` field.
+ *  If the value is a valid CSS colour (e.g. "blue", "#ff0000") it is used as-is.
+ *  Otherwise the text is hashed to a stable hue so any string produces a colour. */
+function materialColor(colorField: unknown): string | undefined {
+  const raw = String(colorField ?? '').trim();
+  if (!raw) return undefined;
+  return categoryColor(raw, raw); // use raw as both seed and explicit — handles css names + free text
+}
+
 function categoryColor(category: unknown, explicitColor?: unknown): string {
   const supplied = String(explicitColor ?? '').trim();
   if (/^(#[0-9a-f]{3,8}|[a-z]+|hsl\(.+\)|rgb\(.+\))$/i.test(supplied)) return supplied;
@@ -1561,8 +1576,13 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
 
   const columns: ModuleColumn[] = [
     { header: 'SKU', cell: (r) => ({ text: String(r.sku), strong: true }) },
-    { header: 'Material', cell: (r) => String(r.name ?? '') },
-    { header: 'Category', cell: (r) => ({ text: String(r.category ?? 'Uncategorized'), swatch: categoryColor(r.category, r.color) }) },
+    { header: 'Material', cell: (r) => {
+      const mc = materialColor(r.color);
+      return mc
+        ? { text: String(r.name ?? ''), swatch: mc }
+        : String(r.name ?? '');
+    } },
+    { header: 'Category', cell: (r) => ({ text: String(r.category ?? 'Uncategorized'), swatch: categoryColor(r.category) }) },
     { header: 'Stock', cell: (r) => `${r.quantity ?? 0} ${r.unit ?? ''}`.trim() },
     { header: 'Weight', cell: (r) => r.weight_kg ? `${r.weight_kg} kg` : '—' },
     { header: 'Size', cell: (r) => String(r.size ?? '—') },
@@ -1646,6 +1666,7 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
         .map((category) => ({
           id: `category:${category}`,
           label: category,
+          color: categoryColor(category),
           hint: `${rows.filter((row) => String(row.category ?? 'Uncategorized') === category).reduce((sum, row) => sum + Number(row.quantity ?? 0), 0)} units`,
           matches: (row: EntityRow) => String(row.category ?? 'Uncategorized') === category,
         }))}

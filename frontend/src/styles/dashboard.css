@@ -1074,6 +1074,7 @@ td strong {
 .quick-filter-bar button { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; white-space: nowrap; border: 1px solid var(--line); border-radius: 999px; padding: 8px 13px; background: var(--panel); color: var(--text-soft); cursor: pointer; font: inherit; font-size: 12px; }
 .quick-filter-bar button strong { color: var(--blue); font-size: 11px; }
 .quick-filter-bar button:hover, .quick-filter-bar button.active { color: var(--blue); border-color: var(--blue); background: var(--blue-50); }
+.qf-dot { width: 9px; height: 9px; flex: none; border-radius: 50%; border: 1.5px solid rgba(0,0,0,.12); display: inline-block; }
 
 .inventory-tabs {
   display: flex;

@@ -74,7 +74,7 @@ export interface LiveModuleProps {
   /** Arbitrary per-row visibility predicate (e.g. "assigned to me"). */
   rowFilter?: (row: EntityRow) => boolean;
   metrics?: (rows: EntityRow[]) => Metric[];
-  quickFilters?: (rows: EntityRow[]) => { id: string; label: string; hint?: string; matches: (row: EntityRow) => boolean }[];
+  quickFilters?: (rows: EntityRow[]) => { id: string; label: string; hint?: string; color?: string; matches: (row: EntityRow) => boolean }[];
   /** Normalize or derive values immediately before create/update. */
   prepareValues?: (values: Record<string, unknown>) => Record<string, unknown>;
   actions?: (ctx: RowActionCtx) => ReactNode;
@@ -443,6 +443,7 @@ export function LiveModule({
           <button type="button" className={quickFilter === 'all' ? 'active' : ''} onClick={() => setQuickFilter('all')}>All Categories</button>
           {quickFilterItems.map((item) => (
             <button key={item.id} type="button" className={quickFilter === item.id ? 'active' : ''} onClick={() => setQuickFilter(item.id)}>
+              {item.color && <span className="qf-dot" style={{ background: item.color }} />}
               <span>{item.label}</span>{item.hint && <strong>{item.hint}</strong>}
             </button>
           ))}
