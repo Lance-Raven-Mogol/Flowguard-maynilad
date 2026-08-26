@@ -53,7 +53,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
 
   'job-orders': {
     table: 'job_orders',
-    writeRoles: ['technical-team', 'contractor'],
+    writeRoles: ['technical-team'],
     allowed: [
       'incident_ref', 'title', 'scope', 'team', 'assigned_to',
       'team_name', 'team_leader', 'team_members',
@@ -67,7 +67,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
 
   materials: {
     table: 'materials',
-    writeRoles: ['inventory-officer'],
+    writeRoles: ['inventory-officer', 'technical-team'],
     allowed: ['sku', 'name', 'category', 'description', 'quantity', 'unit', 'unit_price', 'supplier', 'supplier_id', 'source', 'min_level', 'status', 'archived', 'weight_kg', 'size', 'color'],
     required: ['name'],
     numeric: ['quantity', 'unit_price', 'min_level', 'weight_kg'],
@@ -128,7 +128,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
 
   'audit-logs': {
     table: 'audit_logs',
-    writeRoles: [],
+    writeRoles: ['technical-team', 'inventory-officer'],
     allowed: ['entity', 'entity_id', 'action', 'actor', 'actor_role', 'details', 'archived'],
     required: ['entity', 'action'],
   },

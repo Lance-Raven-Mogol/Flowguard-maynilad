@@ -1,5 +1,5 @@
-/* ============================================================================
-   FlowGuard — Management System Theme  ·  "God Mode" Blue Palette
+﻿/* ============================================================================
+   FlowGuard â€” Management System Theme  Â·  "God Mode" Blue Palette
    A cohesive, premium blue design system. Every selector the React components
    rely on is preserved; only the visual layer is upgraded.
    ========================================================================== */
@@ -707,7 +707,7 @@ input {
   gap: 10px;
 }
 
-/* Archive button — subtle danger tint. */
+/* Archive button â€” subtle danger tint. */
 .btn-action.btn-archive:hover {
   border-color: #f6c6d4;
   color: var(--bad);
@@ -1182,7 +1182,7 @@ td strong {
   box-shadow: 0 1px 0 var(--line);
 }
 
-/* ─── Shared single-row cell behaviour for the three dense operational tables ─ */
+/* â”€â”€â”€ Shared single-row cell behaviour for the three dense operational tables â”€ */
 .incidents-table td,
 .job-orders-table td,
 .inventory-materials-table td {
@@ -1240,7 +1240,7 @@ td strong {
   white-space: nowrap;
 }
 
-/* Single button (e.g. View-only) — just full width */
+/* Single button (e.g. View-only) â€” just full width */
 .incidents-table .action-group > .btn-action,
 .job-orders-table .action-group > .btn-action,
 .inventory-materials-table .action-group > .btn-action {
@@ -1250,7 +1250,7 @@ td strong {
   font-size: 12px;
 }
 
-/* ── Inventory table ── 8 data cols + 1 action */
+/* â”€â”€ Inventory table â”€â”€ 8 data cols + 1 action */
 .inventory-materials-table table {
   table-layout: fixed;
   min-width: 920px;
@@ -1272,7 +1272,7 @@ td strong {
 }
 
 .job-orders-table th:nth-child(1) { width: 105px; } /* Ref */
-.job-orders-table th:nth-child(2) { width: auto;  } /* Title — flex */
+.job-orders-table th:nth-child(2) { width: auto;  } /* Title â€” flex */
 .job-orders-table th:nth-child(3) { width: 120px; } /* Team */
 .job-orders-table th:nth-child(4) { width: 140px; } /* Assigned To */
 .job-orders-table th:nth-child(5) { width: 105px; } /* Est. Cost */
@@ -1288,7 +1288,7 @@ td strong {
 
 .incidents-table th:nth-child(1) { width: 100px; } /* Ref */
 .incidents-table th:nth-child(2) { width: 110px; } /* Type */
-.incidents-table th:nth-child(3) { width: auto;  } /* Description — flex */
+.incidents-table th:nth-child(3) { width: auto;  } /* Description â€” flex */
 .incidents-table th:nth-child(4) { width: 130px; } /* Location */
 .incidents-table th:nth-child(5) { width: 90px;  } /* Urgency */
 .incidents-table th:nth-child(6) { width: 130px; } /* Status */
@@ -1615,7 +1615,7 @@ td strong {
   to   { opacity: 1; }
 }
 
-/* Card — mirrors the auth form panel look */
+/* Card â€” mirrors the auth form panel look */
 .otp-modal-card {
   width: 100%;
   max-width: 400px;
@@ -1660,7 +1660,7 @@ td strong {
 /* .otp-actions, .otp-cooldown, .otp-link-btn are all defined in   */
 /* auth.css and available globally via index.css import.           */
 
-/* Primary button inside the modal — mirrors .primary-submit in auth.css */
+/* Primary button inside the modal â€” mirrors .primary-submit in auth.css */
 .otp-modal-card .primary-submit {
   margin-top: 4px;
   width: 100%;
@@ -2177,9 +2177,16 @@ td strong {
 
 .modal-body {
   padding: 24px;
+  overflow-x: hidden;
   overflow-y: auto;
   flex: 1 1 auto;
   -webkit-overflow-scrolling: touch;
+}
+
+.modal-body p {
+  max-width: 100%;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .modal-footer {
@@ -2315,7 +2322,7 @@ td strong {
   margin-top: 0;
 }
 
-/* Checkbox list — team-member picker in the job-order assignment form. */
+/* Checkbox list â€” team-member picker in the job-order assignment form. */
 .checkbox-list {
   display: flex;
   flex-direction: column;
@@ -2359,7 +2366,7 @@ td strong {
   cursor: pointer;
 }
 
-/* Team-member picker — clickable cards (no checkboxes) in the job-order form. */
+/* Team-member picker â€” clickable cards (no checkboxes) in the job-order form. */
 .member-list {
   display: flex;
   flex-direction: column;
@@ -2426,7 +2433,7 @@ td strong {
   background: var(--blue, #2a6fb0);
 }
 
-/* Material combobox — searchable inventory picker in the MRF modal. */
+/* Material combobox â€” searchable inventory picker in the MRF modal. */
 .combobox {
   position: relative;
 }
@@ -3294,7 +3301,7 @@ input:checked + .slider:before {
 
 /* ============================================================ Installation Guide Carousel */
 
-/* Backdrop — sits above the 2FA modal */
+/* Backdrop â€” sits above the 2FA modal */
 .guide-backdrop {
   position: fixed;
   inset: 0;
@@ -3506,7 +3513,7 @@ input:checked + .slider:before {
   border-color: transparent;
 }
 
-/* ── Installation Guide trigger button inside 2FA modal step 1 ── */
+/* â”€â”€ Installation Guide trigger button inside 2FA modal step 1 â”€â”€ */
 .install-guide-btn {
   display: inline-flex;
   align-items: center;
@@ -3797,3 +3804,279 @@ input:checked + .slider:before {
   width: 13px;
   height: 13px;
 }
+
+
+/* ====================================================== Log Leftover Materials modal */
+
+.return-materials-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /* Ensure nothing inside can blow out the modal width */
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* ── Empty state ── */
+.return-empty-state {
+  padding: 22px 20px;
+  border: 1.5px dashed var(--line-strong);
+  border-radius: 14px;
+  background: var(--panel-soft);
+  text-align: center;
+}
+.return-empty-state p     { margin: 0; font-size: 14px; color: var(--text); }
+.return-empty-state small { display: block; margin-top: 5px; font-size: 12px; color: var(--muted); }
+
+/* ── Card ── */
+.return-material-card {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--panel);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.return-material-card:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(47,107,255,.07);
+}
+.return-material-card.is-restock { border-color: #22c487; }
+.return-material-card.is-discard { border-color: #e25577; }
+
+/* ── Card header ── */
+.return-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 16px;
+  background: linear-gradient(135deg, var(--blue-50, #eff4ff), var(--panel, #fff));
+  border-bottom: 1px solid var(--line);
+  border-radius: 12px 12px 0 0;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.return-card-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 0;
+  overflow: hidden;
+}
+.return-card-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.return-card-badge {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--muted);
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+.return-card-badge strong { color: var(--text); font-weight: 700; }
+/* Already-logged badge — amber tint */
+.return-card-badge.is-logged {
+  background: rgba(251,191,36,.12);
+  border-color: rgba(251,191,36,.4);
+  color: #92620a;
+}
+.return-card-badge.is-logged strong { color: #92620a; }
+/* Remaining badge — green when > 0, grey when 0 */
+.return-card-badge.is-remaining {
+  background: rgba(34,196,135,.1);
+  border-color: rgba(34,196,135,.35);
+  color: #166946;
+}
+.return-card-badge.is-remaining strong { color: #166946; }
+.return-card-badge.is-zero {
+  background: var(--panel-soft);
+  border-color: var(--line);
+  color: var(--muted);
+}
+/* Container that holds multiple badges */
+.return-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: none;
+  align-items: center;
+}
+/* Fully-logged card: dimmed + no pointer interaction on input */
+.return-material-card.is-fully-logged {
+  opacity: 0.65;
+}
+.return-qty-hint.is-done {
+  font-size: 11px;
+  font-style: italic;
+  color: #22c487;
+}
+
+/* ── Card body ── */
+.return-card-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Qty row: number input + unit suffix */
+.return-qty-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.return-qty-row label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.return-qty-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.return-qty-input-wrap input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 52px 10px 12px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--text);
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.return-qty-input-wrap input:focus {
+  border-color: var(--blue);
+  box-shadow: var(--ring);
+}
+.return-qty-input-wrap.is-over input {
+  border-color: #e25577;
+  box-shadow: 0 0 0 2px rgba(226,85,119,.15);
+}
+.return-qty-unit {
+  position: absolute;
+  right: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.return-qty-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+.return-qty-error {
+  font-size: 11px;
+  font-weight: 600;
+  color: #c0294e;
+}
+
+/* Condition + Return to Inventory — side by side, each full-height */
+.return-toggles-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  min-width: 0;
+  align-items: start;
+}
+@media (max-width: 500px) {
+  .return-toggles-row { grid-template-columns: 1fr; }
+}
+
+.return-toggle-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.return-toggle-group label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* 3-way condition toggle */
+.return-quality-toggle {
+  display: flex;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 10px;
+  overflow: hidden;
+  min-width: 0;
+}
+.return-quality-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 10px 4px;
+  border: 0;
+  background: #fff;
+  color: var(--muted);
+  font: 600 12.5px/1 inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.return-quality-btn + .return-quality-btn { border-left: 1.5px solid var(--line-strong); }
+.return-quality-btn.is-good    { background: #e3f8f0; color: #12916e; }
+.return-quality-btn.is-fair    { background: #fef3cd; color: #92580a; }
+.return-quality-btn.is-damaged { background: #fdebf2; color: #c0294e; }
+
+/* 2-way usable toggle */
+.return-usable-toggle {
+  display: flex;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 10px;
+  overflow: hidden;
+  min-width: 0;
+}
+.return-usable-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 10px 4px;
+  border: 0;
+  background: #fff;
+  color: var(--muted);
+  font: 600 12.5px/1 inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.return-usable-btn + .return-usable-btn { border-left: 1.5px solid var(--line-strong); }
+.return-usable-btn.is-yes { background: #e3f8f0; color: #12916e; }
+.return-usable-btn.is-no  { background: #fdebf2; color: #c0294e; }
+
+/* Outcome strip at bottom of card body */
+.return-card-outcome {
+  padding: 10px 13px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  word-break: break-word;
+  min-width: 0;
+}
+.return-card-outcome.is-restock { background: #e3f8f0; color: #12916e; }
+.return-card-outcome.is-discard { background: #fdebf2; color: #c0294e; }

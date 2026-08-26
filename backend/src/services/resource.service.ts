@@ -331,11 +331,6 @@ export const resourceService = {
     const def = getDef(entity);
     if (!canWrite(def, user.role)) throw forbidden('You do not have permission to create this record.');
 
-    // Contractors can update job orders (status) but cannot create new ones.
-    if (entity === 'job-orders' && user.role === 'contractor') {
-      throw forbidden('Contractors cannot create job orders. Job orders are assigned by the Technical Team or General Manager.');
-    }
-
     const values = sanitize(def, body);
 
     // A customer's complaint is always attributed to them (prevents spoofing

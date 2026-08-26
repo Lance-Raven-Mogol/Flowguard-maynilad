@@ -801,6 +801,340 @@ function JobOrderDetail({ row }: { row: EntityRow }) {
   );
 }
 
+type ReturnQuality = 'good' | 'fair' | 'damaged';
+
+interface ReturnRow {
+  id: string;
+  sku: string;
+  name: string;
+  released: number;
+  alreadyLogged: number;   // total qty already logged (returned + discarded) in previous submissions
+  remaining: number;       // released - alreadyLogged — the true max for this submission
+  unit: string;
+  returnQty: string;
+  quality: ReturnQuality;
+  isUsable: boolean;
+}
+
+/**
+ * Modal for logging leftover materials after a completed job order.
+ * - Fetches released MRF rows fresh from the API (never stale).
+ * - Only shows items linked to an inventory SKU (custom/unnamed materials excluded).
+ * - Qty is hard-capped to the released amount on every keystroke.
+ * - Writes one audit-log entry per item on submit.
+ * - Usable items are added back to inventory; damaged/unusable are logged only.
+ */
+function MaterialReturnModal({
+  jobOrderRef,
+  onClose,
+  onDone,
+}: {
+  jobOrderRef: string;
+  onClose: () => void;
+  onDone: () => Promise<void>;
+}) {
+  const { user } = useAuth();
+  const { notify } = useToast();
+
+  const [rows, setRows] = useState<ReturnRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    Promise.all([
+      resourceService.list('material-requests'),
+      resourceService.list('materials'),
+      resourceService.list('audit-logs'),
+    ])
+      .then(([mrfs, materials, auditLogs]) => {
+        if (!alive) return;
+        const ref = jobOrderRef.trim().toUpperCase();
+
+        // Sum previously logged qty per SKU for this job order
+        const loggedQtyBySku: Record<string, number> = {};
+        auditLogs
+          .filter((l) => l.action === 'leftover_log')
+          .forEach((l) => {
+            const d = (l.details ?? {}) as Record<string, unknown>;
+            if (String(d.job_order_ref ?? '').trim().toUpperCase() !== ref) return;
+            const sku = String(d.material_sku ?? '').trim();
+            if (!sku) return;
+            loggedQtyBySku[sku] = (loggedQtyBySku[sku] ?? 0) + Number(d.qty_leftover ?? 0);
+          });
+
+        const linked = mrfs.filter((r) => {
+          if (String(r.job_order_ref ?? '').trim().toUpperCase() !== ref) return false;
+          if (String(r.status ?? '') !== 'released') return false;
+          const rt = String(r.request_type ?? '').trim().toLowerCase();
+          if (rt !== '' && rt !== 'mrf') return false;
+          const sku = String(r.material_sku ?? '').trim();
+          if (!sku) return false;
+          return materials.some((m) => String(m.sku ?? '').trim() === sku);
+        });
+
+        setRows(linked.map((r) => {
+          const sku = String(r.material_sku ?? '').trim();
+          const mat = materials.find((m) => String(m.sku ?? '').trim() === sku);
+          const released = Number(r.quantity ?? 0);
+          const alreadyLogged = loggedQtyBySku[sku] ?? 0;
+          const remaining = Math.max(0, released - alreadyLogged);
+          return {
+            id: String(r.id),
+            sku,
+            name: String(r.material_name ?? (sku || 'Unknown')),
+            released,
+            alreadyLogged,
+            remaining,
+            unit: String(r.unit ?? mat?.unit ?? 'units'),
+            returnQty: '',
+            quality: 'good' as ReturnQuality,
+            isUsable: true,
+          };
+        }));
+      })
+      .catch(() => alive && notify('Could not load released materials.', 'error'))
+      .finally(() => alive && setLoading(false));
+    return () => { alive = false; };
+  }, [jobOrderRef]);
+
+  const setRow = <K extends keyof ReturnRow>(id: string, field: K, value: ReturnRow[K]) =>
+    setRows((prev) => prev.map((r) => r.id === id ? { ...r, [field]: value } : r));
+
+  const handleQtyChange = (id: string, raw: string) => {
+    const row = rows.find((r) => r.id === id);
+    if (!row) return;
+    const parsed = parseFloat(raw);
+    if (!Number.isNaN(parsed) && parsed > row.remaining) {
+      setRow(id, 'returnQty', String(row.remaining));
+    } else {
+      setRow(id, 'returnQty', raw);
+    }
+  };
+
+  const setQuality = (id: string, quality: ReturnQuality) =>
+    setRows((prev) => prev.map((r) =>
+      r.id === id ? { ...r, quality, isUsable: quality !== 'damaged' } : r,
+    ));
+
+  const save = async () => {
+    const active = rows.filter((r) => Number(r.returnQty) > 0);
+    if (active.length === 0) {
+      notify('Enter a leftover quantity for at least one item.', 'error');
+      return;
+    }
+    // Guard: never log more than the remaining (released − already logged) per item
+    const overLimitItem = active.find((r) => Number(r.returnQty) > r.remaining);
+    if (overLimitItem) {
+      notify(`Qty for "${overLimitItem.name}" exceeds the remaining ${overLimitItem.remaining} ${overLimitItem.unit}.`, 'error');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const allMaterials = await resourceService.list('materials');
+      const actor = user!.fullName;
+      const actorRole = user!.role;
+
+      for (const item of active) {
+        const qty = Number(item.returnQty);
+        const status = item.isUsable ? 'returned' : 'discarded';
+
+        // Restock inventory only for usable items
+        if (item.isUsable) {
+          const mat = allMaterials.find((m) => String(m.sku ?? '').trim() === item.sku);
+          if (mat) {
+            await resourceService.update('materials', String(mat.id), {
+              quantity: Number(mat.quantity ?? 0) + qty,
+            });
+          } else {
+            notify(`${item.sku} not found — skipped restocking.`, 'error');
+          }
+        }
+
+        // Write audit log entry regardless of usability
+        await resourceService.create('audit-logs', {
+          entity: 'material-requests',
+          entity_id: item.id,
+          action: 'leftover_log',
+          actor,
+          actor_role: actorRole,
+          details: {
+            description: `${actor} logged ${qty} ${item.unit} of "${item.name}" (${item.sku}) as leftover — condition: ${item.quality}, status: ${status}`,
+            job_order_ref: jobOrderRef,
+            material_name: item.name,
+            material_sku: item.sku,
+            qty_leftover: qty,
+            unit: item.unit,
+            condition: item.quality,
+            leftover_status: status,
+            restocked: item.isUsable,
+          },
+        });
+      }
+
+      const restocked = active.filter((r) => r.isUsable).length;
+      const discarded = active.filter((r) => !r.isUsable).length;
+      const parts: string[] = [];
+      if (restocked > 0) parts.push(`${restocked} item(s) returned to inventory`);
+      if (discarded > 0) parts.push(`${discarded} item(s) logged as discarded`);
+      notify(parts.join(', ') + '.');
+
+      await onDone();
+      onClose();
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not submit leftover log.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const qualityOptions: { value: ReturnQuality; label: string; cls: string }[] = [
+    { value: 'good',    label: 'Good',    cls: 'is-good' },
+    { value: 'fair',    label: 'Fair',    cls: 'is-fair' },
+    { value: 'damaged', label: 'Damaged', cls: 'is-damaged' },
+  ];
+
+  return (
+    <Modal
+      title="Log Leftover Materials"
+      open
+      wide
+      onClose={onClose}
+      onSubmit={rows.length > 0 ? save : undefined}
+      submitText="Submit Leftover Log"
+      submitting={saving}
+    >
+      <p style={{ margin: '0 0 20px', color: 'var(--muted)', fontSize: 13, lineHeight: 1.6 }}>
+        Rate the condition of each leftover item. <strong>Usable</strong> items will be restocked.
+      </p>
+
+      {loading ? (
+        <p style={{ color: 'var(--muted)', padding: '8px 0' }}>Loading released materials…</p>
+      ) : rows.length === 0 ? (
+        <div className="return-empty-state">
+          <p>No inventory materials were released for <strong>{jobOrderRef}</strong>.</p>
+          <small>Only MRF items with an inventory SKU that have been released appear here.</small>
+        </div>
+      ) : (
+        <div className="return-materials-list">
+          {rows.map((r) => {
+            const qty = Number(r.returnQty);
+            const hasQty = qty > 0;
+            const overLimit = qty > r.remaining;
+            const fullyLogged = r.remaining === 0;
+            return (
+              <div
+                key={r.id}
+                className={`return-material-card${hasQty && !overLimit ? (r.isUsable ? ' is-restock' : ' is-discard') : ''}${fullyLogged ? ' is-fully-logged' : ''}`}
+              >
+                {/* Header */}
+                <div className="return-card-header">
+                  <div className="return-card-identity">
+                    <span className="combobox-sku">{r.sku}</span>
+                    <span className="return-card-name">{r.name}</span>
+                  </div>
+                  <div className="return-card-badges">
+                    <span className="return-card-badge">
+                      Released: <strong>{r.released} {r.unit}</strong>
+                    </span>
+                    {r.alreadyLogged > 0 && (
+                      <span className="return-card-badge is-logged">
+                        Already Logged: <strong>{r.alreadyLogged} {r.unit}</strong>
+                      </span>
+                    )}
+                    <span className={`return-card-badge${r.remaining === 0 ? ' is-zero' : ' is-remaining'}`}>
+                      Remaining: <strong>{r.remaining} {r.unit}</strong>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Body */}
+                <div className="return-card-body">
+
+                  {/* Qty Leftover */}
+                  <div className="return-qty-row">
+                    <label>Qty Leftover</label>
+                    <div className={`return-qty-input-wrap${overLimit ? ' is-over' : ''}`}>
+                      <input
+                        type="number"
+                        min="0"
+                        max={r.remaining}
+                        step="any"
+                        placeholder="0"
+                        disabled={fullyLogged}
+                        value={r.returnQty}
+                        onChange={(e) => handleQtyChange(r.id, e.target.value)}
+                      />
+                      <span className="return-qty-unit">{r.unit}</span>
+                    </div>
+                    {fullyLogged
+                      ? <span className="return-qty-hint is-done">All previously logged</span>
+                      : overLimit
+                      ? <span className="return-qty-error">Cannot exceed {r.remaining} {r.unit}</span>
+                      : <span className="return-qty-hint">Max: {r.remaining} {r.unit}</span>
+                    }
+                  </div>
+
+                  {/* Condition + Return to Inventory */}
+                  <div className="return-toggles-row">
+                    <div className="return-toggle-group">
+                      <label>Condition</label>
+                      <div className="return-quality-toggle">
+                        {qualityOptions.map((opt) => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            className={`return-quality-btn${r.quality === opt.value ? ` ${opt.cls}` : ''}`}
+                            onClick={() => setQuality(r.id, opt.value)}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="return-toggle-group">
+                      <label>Return to Inventory?</label>
+                      <div className="return-usable-toggle">
+                        <button
+                          type="button"
+                          className={`return-usable-btn${r.isUsable ? ' is-yes' : ''}`}
+                          onClick={() => setRow(r.id, 'isUsable', true)}
+                        >
+                          ✓ Yes
+                        </button>
+                        <button
+                          type="button"
+                          className={`return-usable-btn${!r.isUsable ? ' is-no' : ''}`}
+                          onClick={() => setRow(r.id, 'isUsable', false)}
+                        >
+                          ✕ No
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Outcome strip */}
+                  {hasQty && !overLimit && (
+                    <div className={`return-card-outcome${r.isUsable ? ' is-restock' : ' is-discard'}`}>
+                      {r.isUsable
+                        ? `✓ ${qty} ${r.unit} of "${r.name}" (${r.quality}) will be returned to inventory`
+                        : `✕ ${qty} ${r.unit} of "${r.name}" (${r.quality}) will be logged as discarded`}
+                    </div>
+                  )}
+
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 /**
  * "View" action for a job order. Shows the full detail and — for anyone who can
  * file material requests (technical team, inventory, GM) — a "Request Materials"
@@ -808,10 +1142,17 @@ function JobOrderDetail({ row }: { row: EntityRow }) {
  */
 function JobOrderViewButton({ row, onReload }: { row: EntityRow; onReload: () => Promise<void> }) {
   const { user } = useAuth();
-  const canRequest = WRITE['material-requests'].includes(user!.role);
+  const role = user!.role;
+  const canRequest = WRITE['material-requests'].includes(role);
   const isActive = ['pending', 'in_progress'].includes(String(row.status));
+  const isCompleted = String(row.status) === 'completed';
+  const isGM = role === 'general-manager';
+  const isLeader = String(row.team_leader ?? '').toLowerCase() === user!.fullName.toLowerCase();
+  const canReturn = isCompleted && (isGM || isLeader);
+
   const [open, setOpen] = useState(false);
   const [reqOpen, setReqOpen] = useState(false);
+  const [returnOpen, setReturnOpen] = useState(false);
   return (
     <>
       <button className="btn-action" onClick={() => setOpen(true)}>
@@ -825,6 +1166,15 @@ function JobOrderViewButton({ row, onReload }: { row: EntityRow; onReload: () =>
               <ActionButton label="Request Materials" icon="hammer" onClick={() => setReqOpen(true)} />
             </div>
           )}
+          {canReturn && (
+            <div style={{ marginTop: 12 }}>
+              <ActionButton
+                label="Log Leftovers"
+                icon="package"
+                onClick={() => setReturnOpen(true)}
+              />
+            </div>
+          )}
         </Modal>
       )}
       {reqOpen && (
@@ -832,6 +1182,13 @@ function JobOrderViewButton({ row, onReload }: { row: EntityRow; onReload: () =>
           lockedJobOrderRef={String(row.ref_code)}
           onClose={() => setReqOpen(false)}
           onCreated={onReload}
+        />
+      )}
+      {returnOpen && (
+        <MaterialReturnModal
+          jobOrderRef={String(row.ref_code)}
+          onClose={() => setReturnOpen(false)}
+          onDone={onReload}
         />
       )}
     </>
@@ -853,8 +1210,6 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
   const canAssign = role === 'general-manager' || role === 'technical-team';
   const isTechTeam = role === 'technical-team';
   const isContractor = role === 'contractor';
-  // Contractor can update status on assigned jobs but cannot create/edit/delete.
-  const contractorCanUpdate = isContractor && !readOnly;
   // Technical-team members only see the job orders their crew is assigned to.
   // Contractors only see job orders assigned to them (by their fullName).
   const me = user!.fullName.toLowerCase();
@@ -908,7 +1263,8 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
    */
   const techTeamActions = (c: RowActionCtx) => {
     const isLeader = String(c.row.team_leader ?? '').toLowerCase() === me;
-    const canChangeStatus = isLeader && !c.archived && c.row.status === 'in_progress';
+    const isGM = role === 'general-manager';
+    const canChangeStatus = (isLeader || isGM) && !c.archived && c.row.status === 'in_progress';
     return (
       <>
         {canChangeStatus && (
@@ -927,25 +1283,12 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
     );
   };
 
-  /** Contractor: can update status on their assigned job orders, view only otherwise. */
-  const contractorActions = (c: RowActionCtx) => {
-    const canChangeStatus = contractorCanUpdate && !c.archived && ['pending', 'in_progress'].includes(String(c.row.status));
-    return (
-      <>
-        {canChangeStatus && (
-          <StatusSelect
-            value={String(c.row.status)}
-            options={JOB_STATUS_TECH}
-            disabled={c.busy}
-            onChange={(s) => c.update({ status: s })}
-          />
-        )}
-        <div className="btn-row">
-          {viewAction(c)}
-        </div>
-      </>
-    );
-  };
+  /** Contractor: view only — no status changes (only the team leader / GM can change status). */
+  const contractorActions = (c: RowActionCtx) => (
+    <div className="btn-row">
+      {viewAction(c)}
+    </div>
+  );
 
   return (
     <LiveModule
@@ -1114,10 +1457,15 @@ function InventoryHistory({ filter }: ModuleProps) {
       .then((rows) => {
         if (!active) return;
         setLogs(rows.filter((row) => {
-          if (row.entity !== 'materials') return false;
-          const details = (row.details ?? {}) as Record<string, unknown>;
-          return row.action === 'stock_movement' || row.action === 'create' ||
-            (row.action === 'update' && ('quantity_change' in details || 'quantity' in details));
+          // Standard material stock movements
+          if (row.entity === 'materials') {
+            const details = (row.details ?? {}) as Record<string, unknown>;
+            return row.action === 'stock_movement' || row.action === 'create' ||
+              (row.action === 'update' && ('quantity_change' in details || 'quantity' in details));
+          }
+          // Leftover log entries (entity = material-requests, action = leftover_log)
+          if (row.action === 'leftover_log') return true;
+          return false;
         }));
       })
       .catch((cause) => {
@@ -1132,6 +1480,34 @@ function InventoryHistory({ filter }: ModuleProps) {
     columns: ['Date & Time', 'Material', 'Movement', 'Change', 'Previous', 'New Stock', 'Supplier / Reference', 'Performed By'],
     rows: logs.map((row) => {
       const details = (row.details ?? {}) as Record<string, unknown>;
+
+      // ── Leftover log entries ──────────────────────────────────────────
+      if (row.action === 'leftover_log') {
+        const qty    = Number(details.qty_leftover ?? 0);
+        const unit   = String(details.unit ?? '').trim();
+        const status = String(details.leftover_status ?? 'discarded');
+        const restocked = details.restocked === true;
+        const movLabel  = restocked ? 'Returned' : 'Discarded';
+        const when = row.created_at ? new Date(String(row.created_at)) : null;
+        const timestamp = when && !Number.isNaN(when.getTime())
+          ? when.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })
+          : '—';
+        return {
+          id: String(row.id),
+          cells: [
+            { text: timestamp },
+            { text: String(details.material_name ?? details.material_sku ?? 'Unknown'), strong: true },
+            { text: movLabel, badge: (restocked ? 'low' : 'high') as BadgeTone },
+            { text: restocked ? `+${qty}${unit ? ` ${unit}` : ''}` : `${qty}${unit ? ` ${unit}` : ''}`, strong: true },
+            { text: '—' },
+            { text: '—' },
+            { text: `JO: ${String(details.job_order_ref ?? '—')} · ${titleCase(status)}` },
+            { text: String(row.actor ?? titleCase(row.actor_role ?? 'System')) },
+          ],
+        };
+      }
+
+      // ── Standard material stock movements ────────────────────────────
       const previous = details.previous_quantity;
       const next = details.new_quantity ?? details.quantity;
       const rawChange = details.quantity_change;
@@ -1139,7 +1515,11 @@ function InventoryHistory({ filter }: ModuleProps) {
         ? Number(next) - Number(previous)
         : Number(rawChange ?? 0);
       const movement = String(details.movement_type ?? (row.action === 'create' ? 'initial_stock' : 'adjustment'));
-      const movementLabel = movement === 'stock_out' ? 'Stock Out' : movement === 'initial_stock' ? 'Initial Stock' : change > 0 ? 'Stock In' : change < 0 ? 'Stock Out' : 'Adjustment';
+      const movementLabel =
+        movement === 'stock_out'     ? 'Released' :
+        movement === 'initial_stock' ? 'Initial'  :
+        movement === 'stock_in'      ? 'Restocked' :
+        change > 0 ? 'Restocked' : change < 0 ? 'Released' : 'Adjusted';
       const unit = String(details.unit ?? '').trim();
       const formatQty = (value: unknown) => value === undefined || value === null ? '—' : `${Number(value)}${unit ? ` ${unit}` : ''}`;
       const when = row.created_at ? new Date(String(row.created_at)) : null;
@@ -1151,7 +1531,7 @@ function InventoryHistory({ filter }: ModuleProps) {
         cells: [
           { text: timestamp },
           { text: String(details.material_name ?? details.name ?? details.sku ?? 'Unknown material'), strong: true },
-          { text: movementLabel, badge: change < 0 ? 'high' : change > 0 ? 'low' : 'medium' },
+          { text: movementLabel, badge: (change < 0 ? 'high' : change > 0 ? 'low' : 'medium') as BadgeTone },
           { text: `${change > 0 ? '+' : ''}${formatQty(change)}`, strong: true },
           { text: formatQty(previous) },
           { text: formatQty(next) },
@@ -2700,6 +3080,7 @@ const ACTION_BADGE: Record<string, BadgeTone> = {
   create: 'low',
   update: 'medium',
   delete: 'high',
+  leftover_log: 'medium',
 };
 
 export function AuditLogsModule({ filter }: ModuleProps) {
