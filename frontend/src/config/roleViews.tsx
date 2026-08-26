@@ -204,10 +204,6 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter }) => <RequestsModule filter={filter} title="My Requests" />,
       },
       {
-        id: 'assets', label: 'Asset Registry', icon: 'box', group: 'main',
-        render: ({ filter }) => <AssetsModule filter={filter} title="Asset Registry & Health" />,
-      },
-      {
         id: 'advisories', label: 'Advisories', icon: 'megaphone', group: 'main',
         render: ({ filter }) => <AdvisoriesModule filter={filter} />,
       },
@@ -240,6 +236,36 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         { q: 'Standard safety protocol for site inspection', a: 'Wear high-visibility vests and protective gear. Coordinate with the barangay office before entering private property.' },
         { q: 'How do I verify an incident?', a: "Open 'Investigations', review the reported concern, and use the status dropdown to set it In Progress, Scheduled, or Resolved after inspection." },
         { q: 'Recording asset condition', a: "In 'Asset Inspections', update an asset's condition (Good / Needs Maintenance / Needs Replacement / Dispose). The health score recalculates automatically." },
+      ]),
+      settings(),
+    ],
+  },
+
+  // --------------------------------------------------------------- CONTRACTOR
+  contractor: {
+    brand: { title: 'CONTRACTOR', subtitle: 'Assigned Field Work' },
+    menuTitle: 'WORK MENU',
+    supportTitle: 'HELP & SUPPORT',
+    searchPlaceholder: 'Search job order or asset',
+    views: [
+      overview('My Assignments'),
+      {
+        id: 'joborders', label: 'Job Orders', icon: 'clipboard-list', group: 'main',
+        render: ({ filter }) => <JobOrdersModule filter={filter} title="Assigned Job Orders" />,
+      },
+      {
+        id: 'requests', label: 'Material Requests', icon: 'hammer', group: 'main',
+        render: ({ filter }) => <RequestsModule filter={filter} title="My Material Requests" />,
+      },
+      {
+        id: 'assets', label: 'Asset Registry', icon: 'box', group: 'main',
+        render: ({ filter }) => <AssetsModule filter={filter} title="Asset Registry" />,
+      },
+      faqView('support', 'Field Support', 'help-circle', 'Contractor Field Support', [
+        { q: 'How do I update a job order?', a: "In 'Job Orders', use the status dropdown to move a job from Pending → In Progress → Completed. You can also add notes or update the assigned team details." },
+        { q: 'How do I request materials?', a: "In 'Material Requests', click 'New Request'. Select the material from inventory or type a custom item, enter the quantity, and optionally link it to a job order reference." },
+        { q: 'How do I register an installed asset?', a: "In 'Asset Registry', click 'Register Asset'. Enter the asset name, type, location, and the installation date. The system will begin tracking its health score from that date." },
+        { q: 'What is the Asset Health Score?', a: "The health score (0–100) is automatically calculated based on the asset's age relative to its expected lifespan and its reported condition. It updates every time the asset record is viewed." },
       ]),
       settings(),
     ],

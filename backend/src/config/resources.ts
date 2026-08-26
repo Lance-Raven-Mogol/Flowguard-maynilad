@@ -53,7 +53,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
 
   'job-orders': {
     table: 'job_orders',
-    writeRoles: ['technical-team'],
+    writeRoles: ['technical-team', 'contractor'],
     allowed: [
       'incident_ref', 'title', 'scope', 'team', 'assigned_to',
       'team_name', 'team_leader', 'team_members',
@@ -88,7 +88,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
     //   'mrf'      — formal Material Request Form, linked to inventory SKU / job order (technical-team, inventory-officer)
     //   'general'  — informal supply request open to all roles including customers
     //   'purchase' — procurement request with pricing & supplier (inventory-officer only, enforced frontend-side)
-    writeRoles: ['customer', 'zone-specialist', 'technical-team', 'inventory-officer'],
+    writeRoles: ['customer', 'zone-specialist', 'technical-team', 'contractor', 'inventory-officer'],
     allowed: [
       // shared
       'material_name', 'quantity', 'requested_by', 'requested_by_id', 'status', 'archived', 'request_type',
@@ -110,7 +110,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
 
   assets: {
     table: 'assets',
-    writeRoles: ['technical-team', 'zone-specialist'],
+    writeRoles: ['technical-team', 'zone-specialist', 'contractor'],
     allowed: ['asset_tag', 'name', 'type', 'location', 'install_date', 'expected_lifespan_years', 'last_maintenance', 'condition', 'archived'],
     required: ['name'],
     numeric: ['expected_lifespan_years'],

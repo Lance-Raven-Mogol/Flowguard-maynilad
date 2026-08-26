@@ -22,6 +22,19 @@ userRoutes.get(
   }),
 );
 
+// Scoped team-member list — returns only technical-team and contractor accounts.
+// Accessible to any authenticated role so the job-order form can populate the
+// team picker regardless of who is creating the job order.
+userRoutes.get(
+  '/team-members',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const all = await userRepo.listPublic();
+    const teamRoles = new Set(['technical-team', 'contractor']);
+    res.json({ data: all.filter((u) => teamRoles.has(u.role) && !u.isArchived) });
+  }),
+);
+
 // Create a staff account with an explicit role.
 userRoutes.post(
   '/',

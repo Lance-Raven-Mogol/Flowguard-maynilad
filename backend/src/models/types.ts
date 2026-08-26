@@ -8,7 +8,8 @@ export type Role =
   | 'zone-specialist'
   | 'general-manager'
   | 'inventory-officer'
-  | 'technical-team';
+  | 'technical-team'
+  | 'contractor';
 
 export const ROLES: Role[] = [
   'customer',
@@ -16,6 +17,7 @@ export const ROLES: Role[] = [
   'general-manager',
   'inventory-officer',
   'technical-team',
+  'contractor',
 ];
 
 /** Stored user record. Never serialise `passwordHash` to clients. */

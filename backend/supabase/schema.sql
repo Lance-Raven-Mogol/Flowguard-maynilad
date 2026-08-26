@@ -14,7 +14,7 @@ create table if not exists public.app_users (
   role          text        not null check (
                   role in (
                     'customer','zone-specialist','general-manager',
-                    'inventory-officer','technical-team'
+                    'inventory-officer','technical-team','contractor'
                   )
                 ),
   password_hash text        not null,
@@ -320,3 +320,14 @@ alter table public.pending_registrations enable row level security;
 -- No seed business data. Tables start empty; the only account created is the
 -- administrator (see backend/src/models/seed.ts / scripts/migrate.mjs).
 -- ============================================================================
+
+-- --------------------------------------------- Role constraint migration ----
+-- Adds 'contractor' to the app_users role check. Safe to re-run.
+alter table public.app_users drop constraint if exists app_users_role_check;
+alter table public.app_users add constraint app_users_role_check
+  check (
+    role in (
+      'customer','zone-specialist','general-manager',
+      'inventory-officer','technical-team','contractor'
+    )
+  );

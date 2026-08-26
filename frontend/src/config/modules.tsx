@@ -56,8 +56,8 @@ const WRITE: Record<string, string[]> = {
   'job-orders': ['technical-team', 'general-manager'],
   materials: ['inventory-officer', 'general-manager'],
   suppliers: ['inventory-officer', 'general-manager'],
-  'material-requests': ['customer', 'zone-specialist', 'technical-team', 'inventory-officer', 'general-manager'],
-  assets: ['technical-team', 'zone-specialist', 'general-manager'],
+  'material-requests': ['customer', 'zone-specialist', 'technical-team', 'contractor', 'inventory-officer', 'general-manager'],
+  assets: ['technical-team', 'zone-specialist', 'contractor', 'general-manager'],
   advisories: ['technical-team', 'general-manager'],
   payments: ['general-manager'],
 };
@@ -154,9 +154,9 @@ interface UserLite {
 }
 
 /**
- * Registered technical-team members, for job-order assignment. Only the general
- * manager can read the user directory (`/users`), so this is used solely inside
- * general-manager views.
+ * Registered technical-team members, for job-order assignment.
+ * Calls the /users/team-members endpoint which is open to any authenticated
+ * role, so both the GM and the technical-team can populate the picker.
  */
 function useTechTeam(): { members: UserLite[]; loading: boolean; error: string | null } {
   const [members, setMembers] = useState<UserLite[]>([]);
@@ -165,24 +165,202 @@ function useTechTeam(): { members: UserLite[]; loading: boolean; error: string |
   useEffect(() => {
     let alive = true;
     api
-      .get<{ data: UserLite[] }>('/users')
+      .get<{ data: UserLite[] }>('/users/team-members')
       .then((r) => {
         if (alive) setMembers(r.data.filter((u) => u.role === 'technical-team'));
       })
       .catch(() => alive && setError('Could not load technical-team members.'))
       .finally(() => alive && setLoading(false));
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, []);
   return { members, loading, error };
 }
 
 /**
- * Create-and-assign a job order. The general manager names the crew, picks a
- * team leader and any number of member(s) — restricted to technical-team users
- * registered in the system — then dispatches the work. When opened from a
- * complaint the title, scope and linked reference are pre-filled.
+ * Registered contractor accounts, for job-order assignment.
+ * Uses the same /users/team-members endpoint as useTechTeam.
+ */
+function useContractors(): { members: UserLite[]; loading: boolean; error: string | null } {
+  const [members, setMembers] = useState<UserLite[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api
+      .get<{ data: UserLite[] }>('/users/team-members')
+      .then((r) => {
+        if (alive) setMembers(r.data.filter((u) => u.role === 'contractor'));
+      })
+      .catch(() => alive && setError('Could not load contractor accounts.'))
+      .finally(() => alive && setLoading(false));
+    return () => { alive = false; };
+  }, []);
+  return { members, loading, error };
+}
+
+/**
+ * A styled single-select dropdown for picking a team leader.
+ * Shows an avatar initial + full name per option.
+ */
+function LeaderSelect({
+  members,
+  value,
+  onChange,
+  placeholder = 'Select a team leader…',
+}: {
+  members: UserLite[];
+  value: string;
+  onChange: (name: string) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const selected = members.find((m) => m.fullName === value);
+
+  return (
+    <div className="ls-wrap" ref={ref}>
+      <button
+        type="button"
+        className={`ls-trigger${open ? ' is-open' : ''}${selected ? ' is-filled' : ''}`}
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        {selected ? (
+          <>
+            <span className="ls-avatar">{selected.fullName[0].toUpperCase()}</span>
+            <span className="ls-name">{selected.fullName}</span>
+          </>
+        ) : (
+          <span className="ls-placeholder">{placeholder}</span>
+        )}
+        <svg className="ls-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {open && (
+        <ul className="ls-list" role="listbox">
+          {members.map((m) => (
+            <li
+              key={m.id}
+              role="option"
+              aria-selected={m.fullName === value}
+              className={`ls-option${m.fullName === value ? ' is-selected' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); onChange(m.fullName); setOpen(false); }}
+            >
+              <span className="ls-avatar">{m.fullName[0].toUpperCase()}</span>
+              <span className="ls-name">{m.fullName}</span>
+              {m.fullName === value && (
+                <svg className="ls-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A styled multi-select dropdown for picking team members.
+ * Shows a summary chip when closed; expands to a scrollable card list.
+ */
+function MembersMultiSelect({
+  members,
+  value,
+  onChange,
+  placeholder = 'Select team members…',
+}: {
+  members: UserLite[];
+  value: string[];
+  onChange: (names: string[]) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const toggle = (name: string) =>
+    onChange(value.includes(name) ? value.filter((x) => x !== name) : [...value, name]);
+
+  return (
+    <div className="ms-wrap" ref={ref}>
+      <button
+        type="button"
+        className={`ms-trigger${open ? ' is-open' : ''}${value.length > 0 ? ' is-filled' : ''}`}
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        {value.length > 0 ? (
+          <div className="ms-chips">
+            {value.slice(0, 2).map((name) => (
+              <span key={name} className="ms-chip">{name}</span>
+            ))}
+            {value.length > 2 && <span className="ms-chip ms-chip-more">+{value.length - 2}</span>}
+          </div>
+        ) : (
+          <span className="ls-placeholder">{placeholder}</span>
+        )}
+        <svg className="ls-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {open && (
+        <div className="ms-dropdown" role="listbox" aria-multiselectable="true">
+          <p className="ms-hint">Click to select/deselect — {value.length} selected</p>
+          {members.map((m) => {
+            const selected = value.includes(m.fullName);
+            return (
+              <button
+                key={m.id}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                className={`ms-option${selected ? ' is-selected' : ''}`}
+                onMouseDown={(e) => { e.preventDefault(); toggle(m.fullName); }}
+              >
+                <span className="ls-avatar">{m.fullName[0].toUpperCase()}</span>
+                <span className="ms-option-name">{m.fullName}</span>
+                <span className={`ms-tick${selected ? ' is-selected' : ''}`}>
+                  {selected ? (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  ) : null}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Create-and-assign a job order.
+ *   - Team Leader  → must be a registered technical-team account
+ *   - Team Members → selected from registered contractor accounts
+ * Data comes from /users/team-members which is open to any authenticated role.
  */
 function JobOrderForm({
   incident,
@@ -194,7 +372,8 @@ function JobOrderForm({
   onCreated: () => Promise<void> | void;
 }) {
   const { notify } = useToast();
-  const { members, loading, error } = useTechTeam();
+  const techTeam = useTechTeam();
+  const contractors = useContractors();
 
   const [teamName, setTeamName] = useState('');
   const [leader, setLeader] = useState('');
@@ -207,14 +386,10 @@ function JobOrderForm({
   const [scheduled, setScheduled] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const toggleMember = (name: string) =>
-    setPicked((m) => (m.includes(name) ? m.filter((x) => x !== name) : [...m, name]));
-
   const save = async () => {
     if (!title.trim()) return notify('A job title is required.', 'error');
     if (!leader) return notify('Select a team leader.', 'error');
-    // Members list = leader first, then any additional picked members (deduped).
-    const membersList = [leader, ...picked.filter((m) => m !== leader)];
+    const membersList = picked.length > 0 ? [leader, ...picked] : [leader];
     setSaving(true);
     try {
       await resourceService.create('job-orders', {
@@ -230,7 +405,7 @@ function JobOrderForm({
         scheduled_date: scheduled,
         status: 'in_progress',
       });
-      notify('Job order created and assigned to the team!');
+      notify('Job order created and assigned!');
       await onCreated();
       onClose();
     } catch (e) {
@@ -274,55 +449,43 @@ function JobOrderForm({
         <input value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder="e.g. Alpha Crew" />
       </div>
 
-      {loading ? (
-        <p style={{ color: 'var(--muted)' }}>Loading technical-team members…</p>
-      ) : error ? (
-        <p style={{ color: '#e25577' }}>{error}</p>
-      ) : members.length === 0 ? (
-        <p style={{ color: '#e25577' }}>
-          No technical-team members are registered yet. Add them in User Management first.
-        </p>
-      ) : (
-        <>
-          <div className="form-group">
-            <label>Team Leader</label>
-            <select value={leader} onChange={(e) => setLeader(e.target.value)}>
-              <option value="">Select a team leader…</option>
-              {members.map((m) => (
-                <option key={m.id} value={m.fullName}>
-                  {m.fullName}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Team Members (optional — click to select any number)</label>
-            <div className="member-list">
-              {members.map((m) => {
-                const isLeader = m.fullName === leader;
-                const selected = isLeader || picked.includes(m.fullName);
-                return (
-                  <button
-                    type="button"
-                    key={m.id}
-                    className={`member-card${selected ? ' is-selected' : ''}${isLeader ? ' is-leader' : ''}`}
-                    aria-pressed={selected}
-                    disabled={isLeader}
-                    onClick={() => !isLeader && toggleMember(m.fullName)}
-                  >
-                    <span className="member-name">{m.fullName}</span>
-                    {isLeader ? (
-                      <span className="member-tag is-leader">Leader</span>
-                    ) : (
-                      selected && <span className="member-tag">Selected</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
+      {/* ── Team Leader — styled single-select ── */}
+      <div className="form-group">
+        <label>
+          Team Leader{' '}
+          <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12 }}>(Technical Team)</span>
+        </label>
+        {techTeam.loading ? (
+          <p style={{ color: 'var(--muted)', margin: 0 }}>Loading technical-team members…</p>
+        ) : techTeam.error ? (
+          <p style={{ color: '#e25577', margin: 0 }}>{techTeam.error}</p>
+        ) : techTeam.members.length === 0 ? (
+          <p style={{ color: '#e25577', margin: 0 }}>
+            No technical-team accounts registered yet. Add them in User Management first.
+          </p>
+        ) : (
+          <LeaderSelect members={techTeam.members} value={leader} onChange={setLeader} />
+        )}
+      </div>
+
+      {/* ── Team Members — styled multi-select ── */}
+      <div className="form-group">
+        <label>
+          Team Members{' '}
+          <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12 }}>(Contractors — optional)</span>
+        </label>
+        {contractors.loading ? (
+          <p style={{ color: 'var(--muted)', margin: 0 }}>Loading contractor accounts…</p>
+        ) : contractors.error ? (
+          <p style={{ color: '#e25577', margin: 0 }}>{contractors.error}</p>
+        ) : contractors.members.length === 0 ? (
+          <p style={{ color: '#e25577', margin: 0 }}>
+            No contractor accounts registered yet. Add them in User Management first.
+          </p>
+        ) : (
+          <MembersMultiSelect members={contractors.members} value={picked} onChange={setPicked} />
+        )}
+      </div>
 
       <div className="form-group">
         <label>Estimated Cost (₱)</label>
@@ -686,10 +849,14 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
   const { user } = useAuth();
   const role = user!.role;
   const canWrite = !readOnly && WRITE['job-orders'].includes(role);
-  // The general manager creates + assigns job orders through the team form.
-  const canAssign = role === 'general-manager';
+  // Both general-manager and technical-team create job orders through the team form.
+  const canAssign = role === 'general-manager' || role === 'technical-team';
   const isTechTeam = role === 'technical-team';
+  const isContractor = role === 'contractor';
+  // Contractor can update status on assigned jobs but cannot create/edit/delete.
+  const contractorCanUpdate = isContractor && !readOnly;
   // Technical-team members only see the job orders their crew is assigned to.
+  // Contractors only see job orders assigned to them (by their fullName).
   const me = user!.fullName.toLowerCase();
   const rowFilter =
     isTechTeam
@@ -700,6 +867,14 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
             : [];
           const assigned = String(r.assigned_to ?? '').toLowerCase();
           return leader === me || members.includes(me) || assigned.includes(me);
+        }
+      : isContractor
+      ? (r: EntityRow) => {
+          const members = Array.isArray(r.team_members)
+            ? (r.team_members as string[]).map((s) => String(s).toLowerCase())
+            : [];
+          const assigned = String(r.assigned_to ?? '').toLowerCase();
+          return members.includes(me) || assigned.includes(me);
         }
       : undefined;
 
@@ -752,6 +927,26 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
     );
   };
 
+  /** Contractor: can update status on their assigned job orders, view only otherwise. */
+  const contractorActions = (c: RowActionCtx) => {
+    const canChangeStatus = contractorCanUpdate && !c.archived && ['pending', 'in_progress'].includes(String(c.row.status));
+    return (
+      <>
+        {canChangeStatus && (
+          <StatusSelect
+            value={String(c.row.status)}
+            options={JOB_STATUS_TECH}
+            disabled={c.busy}
+            onChange={(s) => c.update({ status: s })}
+          />
+        )}
+        <div className="btn-row">
+          {viewAction(c)}
+        </div>
+      </>
+    );
+  };
+
   return (
     <LiveModule
       entity="job-orders"
@@ -764,7 +959,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
       filter={filter}
       rowFilter={rowFilter}
       actionLabel="Action"
-      archivable={canWrite}
+      archivable={canWrite && !isContractor}
       renderCreate={
         canAssign
           ? ({ reload }) => <CreateJobOrderButton onCreated={reload} />
@@ -777,7 +972,9 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
         metric('j4', 'Completed', count(rows, (r) => r.status === 'completed'), 'check-circle', 'invoices'),
       ]}
       actions={
-        isTechTeam
+        isContractor
+          ? contractorActions
+          : isTechTeam
           ? techTeamActions
           : canWrite
           ? (c) => (

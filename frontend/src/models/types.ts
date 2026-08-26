@@ -8,7 +8,8 @@ export type Role =
   | 'zone-specialist'
   | 'general-manager'
   | 'inventory-officer'
-  | 'technical-team';
+  | 'technical-team'
+  | 'contractor';
 
 export const ROLES: { value: Role; label: string }[] = [
   { value: 'customer', label: 'Customer' },
@@ -16,6 +17,7 @@ export const ROLES: { value: Role; label: string }[] = [
   { value: 'general-manager', label: 'General Manager' },
   { value: 'inventory-officer', label: 'Inventory Officer' },
   { value: 'technical-team', label: 'Technical Team' },
+  { value: 'contractor', label: 'Contractor' },
 ];
 
 export interface User {
