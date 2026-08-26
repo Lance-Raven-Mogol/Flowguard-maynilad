@@ -15,7 +15,7 @@ import { resourceService, type EntityRow } from '../services/resourceService';
 import { ImageUpload, LiveModule, StatusSelect, type ModuleColumn, type ModuleField, type RowActionCtx, AutocompleteInput } from '../views/components/LiveModule';
 import { DataTable } from '../views/components/DataTable';
 import { Modal } from '../views/components/Modal';
-import { ActionButton, PanelHead } from '../views/components/panels';
+import { ActionButton, PanelHead, QRLabelModal } from '../views/components/panels';
 
 const roleLabel = (role: unknown): string => ROLES.find((r) => r.value === role)?.label ?? String(role ?? '');
 
@@ -1573,6 +1573,7 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
   const canWrite = !readOnly && WRITE.materials.includes(role);
   const supplierOptions = useSupplierOptions();
   const [activeTab, setActiveTab] = useState<'inventory' | 'history'>('inventory');
+  const [qrTarget, setQrTarget] = useState<EntityRow | null>(null);
 
   const columns: ModuleColumn[] = [
     { header: 'SKU', cell: (r) => ({ text: String(r.sku), strong: true }) },
@@ -1671,16 +1672,31 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
           matches: (row: EntityRow) => String(row.category ?? 'Uncategorized') === category,
         }))}
       actions={
-        canWrite
-          ? (c) => (
+        (c) => (
+          <>
+            <button className="btn-action" title="Print QR label" onClick={() => setQrTarget(c.row)}>
+              QR
+            </button>
+            {canWrite && (
               <div className="btn-row">
                 <RestockBtn c={c} />
                 <EditBtn c={c} />
                 <ArchiveBtn c={c} />
               </div>
-            )
-          : undefined
+            )}
+          </>
+        )
       }
+        />
+      )}
+      {qrTarget && (
+        <QRLabelModal
+          sku={String(qrTarget.sku ?? '')}
+          name={String(qrTarget.name ?? '')}
+          supplier={String(qrTarget.supplier ?? '')}
+          category={String(qrTarget.category ?? '')}
+          unit={String(qrTarget.unit ?? '')}
+          onClose={() => setQrTarget(null)}
         />
       )}
     </>

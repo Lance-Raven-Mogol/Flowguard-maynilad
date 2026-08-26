@@ -5,6 +5,7 @@ import { ProtectedRoute } from './views/components/ProtectedRoute';
 import { LoginPage } from './views/auth/LoginPage';
 import { SignupPage } from './views/auth/SignupPage';
 import { DashboardPage } from './views/dashboard/DashboardPage';
+import { MaterialPage } from './views/public/MaterialPage';
 
 export function App() {
   return (
@@ -14,6 +15,7 @@ export function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
+            <Route path="/material/:sku" element={<MaterialPage />} />
             <Route
               path="/dashboard"
               element={

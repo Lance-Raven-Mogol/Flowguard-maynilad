@@ -1,5 +1,6 @@
 /** Reusable presentational blocks shared by the role dashboards. */
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import QRCode from 'qrcode';
 import { Icon } from './Icon';
 import { useToast } from '../../controllers/ToastContext';
 
@@ -186,3 +187,76 @@ export function Field({ label, value, type = 'text', readOnly }: { label: string
     </div>
   );
 }
+
+/* --------------------------------------------------------- QR Label Modal */
+
+export interface QRLabelProps {
+  sku: string;
+  name: string;
+  supplier: string;
+  category: string;
+  unit: string;
+  onClose: () => void;
+}
+
+/**
+ * Printable QR code label for a material.
+ * The QR encodes the public URL: <origin>/material/<SKU>
+ * Scanning with any phone camera opens FlowGuard's public material page — no login required.
+ */
+export function QRLabelModal({ sku, name, supplier, category, unit, onClose }: QRLabelProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Encode the public /material/:sku URL so scanning opens the material detail page directly.
+  const appOrigin = import.meta.env.VITE_APP_URL
+    ?? (window.location.hostname === 'localhost' ? 'https://flowguard-maynilad.vercel.app' : window.location.origin);
+  const qrText = `${appOrigin}/material/${encodeURIComponent(sku)}`;
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    QRCode.toCanvas(canvasRef.current, qrText, {
+      width: 220,
+      margin: 3,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#000000', light: '#ffffff' },
+    }).catch(() => {/* silent */});
+  }, [qrText]);
+
+  return (
+    <div className="modal-overlay is-active" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-card">
+        <div className="modal-header">
+          <h3>QR Label — {sku}</h3>
+          <button className="modal-close" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+
+        <div className="modal-body">
+          {/* Printable label — this is what gets printed */}
+          <div className="qr-label" id="qr-print-area">
+            <canvas ref={canvasRef} className="qr-canvas" />
+            <div className="qr-label-info">
+              <p className="qr-label-name">{name}</p>
+              <p className="qr-label-sku">{sku}</p>
+              {supplier && <p className="qr-label-meta"><strong>Supplier:</strong> {supplier}</p>}
+              {category && <p className="qr-label-meta"><strong>Category:</strong> {category}</p>}
+              {unit     && <p className="qr-label-meta"><strong>Unit:</strong> {unit}</p>}
+              <p className="qr-label-scan-hint">Scan to view material details</p>
+            </div>
+          </div>
+          <p style={{ margin: '12px 0 0', fontSize: 12, color: 'var(--muted)' }}>
+            Scan this QR code with any phone camera to read the material details instantly — no app needed.
+          </p>
+        </div>
+
+        <div className="modal-footer">
+          <button className="btn-secondary" onClick={onClose}>Close</button>
+          <button className="btn-primary" onClick={() => window.print()}>
+            <Icon name="printer" size={15} style={{ marginRight: 6 }} />
+            Print Label
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
