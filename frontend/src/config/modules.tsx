@@ -2821,8 +2821,7 @@ export function AssetsModule({ filter, title }: ModuleProps & { title?: string }
 /* -------------------------------------------------------------- Advisories */
 const ADVISORY_STATUS = [
   { value: 'draft', label: 'Draft' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'published', label: 'Published' },
+  { value: 'approved', label: 'Approved & Published' },
 ];
 const ADVISORY_TYPE_BADGE: Record<string, BadgeTone> = { emergency: 'high', interruption: 'medium', maintenance: 'low' };
 
@@ -2857,8 +2856,7 @@ export function AdvisoriesModule({ filter, readOnly = false, title }: ModuleProp
       fields={fields}
       canWrite={canWrite}
       filter={filter}
-      mineField={readOnly ? 'status' : undefined}
-      mineValue={readOnly ? 'published' : undefined}
+      rowFilter={readOnly ? (r) => r.status === 'approved' || r.status === 'published' : undefined}
       actions={
         canWrite
           ? (c) => (

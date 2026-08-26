@@ -352,6 +352,15 @@ export const resourceService = {
       values.status = materialStockStatus(values.quantity, values.min_level, values.status);
     }
 
+    // Mirror the update rule: creating an advisory as "published" or "approved"
+    // sets published_at immediately so it is visible to customers right away.
+    if (entity === 'advisories') {
+      if (values.status === 'published') values.status = 'approved';
+      if (values.status === 'approved' && !values.published_at) {
+        values.published_at = new Date().toISOString();
+      }
+    }
+
     if (entity === 'payments') {
       const incidentRef = String(values.incident_ref ?? '').trim();
       const jobOrderRef = String(values.job_order_ref ?? '').trim();
@@ -445,6 +454,15 @@ export const resourceService = {
     }
     if (def.touch) values[def.touch] = new Date().toISOString();
     if (Object.keys(values).length === 0) throw badRequest('No valid fields to update.');
+
+    // Approving an advisory publishes it immediately — no separate "published" step.
+    // Also accept the legacy "published" value from older clients and treat it as approved.
+    if (entity === 'advisories' && 'status' in values) {
+      if (values.status === 'published') values.status = 'approved';
+      if (values.status === 'approved' && !values.published_at) {
+        values.published_at = new Date().toISOString();
+      }
+    }
 
     // Complaints awaiting verification belong to the Zone Specialist's triage
     // step. The General Manager must wait for the specialist's remarks, which

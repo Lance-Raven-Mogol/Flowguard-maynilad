@@ -165,7 +165,7 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
   const pendingMrf = stats.materialRequests.filter((r) => r.status === 'pending');
   const criticalAssets = stats.assets.filter((a) => Number(a.health_score) < 15 || a.condition === 'dispose' || a.condition === 'needs_replacement');
   const openIncidents = stats.incidents.filter(isOpen);
-  const draftAdvisories = stats.advisories.filter((a) => a.status !== 'published');
+  const draftAdvisories = stats.advisories.filter((a) => a.status !== 'published' && a.status !== 'approved');
   const pendingPurchases = stats.materialRequests.filter((r) => r.request_type === 'purchase' && r.status === 'pending');
   const overduePayments = stats.payments.filter((p) => p.status === 'overdue' || p.status === 'late');
   const pendingSupplies = stats.materialRequests.filter((r) => r.request_type === 'general' && r.status === 'pending');
@@ -192,7 +192,7 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
       alerts.push({ key: `supply:${s.id}:${s.status}`, view: 'requests', icon: 'package', title: `Request ${s.ref_code} is ${s.status}`, detail: String(s.material_name ?? ''), tone: s.status === 'rejected' ? 'danger' : 'info' }),
     );
     stats.advisories
-      .filter((a) => a.status === 'published')
+      .filter((a) => a.status === 'published' || a.status === 'approved')
       .slice(0, 3)
       .forEach((a) => alerts.push({ key: `adv:${a.id}`, view: 'advisories', icon: 'megaphone', title: String(a.title), detail: String(a.area ?? ''), tone: a.type === 'emergency' ? 'danger' : 'info' }));
     return alerts;
@@ -244,7 +244,7 @@ export function buildBadgeItems(stats: DashboardStats, role: string, fullName: s
   const outOfStock = ids(stats.materials.filter((m) => m.status === 'out_of_stock' || Number(m.quantity) === 0));
   const lowStock = ids(stats.materials.filter((m) => m.status === 'low_stock'));
   const activeJobs = ids(stats.jobOrders.filter((j) => j.status === 'pending' || j.status === 'in_progress'));
-  const draftAdv = ids(stats.advisories.filter((a) => a.status !== 'published'));
+  const draftAdv = ids(stats.advisories.filter((a) => a.status !== 'published' && a.status !== 'approved'));
   const pendingPurchases = ids(stats.materialRequests.filter((r) => r.request_type === 'purchase' && r.status === 'pending'));
   const overduePayments = ids(stats.payments.filter((p) => p.status === 'overdue' || p.status === 'late'));
   const pendingSupplies = ids(stats.materialRequests.filter((r) => r.request_type === 'general' && r.status === 'pending'));
