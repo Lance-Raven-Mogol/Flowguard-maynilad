@@ -4,13 +4,13 @@ import { authService } from '../services/auth.service.js';
 import { unauthorized } from '../utils/httpError.js';
 
 export const authController = {
-  /** Step 1: Initiate registration with OTP. */
+  /** Step 1: Validate form, generate TOTP secret + QR code. Returns { email, qrCodeDataUrl, manualKey }. */
   async initiateRegistration(req: Request, res: Response): Promise<void> {
     const result = await authService.initiateRegistration(req.body ?? {});
     res.status(200).json(result);
   },
 
-  /** Step 2: Complete registration with OTP verification. */
+  /** Step 2: Verify first TOTP token from authenticator app, create account. */
   async completeRegistration(req: Request, res: Response): Promise<void> {
     const result = await authService.completeRegistration(req.body ?? {});
     res.status(201).json(result);
@@ -66,9 +66,9 @@ export const authController = {
 
   async generateOtp(req: Request, res: Response): Promise<void> {
     if (!req.user) throw unauthorized();
-    const code = await authService.generateOtp(req.user.id);
-    // Return code in response (email sends it too if configured)
-    res.json({ code, message: 'OTP generated.' });
+    const result = await authService.generateOtp(req.user.id);
+    // result = { qrCodeDataUrl, manualKey }
+    res.json({ ...result, message: 'Scan the QR code with your authenticator app.' });
   },
 
   async verifyOtp(req: Request, res: Response): Promise<void> {

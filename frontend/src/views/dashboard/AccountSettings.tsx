@@ -4,13 +4,72 @@
  * and location (barangay). Sections are stacked so the page fills naturally.
  */
 import { useRef, useState, useEffect } from 'react';
-import { Camera, Shield, MapPin, ShieldCheck } from 'lucide-react';
+import { Camera, Shield, MapPin, Copy, Check, BookOpen, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useAuth } from '../../controllers/AuthContext';
 import { useToast } from '../../controllers/ToastContext';
 import { ApiError } from '../../services/apiClient';
 import { ROLES } from '../../models/types';
 import { avatarFor } from './Topbar';
 import { ToggleSwitch } from '../components/ToggleSwitch';
+
+// ── Installation Guide images ──────────────────────────────────────────────
+import img1 from '../../assets/images/1.png';
+import img25a from '../../assets/images/2-5.png';
+import img3 from '../../assets/images/3.png';
+import img4 from '../../assets/images/4.png';
+import img25b from '../../assets/images/2-5.png';
+import img6 from '../../assets/images/6.png';
+import img7 from '../../assets/images/7.png';
+import img8 from '../../assets/images/8.png';
+import img9 from '../../assets/images/9.png';
+
+const GUIDE_STEPS = [
+  {
+    image: img1,
+    title: 'Open your Extensions',
+    desc: 'Click the Extensions button in your browser toolbar to see all installed extensions.',
+  },
+  {
+    image: img25a,
+    title: 'Get Extensions',
+    desc: 'Click "Get extensions for Microsoft Edge" (or the equivalent for your browser) to open the add-on store.',
+  },
+  {
+    image: img3,
+    title: 'Install an Authenticator',
+    desc: 'Search for and install any authenticator extension — Web2FA, Authenticator, or whichever you prefer.',
+  },
+  {
+    image: img4,
+    title: 'Copy Your Secret Key',
+    desc: 'Back in the 2FA setup modal, copy the secret key shown under "Can\'t scan?" — you\'ll paste it into the authenticator.',
+  },
+  {
+    image: img25b,
+    title: 'Open the Authenticator',
+    desc: 'Click your installed authenticator in the extensions list to open its interface.',
+  },
+  {
+    image: img6,
+    title: 'Add a New Account',
+    desc: 'Click the three-dot menu (or "+" button) inside the authenticator, then choose Add / Manual entry.',
+  },
+  {
+    image: img7,
+    title: 'Enter Account Details',
+    desc: 'Give it a name like "Flowguard OTP", paste the secret key you copied earlier, then save.',
+  },
+  {
+    image: img8,
+    title: 'Your OTP is Ready',
+    desc: 'The authenticator now shows a 6-digit code that refreshes every 30 seconds — this is your OTP pin.',
+  },
+  {
+    image: img9,
+    title: 'Accessing Your Code',
+    desc: 'Whenever you\'re asked for an OTP pin, just click the authenticator extension in your toolbar to view your current code.',
+  },
+];
 
 const BARANGAYS = [
   'Boac', 'Bagsangan', 'Buenavista', 'Buhangin', 'Burnay', 'Buyabod',
@@ -44,26 +103,24 @@ export function AccountSettings() {
   const [otpModalOpen, setOtpModalOpen] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [otpVerifying, setOtpVerifying] = useState(false);
-  const [otpCooldown, setOtpCooldown] = useState(0);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
+  const [manualKey, setManualKey] = useState('');
+  const [keyCopied, setKeyCopied] = useState(false);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  const maskEmail = (e: string) => {
-    const [name, domain] = e.split('@');
-    if (!domain) return e;
-    const masked = name.length > 2 ? name[0] + '***' + name[name.length - 1] : name[0] + '***';
-    return `${masked}@${domain}`;
-  };
+  // Installation guide carousel state
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [guideStep, setGuideStep] = useState(0);
+
+  const openGuide = () => { setGuideStep(0); setGuideOpen(true); };
+  const closeGuide = () => setGuideOpen(false);
+  const guidePrev = () => setGuideStep((s) => Math.max(0, s - 1));
+  const guideNext = () => setGuideStep((s) => Math.min(GUIDE_STEPS.length - 1, s + 1));
 
   // Sync OTP state with user object
   useEffect(() => {
     setOtpEnabled(user!.otpEnabled ?? true);
   }, [user!.otpEnabled]);
-
-  useEffect(() => {
-    if (otpCooldown <= 0) return;
-    const timer = setInterval(() => setOtpCooldown((c) => (c > 0 ? c - 1 : 0)), 1000);
-    return () => clearInterval(timer);
-  }, [otpCooldown]);
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -119,17 +176,17 @@ export function AccountSettings() {
 
   const toggleOtp = async (enabled: boolean) => {
     if (enabled) {
-      // When enabling, send OTP first and open verification modal
+      // Generate TOTP secret + QR code, open the verification modal
       setOtpLoading(true);
       try {
         const { authService } = await import('../../services/authService');
-        await authService.generateOtp();
+        const result = await authService.generateOtp();
+        setQrCodeDataUrl(result.qrCodeDataUrl);
+        setManualKey(result.manualKey);
         setOtpModalOpen(true);
         setOtpCode('');
-        setOtpCooldown(60);
-        notify('OTP sent to your email. Enter the code to enable 2FA.', 'success');
       } catch (err) {
-        notify(err instanceof ApiError ? err.message : 'Could not send OTP.', 'error');
+        notify(err instanceof ApiError ? err.message : 'Could not generate QR code.', 'error');
       } finally {
         setOtpLoading(false);
       }
@@ -140,9 +197,9 @@ export function AccountSettings() {
         const { authService } = await import('../../services/authService');
         await authService.disableOtp();
         setOtpEnabled(false);
-        notify('OTP disabled. You will no longer be asked for a code on sign-in.');
+        notify('Two-factor authentication disabled.');
       } catch (err) {
-        notify(err instanceof ApiError ? err.message : 'Could not update OTP settings.', 'error');
+        notify(err instanceof ApiError ? err.message : 'Could not update 2FA settings.', 'error');
       } finally {
         setOtpLoading(false);
       }
@@ -151,7 +208,7 @@ export function AccountSettings() {
 
   const handleOtpVerify = async () => {
     if (!otpCode || otpCode.length !== 6) {
-      notify('Please enter a valid 6-digit code.', 'error');
+      notify('Please enter the 6-digit code from your authenticator app.', 'error');
       return;
     }
     setOtpVerifying(true);
@@ -163,27 +220,23 @@ export function AccountSettings() {
         setOtpEnabled(true);
         setOtpModalOpen(false);
         setOtpCode('');
-        notify('OTP enabled! You will be asked for a code on every sign-in.', 'success');
+        notify('Two-factor authentication enabled! You will be asked for a code on every sign-in.', 'success');
       } else {
-        notify('Invalid OTP code. Please try again.', 'error');
+        notify('Invalid code. Please check your authenticator app and try again.', 'error');
+        setOtpCode('');
       }
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'OTP verification failed.', 'error');
+      notify(err instanceof ApiError ? err.message : 'Verification failed.', 'error');
     } finally {
       setOtpVerifying(false);
     }
   };
 
-  const handleResendOtp = async () => {
-    if (otpCooldown > 0) return;
-    try {
-      const { authService } = await import('../../services/authService');
-      await authService.generateOtp();
-      setOtpCooldown(60);
-      notify('OTP resent to your email!', 'success');
-    } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Failed to resend OTP.', 'error');
-    }
+  const copyManualKey = () => {
+    navigator.clipboard.writeText(manualKey.replace(/\s/g, '')).then(() => {
+      setKeyCopied(true);
+      setTimeout(() => setKeyCopied(false), 2000);
+    });
   };
 
   return (
@@ -289,86 +342,252 @@ export function AccountSettings() {
         </section>
       </div>
 
-      {/* OTP Verification Modal — matches the login OTP step design */}
+      {/* ── TOTP Setup Modal — scan QR code to enable 2FA ── */}
       {otpModalOpen && (
         <div
           className="otp-modal-backdrop"
           onClick={(e) => { if (e.target === e.currentTarget) { setOtpModalOpen(false); setOtpCode(''); } }}
         >
-          <div className="otp-modal-card">
-            {/* Icon */}
-            <div className="otp-icon-wrap" style={{ margin: '0 auto 20px' }}>
-              <ShieldCheck size={32} strokeWidth={1.8} />
+          <div className="otp-modal-card totp-modal-card">
+
+            {/* Header */}
+            <div className="totp-setup-header" style={{ marginBottom: '20px' }}>
+              <div className="totp-shield-icon">🔐</div>
+              <div>
+                <h3 className="totp-setup-title">Set Up Two-Factor Authentication</h3>
+                <p className="totp-setup-sub">Secure your account with an authenticator app.</p>
+              </div>
             </div>
 
-            {/* Heading */}
-            <h3 className="otp-modal-title">Verify to Enable 2FA</h3>
-            <p className="otp-step-desc">
-              Enter the 6-digit code sent to<br />
-              <strong>{maskEmail(user!.email)}</strong>
-            </p>
+            {/* 2-col body */}
+            <div className="totp-setup-body" style={{ marginBottom: '20px' }}>
 
-            {/* 6-digit boxes — identical to login */}
-            <div className="otp-input-group">
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <input
-                  key={i}
-                  ref={(el) => { otpRefs.current[i] = el; }}
-                  className="otp-digit"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={otpCode[i] ?? ''}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/\D/g, '');
-                    const next = otpCode.split('');
-                    next[i] = val;
-                    const joined = next.join('').slice(0, 6);
-                    setOtpCode(joined);
-                    if (val && i < 5) otpRefs.current[i + 1]?.focus();
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Backspace' && !otpCode[i] && i > 0) {
-                      otpRefs.current[i - 1]?.focus();
-                    }
-                  }}
-                  onPaste={(e) => {
-                    e.preventDefault();
-                    const pasted = (e.clipboardData.getData('text') ?? '').replace(/\D/g, '').slice(0, 6);
-                    setOtpCode(pasted);
-                    otpRefs.current[Math.min(pasted.length, 5)]?.focus();
-                  }}
-                />
-              ))}
+              {/* Steps */}
+              <div className="totp-steps-col">
+
+                {/* Step 1 */}
+                <div className="totp-step-row">
+                  <span className="totp-step-num">1</span>
+                  <div className="totp-step-content">
+                    <p className="totp-step-title">Install an authenticator app</p>
+                    <p className="totp-step-desc">
+                      On your <strong>phone:</strong> Google Authenticator, Microsoft Authenticator, or any TOTP app.<br />
+                      On your <strong>PC/browser:</strong> any authenticator browser extension (e.g.{' '}
+                      <a
+                        href="https://chromewebstore.google.com/detail/web2fa-authenticator/bnfooenhhgamdmakfmmchfhgheaohona"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="totp-ext-link"
+                      >
+                        Web2FA
+                      </a>
+                      ,{' '}
+                      <a
+                        href="https://chromewebstore.google.com/detail/authenticator/bhghoamapcdpbohphigoooaddinpkbai"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="totp-ext-link"
+                      >
+                        Authenticator
+                      </a>
+                      ).
+                    </p>
+                    {/* Installation guide trigger */}
+                    <button
+                      type="button"
+                      className="install-guide-btn"
+                      onClick={openGuide}
+                    >
+                      <BookOpen size={13} />
+                      Installation Guide
+                    </button>
+                  </div>
+                </div>
+
+                {/* Step 2 */}
+                <div className="totp-step-row">
+                  <span className="totp-step-num">2</span>
+                  <div className="totp-step-content">
+                    <p className="totp-step-title">Scan the QR code</p>
+                    <p className="totp-step-desc">
+                      Tap <strong>"+"</strong> → <strong>"Scan QR Code"</strong> in your app.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Step 2 fallback */}
+                <div className="totp-step-row totp-step-row--sub">
+                  <span className="totp-step-num totp-step-num--sub">—</span>
+                  <div className="totp-step-content">
+                    <p className="totp-step-desc" style={{ marginBottom: '6px' }}>
+                      Can't scan? Choose <strong>"Enter a setup key"</strong>:
+                    </p>
+                    <div className="totp-manual-key-row">
+                      <span className="totp-manual-key-text">{manualKey}</span>
+                      <button type="button" className="totp-copy-btn" onClick={copyManualKey}>
+                        {keyCopied ? <Check size={14} /> : <Copy size={14} />}
+                        {keyCopied ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Step 3 */}
+                <div className="totp-step-row">
+                  <span className="totp-step-num">3</span>
+                  <div className="totp-step-content">
+                    <p className="totp-step-title">Enter the 6-digit code</p>
+                    <p className="totp-step-desc" style={{ marginBottom: '8px' }}>Codes refresh every 30 seconds.</p>
+                    <div className="otp-input-group" style={{ justifyContent: 'flex-start' }}>
+                      {[0, 1, 2, 3, 4, 5].map((i) => (
+                        <input
+                          key={i}
+                          ref={(el) => { otpRefs.current[i] = el; }}
+                          className="otp-digit"
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={1}
+                          value={otpCode[i] ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '');
+                            const chars = otpCode.split('');
+                            chars[i] = val;
+                            const joined = chars.join('').slice(0, 6);
+                            setOtpCode(joined);
+                            if (val && i < 5) otpRefs.current[i + 1]?.focus();
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Backspace' && !otpCode[i] && i > 0) {
+                              otpRefs.current[i - 1]?.focus();
+                            }
+                          }}
+                          onPaste={(e) => {
+                            e.preventDefault();
+                            const pasted = (e.clipboardData.getData('text') ?? '').replace(/\D/g, '').slice(0, 6);
+                            setOtpCode(pasted);
+                            otpRefs.current[Math.min(pasted.length, 5)]?.focus();
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* QR code */}
+              <div className="totp-qr-col">
+                {qrCodeDataUrl && (
+                  <div className="totp-qr-wrap">
+                    <img src={qrCodeDataUrl} alt="TOTP QR code" className="totp-qr-img" />
+                  </div>
+                )}
+                <p className="totp-qr-hint">Scan with your authenticator app</p>
+              </div>
+
             </div>
 
-            {/* Verify button */}
-            <button
-              className="primary-submit"
-              type="button"
-              onClick={handleOtpVerify}
-              disabled={otpVerifying || otpCode.length !== 6}
-            >
-              {otpVerifying ? 'Verifying…' : 'Verify & Enable 2FA'}
-            </button>
-
-            {/* Resend + Cancel */}
-            <div className="otp-actions">
-              {otpCooldown > 0 ? (
-                <p className="otp-cooldown">Resend code in {otpCooldown}s</p>
-              ) : (
-                <button type="button" className="otp-link-btn" onClick={handleResendOtp}>
-                  Resend code
-                </button>
-              )}
+            {/* Actions */}
+            <div className="totp-setup-actions">
+              <button
+                className="primary-submit"
+                type="button"
+                onClick={handleOtpVerify}
+                disabled={otpVerifying || otpCode.length !== 6}
+              >
+                {otpVerifying ? 'Verifying…' : 'Verify & Enable 2FA'}
+              </button>
               <button
                 type="button"
                 className="otp-link-btn otp-back"
+                style={{ textAlign: 'center' }}
                 onClick={() => { setOtpModalOpen(false); setOtpCode(''); }}
               >
                 ← Cancel
               </button>
             </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ── Installation Guide Carousel Modal ── */}
+      {guideOpen && (
+        <div
+          className="guide-backdrop"
+          onClick={(e) => { if (e.target === e.currentTarget) closeGuide(); }}
+        >
+          <div className="guide-card">
+
+            {/* Close button */}
+            <button className="guide-close" onClick={closeGuide} aria-label="Close guide">
+              <X size={18} />
+            </button>
+
+            {/* Step counter pill */}
+            <div className="guide-counter">
+              Step {guideStep + 1} of {GUIDE_STEPS.length}
+            </div>
+
+            {/* Screenshot */}
+            <div className="guide-img-wrap">
+              <img
+                key={guideStep}
+                src={GUIDE_STEPS[guideStep].image}
+                alt={GUIDE_STEPS[guideStep].title}
+                className="guide-img"
+              />
+            </div>
+
+            {/* Title + description */}
+            <div className="guide-text">
+              <h4 className="guide-title">{GUIDE_STEPS[guideStep].title}</h4>
+              <p className="guide-desc">{GUIDE_STEPS[guideStep].desc}</p>
+            </div>
+
+            {/* Dot indicators */}
+            <div className="guide-dots">
+              {GUIDE_STEPS.map((_, i) => (
+                <button
+                  key={i}
+                  className={`guide-dot${i === guideStep ? ' guide-dot--active' : ''}`}
+                  onClick={() => setGuideStep(i)}
+                  aria-label={`Go to step ${i + 1}`}
+                />
+              ))}
+            </div>
+
+            {/* Prev / Next navigation */}
+            <div className="guide-nav">
+              <button
+                className="guide-nav-btn"
+                onClick={guidePrev}
+                disabled={guideStep === 0}
+                aria-label="Previous step"
+              >
+                <ChevronLeft size={20} />
+                Back
+              </button>
+
+              {guideStep < GUIDE_STEPS.length - 1 ? (
+                <button
+                  className="guide-nav-btn guide-nav-btn--primary"
+                  onClick={guideNext}
+                  aria-label="Next step"
+                >
+                  Next
+                  <ChevronRight size={20} />
+                </button>
+              ) : (
+                <button
+                  className="guide-nav-btn guide-nav-btn--done"
+                  onClick={closeGuide}
+                >
+                  Done ✓
+                </button>
+              )}
+            </div>
+
           </div>
         </div>
       )}

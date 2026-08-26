@@ -12,8 +12,8 @@ interface AuthContextValue {
   loading: boolean;
   login: (input: LoginInput) => Promise<import('../services/authService').LoginResult>;
   register: (input: RegisterInput) => Promise<User>;
-  initiateRegistration: (input: InitiateRegistrationInput) => Promise<{ message: string; email: string }>;
-  completeRegistration: (email: string, otpCode: string) => Promise<User>;
+  initiateRegistration: (input: InitiateRegistrationInput) => Promise<{ message: string; email: string; qrCodeDataUrl: string; manualKey: string }>;
+  completeRegistration: (email: string, totpToken: string) => Promise<User>;
   resendOtp: (email: string) => Promise<{ message: string }>;
   verifyLoginOtp: (loginToken: string, otpCode: string, remember?: boolean) => Promise<User>;
   resendLoginOtp: (loginToken: string) => Promise<{ message: string }>;
@@ -57,8 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return authService.initiateRegistration(input);
   }, []);
 
-  const completeRegistration = useCallback(async (email: string, otpCode: string) => {
-    const res = await authService.completeRegistration(email, otpCode);
+  const completeRegistration = useCallback(async (email: string, totpToken: string) => {
+    const res = await authService.completeRegistration(email, totpToken);
     setUser(res.user);
     return res.user;
   }, []);

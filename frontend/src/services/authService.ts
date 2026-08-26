@@ -29,14 +29,14 @@ export interface LoginResult {
 }
 
 export const authService = {
-  /** Step 1: Initiate registration - sends OTP to email. */
-  async initiateRegistration(input: InitiateRegistrationInput): Promise<{ message: string; email: string }> {
-    return api.post<{ message: string; email: string }>('/auth/register/initiate', input);
+  /** Step 1: Validate form, generate TOTP secret + QR code. Returns { email, qrCodeDataUrl, manualKey }. */
+  async initiateRegistration(input: InitiateRegistrationInput): Promise<{ message: string; email: string; qrCodeDataUrl: string; manualKey: string }> {
+    return api.post<{ message: string; email: string; qrCodeDataUrl: string; manualKey: string }>('/auth/register/initiate', input);
   },
 
-  /** Step 2: Complete registration with OTP verification. */
-  async completeRegistration(email: string, otpCode: string): Promise<{ token: string; user: User }> {
-    const res = await api.post<{ token: string; user: User }>('/auth/register/complete', { email, otpCode });
+  /** Step 2: Complete registration with first TOTP token from authenticator app. */
+  async completeRegistration(email: string, totpToken: string): Promise<{ token: string; user: User }> {
+    const res = await api.post<{ token: string; user: User }>('/auth/register/complete', { email, totpToken });
     if (res.token) {
       tokenStore.set(res.token);
     }
@@ -90,8 +90,9 @@ export const authService = {
     return res.user;
   },
 
-  async generateOtp(): Promise<{ code: string }> {
-    return api.post<{ code: string }>('/auth/otp/generate', {});
+  /** Generate a new TOTP secret + QR code for Account Settings. Returns { qrCodeDataUrl, manualKey }. */
+  async generateOtp(): Promise<{ qrCodeDataUrl: string; manualKey: string }> {
+    return api.post<{ qrCodeDataUrl: string; manualKey: string }>('/auth/otp/generate', {});
   },
 
   async verifyOtp(code: string): Promise<{ valid: boolean }> {

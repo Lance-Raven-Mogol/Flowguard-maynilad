@@ -53,6 +53,8 @@ export interface NewUser {
   passwordHash: string;
   startDate?: string;
   barangay?: string;
+  otpSecret?: string;
+  otpEnabled?: boolean;
 }
 
 export const userRepo = {
@@ -92,7 +94,8 @@ export const userRepo = {
         role: input.role,
         password_hash: input.passwordHash,
         start_date: input.startDate ?? new Date().toISOString().slice(0, 10),
-        otp_enabled: false,
+        otp_enabled: input.otpEnabled ?? false,
+        ...(input.otpSecret ? { otp_secret: input.otpSecret } : {}),
       })
       .select('*')
       .single<UserRow>();

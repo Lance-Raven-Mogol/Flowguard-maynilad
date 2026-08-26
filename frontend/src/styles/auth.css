@@ -167,13 +167,16 @@ html {
 .auth-panel {
   display: grid;
   place-items: center;
+  align-items: start;
   padding: clamp(32px, 6vh, 56px) clamp(24px, 4vw, 56px);
   background: #ffffff;
+  overflow-y: auto;
 }
 
 .auth-form-wrap {
   width: 100%;
   max-width: 400px;
+  margin: auto;
 }
 
 .auth-head {
@@ -590,3 +593,250 @@ html {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* --------------------------------------------------------------- TOTP Setup */
+
+/* When TOTP step is active, widen the form panel so QR + steps fit side by side */
+.auth-form-wrap--wide {
+  max-width: 700px;
+}
+
+/* auth-panel needs to scroll when content is taller than viewport */
+.auth-panel {
+  overflow-y: auto;
+  align-items: flex-start;
+  padding-top: clamp(32px, 5vh, 56px);
+  padding-bottom: clamp(32px, 5vh, 56px);
+}
+
+/* ── Outer wrapper replaces .login-form for the TOTP step ── */
+.totp-setup-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Header row: shield icon + title + subtitle ── */
+.totp-setup-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.totp-shield-icon {
+  flex-shrink: 0;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.totp-setup-title {
+  margin: 0 0 4px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--a-ink);
+}
+
+.totp-setup-sub {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--a-muted);
+  line-height: 1.5;
+}
+
+/* ── 2-col body: steps left, QR right ── */
+.totp-setup-body {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  align-items: start;
+}
+
+/* ── Numbered steps column ── */
+.totp-steps-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.totp-step-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.totp-step-row--sub {
+  margin-top: -8px;
+  padding-left: 4px;
+}
+
+.totp-step-num {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--a-blue);
+  color: #fff;
+  font: 600 0.8rem/1 "Poppins", sans-serif;
+  margin-top: 1px;
+}
+
+.totp-step-num--sub {
+  background: transparent;
+  color: var(--a-muted);
+  font-size: 0.95rem;
+  font-weight: 400;
+}
+
+.totp-step-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.totp-step-title {
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--a-ink);
+}
+
+.totp-step-desc {
+  margin: 0;
+  font-size: 0.83rem;
+  line-height: 1.55;
+  color: var(--a-muted);
+}
+
+.totp-step-desc strong {
+  color: var(--a-ink);
+}
+
+.totp-ext-link {
+  color: var(--a-blue);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.totp-ext-link:hover {
+  text-decoration: underline;
+}
+
+/* Manual key row (inside step 2 fallback) */
+.totp-manual-key-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--a-field);
+  border: 1.5px solid var(--a-line);
+  border-radius: 10px;
+}
+
+.totp-manual-key-text {
+  flex: 1;
+  font: 500 0.78rem/1.4 "Courier New", monospace;
+  color: var(--a-ink);
+  word-break: break-all;
+  letter-spacing: 0.04em;
+}
+
+.totp-copy-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border: 1.5px solid var(--a-line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--a-muted);
+  font: 500 0.75rem/1 "Poppins", sans-serif;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+}
+
+.totp-copy-btn:hover {
+  border-color: var(--a-blue);
+  color: var(--a-blue);
+  background: rgba(47, 107, 255, 0.04);
+}
+
+/* ── QR column ── */
+.totp-qr-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.totp-qr-wrap {
+  padding: 10px;
+  background: #fff;
+  border: 1.5px solid var(--a-line);
+  border-radius: 14px;
+}
+
+.totp-qr-img {
+  width: 160px;
+  height: 160px;
+  display: block;
+}
+
+.totp-qr-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--a-muted);
+  text-align: center;
+  max-width: 120px;
+  line-height: 1.4;
+}
+
+/* ── Actions row ── */
+.totp-setup-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.totp-setup-actions .primary-submit {
+  margin: 0;
+}
+
+.totp-setup-actions .otp-back {
+  text-align: center;
+}
+
+/* ── Responsive: stack to single column on small screens ── */
+@media (max-width: 600px) {
+  .auth-form-wrap--wide {
+    max-width: 400px;
+  }
+
+  .totp-setup-body {
+    grid-template-columns: 1fr;
+  }
+
+  /* Move QR above the steps on mobile */
+  .totp-qr-col {
+    order: -1;
+  }
+
+  .totp-qr-img {
+    width: 140px;
+    height: 140px;
+  }
+
+  .otp-input-group {
+    justify-content: center !important;
+  }
+}
+
+/* old helpers kept for backward compat */
+.totp-app-notice,
+.totp-scan-label,
+.totp-manual-hint,
+.totp-notice-num,
+.totp-notice-text { display: none; }

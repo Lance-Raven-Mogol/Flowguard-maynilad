@@ -1,13 +1,13 @@
 /**
- * Auth service — Firebase Auth handles email verification.
- * Backend only handles JWT tokens and user data.
+ * Auth service — TOTP-based verification (Google Authenticator / Authy).
+ * No nodemailer. No email OTP. Codes are generated locally on the device —
+ * zero network lag, works on free hosting with no SMTP setup.
  */
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 import { userRepo } from '../models/userRepo.js';
-import { sendOtpEmail } from './mailer.service.js';
+import { generateTotpSetup, verifyTotpToken } from './totp.service.js';
 import { renameIncidentReporter, insertRow as auditInsert } from '../models/resourceRepo.js';
 import { uploadAvatar } from '../models/supabase.js';
 import { ROLES, type PublicUser, type Role, type User } from '../models/types.js';
@@ -52,14 +52,34 @@ function signToken(u: User): string {
 
 export interface AuthResult { token: string; user: PublicUser; }
 
-const pending = new Map<string, { fullName: string; email: string; passwordHash: string; barangay: string; otpCode: string; expiresAt: number; attempts: number }>();
+/**
+ * Pending registrations waiting for TOTP setup verification.
+ * Key: email. Value: form data + temporary TOTP secret.
+ * Expires in 10 minutes so users have time to install / scan.
+ */
+const pending = new Map<string, {
+  fullName: string; email: string; passwordHash: string; barangay: string;
+  totpSecret: string; expiresAt: number; attempts: number;
+}>();
 
-const pendingLogins = new Map<string, { userId: string; email: string; otpCode: string; expiresAt: number; attempts: number }>();
-
-function genOtp(): string { return crypto.randomInt(100000, 999999).toString(); }
+/**
+ * Pending logins waiting for TOTP verification.
+ * Key: email. Value: userId reference.
+ */
+const pendingLogins = new Map<string, {
+  userId: string; email: string; expiresAt: number; attempts: number;
+}>();
 
 export const authService = {
-  async initiateRegistration(input: { fullName?: string; email?: string; password?: string; barangay?: string }): Promise<{ message: string; email: string }> {
+  /**
+   * Step 1 of signup: validate form data, generate TOTP secret + QR code.
+   * Returns the QR code data-URL and the manual key to show in the UI.
+   * The user scans this with Google Authenticator / Authy, then submits a
+   * 6-digit code to complete registration — no email needed.
+   */
+  async initiateRegistration(input: { fullName?: string; email?: string; password?: string; barangay?: string }): Promise<{
+    email: string; qrCodeDataUrl: string; manualKey: string; message: string;
+  }> {
     const fullName = input.fullName?.trim();
     const email = input.email?.trim().toLowerCase();
     const password = input.password ?? '';
@@ -70,72 +90,104 @@ export const authService = {
     if (password.length < 6) throw badRequest('Password must be at least 6 characters.');
     if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
 
+    // Reuse existing pending entry if still valid (user came back to this step)
     const existing = pending.get(email);
     if (existing && existing.expiresAt > Date.now()) {
-      await sendOtpEmail(email, existing.otpCode);
-      return { message: 'OTP sent to your email.', email };
+      // Re-generate QR from existing secret so the screen refreshes correctly
+      const { generateTotpSetup: gen } = await import('./totp.service.js');
+      const setup = await gen(email);
+      // Update with fresh secret for this session
+      pending.set(email, { ...existing, totpSecret: setup.secret, expiresAt: Date.now() + 10 * 60 * 1000 });
+      return { email, qrCodeDataUrl: setup.qrCodeDataUrl, manualKey: setup.manualKey, message: 'Scan the QR code with your authenticator app.' };
     }
 
-    const otpCode = genOtp();
-    pending.set(email, { fullName, email, passwordHash: bcrypt.hashSync(password, 10), barangay, otpCode, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0 });
-    await sendOtpEmail(email, otpCode);
-    return { message: 'OTP sent to your email.', email };
+    const setup = await generateTotpSetup(email);
+    pending.set(email, {
+      fullName, email,
+      passwordHash: bcrypt.hashSync(password, 10),
+      barangay,
+      totpSecret: setup.secret,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+      attempts: 0,
+    });
+
+    return { email, qrCodeDataUrl: setup.qrCodeDataUrl, manualKey: setup.manualKey, message: 'Scan the QR code with your authenticator app.' };
   },
 
-  async completeRegistration(input: { email?: string; otpCode?: string }): Promise<AuthResult> {
+  /**
+   * Step 2 of signup: verify the first TOTP token to confirm the user
+   * successfully added the account to their authenticator app.
+   * Creates the user account and returns a session JWT.
+   */
+  async completeRegistration(input: { email?: string; totpToken?: string }): Promise<AuthResult> {
     const email = input.email?.trim().toLowerCase();
-    const otpCode = input.otpCode ?? '';
-    if (!email || !otpCode) throw badRequest('Email and OTP code are required.');
+    const token = (input.totpToken ?? '').replace(/\s/g, '');
+    if (!email || !token) throw badRequest('Email and authenticator code are required.');
+    if (token.length !== 6 || !/^\d{6}$/.test(token)) throw badRequest('Please enter the 6-digit code from your authenticator app.');
 
     const p = pending.get(email);
-    if (!p) throw badRequest('No pending registration found.');
-    if (p.expiresAt < Date.now()) { pending.delete(email); throw badRequest('OTP expired.'); }
-    if (p.attempts >= 5) { pending.delete(email); throw badRequest('Too many failed attempts.'); }
-    if (p.otpCode !== otpCode) { p.attempts++; throw badRequest(`Invalid OTP. ${5 - p.attempts} attempts remaining.`); }
+    if (!p) throw badRequest('No pending registration found. Please start over.');
+    if (p.expiresAt < Date.now()) { pending.delete(email); throw badRequest('Setup session expired. Please start over.'); }
+    if (p.attempts >= 5) { pending.delete(email); throw badRequest('Too many failed attempts. Please start over.'); }
 
-    const user = await userRepo.create({ fullName: p.fullName, email: p.email, role: 'customer', passwordHash: p.passwordHash, barangay: p.barangay });
+    if (!verifyTotpToken(p.totpSecret, token)) {
+      p.attempts++;
+      const left = 5 - p.attempts;
+      throw badRequest(left > 0 ? `Invalid code. ${left} attempt${left === 1 ? '' : 's'} remaining.` : 'Too many failed attempts. Please start over.');
+    }
+
+    // Create user with TOTP already set up and enabled
+    const user = await userRepo.create({
+      fullName: p.fullName,
+      email: p.email,
+      role: 'customer',
+      passwordHash: p.passwordHash,
+      barangay: p.barangay,
+      otpSecret: p.totpSecret,
+      otpEnabled: true,
+    });
     pending.delete(email);
     await audit('register', p.fullName, 'customer', user.id, p.email, { email: p.email, role: 'customer', barangay: p.barangay });
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
-  async resendOtp(input: { email?: string }): Promise<{ message: string }> {
-    const email = input.email?.trim().toLowerCase();
-    if (!email || !EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
-    const p = pending.get(email);
-    if (!p) throw badRequest('No pending registration found.');
-    const otpCode = genOtp();
-    pending.set(email, { ...p, otpCode, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0 });
-    await sendOtpEmail(email, otpCode);
-    return { message: 'OTP resent to your email.' };
+  /** Not used for TOTP (no email to resend to) — kept for API compat, does nothing harmful */
+  async resendOtp(_input: { email?: string }): Promise<{ message: string }> {
+    return { message: 'Scan the QR code in your authenticator app to get a new code.' };
   },
 
+  /**
+   * Step 2 of login (when TOTP is enabled): verify token from authenticator app.
+   * loginToken is just the email used as a key into the pendingLogins map.
+   */
   async verifyLoginOtp(input: { loginToken?: string; otpCode?: string }): Promise<AuthResult> {
     const email = input.loginToken?.trim().toLowerCase();
-    const otpCode = input.otpCode ?? '';
-    if (!email || !otpCode) throw badRequest('Login token and OTP code are required.');
+    const token = (input.otpCode ?? '').replace(/\s/g, '');
+    if (!email || !token) throw badRequest('Login token and authenticator code are required.');
 
     const p = pendingLogins.get(email);
     if (!p) throw badRequest('No pending login found. Please log in again.');
-    if (p.expiresAt < Date.now()) { pendingLogins.delete(email); throw badRequest('OTP expired. Please log in again.'); }
+    if (p.expiresAt < Date.now()) { pendingLogins.delete(email); throw badRequest('Login session expired. Please log in again.'); }
     if (p.attempts >= 5) { pendingLogins.delete(email); throw badRequest('Too many failed attempts. Please log in again.'); }
-    if (p.otpCode !== otpCode) { p.attempts++; throw badRequest(`Invalid OTP. ${5 - p.attempts} attempts remaining.`); }
 
+    // Get the stored TOTP secret for this user
     const user = await userRepo.findById(p.userId);
+    if (!user) { pendingLogins.delete(email); throw unauthorized('Account no longer exists.'); }
+    if (!user.otpSecret) { pendingLogins.delete(email); throw badRequest('TOTP not set up for this account.'); }
+
+    if (!verifyTotpToken(user.otpSecret, token)) {
+      p.attempts++;
+      const left = 5 - p.attempts;
+      throw badRequest(left > 0 ? `Invalid code. ${left} attempt${left === 1 ? '' : 's'} remaining.` : 'Too many failed attempts. Please log in again.');
+    }
+
     pendingLogins.delete(email);
-    if (!user) throw unauthorized('Account no longer exists.');
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
-  async resendLoginOtp(input: { loginToken?: string }): Promise<{ message: string }> {
-    const email = input.loginToken?.trim().toLowerCase();
-    if (!email) throw badRequest('Login token is required.');
-    const p = pendingLogins.get(email);
-    if (!p) throw badRequest('No pending login found. Please log in again.');
-    const otpCode = genOtp();
-    pendingLogins.set(email, { ...p, otpCode, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0 });
-    await sendOtpEmail(email, otpCode);
-    return { message: 'OTP resent to your email.' };
+  /** Not needed for TOTP — codes refresh every 30 s automatically */
+  async resendLoginOtp(_input: { loginToken?: string }): Promise<{ message: string }> {
+    return { message: 'Open your authenticator app to get a new code. Codes refresh every 30 seconds.' };
   },
 
   async register(input: { fullName?: string; email?: string; password?: string }): Promise<AuthResult> {
@@ -160,11 +212,10 @@ export const authService = {
     if (user.isArchived) throw unauthorized('This account has been deactivated.');
 
     const otpEnabled = user.otpEnabled ?? false;
-    if (otpEnabled) {
-      const otpCode = genOtp();
-      pendingLogins.set(email, { userId: user.id, email, otpCode, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0 });
-      await sendOtpEmail(email, otpCode);
-      return { loginToken: email, otpRequired: true, message: 'OTP sent to your email.' };
+    if (otpEnabled && user.otpSecret) {
+      // Store a pending login entry — TOTP token will be verified in verifyLoginOtp
+      pendingLogins.set(email, { userId: user.id, email, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0 });
+      return { loginToken: email, otpRequired: true, message: 'Enter the code from your authenticator app.' };
     }
 
     return { token: signToken(user), user: toPublicUser(user), otpRequired: false, message: 'Login successful.' };
@@ -250,22 +301,36 @@ export const authService = {
     catch { throw unauthorized('Invalid or expired session.'); }
   },
 
-  async generateOtp(userId: string): Promise<string> {
-    const code = crypto.randomInt(100000, 999999).toString();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    await userRepo.update(userId, { otpSecret: `${code}:${expiresAt}` });
+  /**
+   * Generate a fresh TOTP setup (new secret + QR) for an existing user.
+   * Used by Account Settings when enabling TOTP.
+   * The secret is saved as "pending" on the user row; only becomes "active"
+   * after verifyOtp succeeds and enableOtp is called.
+   */
+  async generateOtp(userId: string): Promise<{ qrCodeDataUrl: string; manualKey: string }> {
     const user = await userRepo.findById(userId);
-    if (user) await sendOtpEmail(user.email, code);
-    return code;
+    if (!user) throw notFound('User not found.');
+    const setup = await generateTotpSetup(user.email);
+    // Store the secret temporarily (prefixed so we know it's pending)
+    await userRepo.update(userId, { otpSecret: `pending:${setup.secret}` });
+    return { qrCodeDataUrl: setup.qrCodeDataUrl, manualKey: setup.manualKey };
   },
 
-  async verifyOtp(userId: string, code: string): Promise<boolean> {
+  /**
+   * Verify the TOTP token against the pending secret.
+   * Returns true if valid — caller should then call enableOtp.
+   */
+  async verifyOtp(userId: string, token: string): Promise<boolean> {
     const user = await userRepo.findById(userId);
     if (!user || !user.otpSecret) return false;
-    const [stored, expiresAt] = user.otpSecret.split(':');
-    if (stored !== code || new Date(expiresAt) < new Date()) return false;
-    await userRepo.update(userId, { otpSecret: undefined });
-    return true;
+    // Handle both pending:SECRET and plain SECRET
+    const secret = user.otpSecret.startsWith('pending:') ? user.otpSecret.slice(8) : user.otpSecret;
+    const valid = verifyTotpToken(secret, token);
+    if (valid && user.otpSecret.startsWith('pending:')) {
+      // Promote from pending to active
+      await userRepo.update(userId, { otpSecret: secret });
+    }
+    return valid;
   },
 
   async enableOtp(userId: string): Promise<void> {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../controllers/AuthContext';
@@ -10,7 +10,7 @@ import { PasswordInput } from './PasswordInput';
 type Step = 'credentials' | 'otp';
 
 export function LoginPage() {
-  const { login, verifyLoginOtp, resendLoginOtp } = useAuth();
+  const { login, verifyLoginOtp } = useAuth();
   const { notify } = useToast();
   const navigate = useNavigate();
 
@@ -20,21 +20,11 @@ export function LoginPage() {
   const [remember, setRemember] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // OTP state
+  // TOTP state
   const [otpCode, setOtpCode] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
   const [loginToken, setLoginToken] = useState('');
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  // Cooldown timer for resend OTP
-  useEffect(() => {
-    if (cooldown <= 0) return;
-    const timer = setInterval(() => {
-      setCooldown((c) => (c > 0 ? c - 1 : 0));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [cooldown]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,8 +38,6 @@ export function LoginPage() {
       if (result.otpRequired && result.loginToken) {
         setLoginToken(result.loginToken);
         setStep('otp');
-        setCooldown(60);
-        notify('OTP sent to your email!', 'success');
       } else {
         navigate('/dashboard');
       }
@@ -68,33 +56,14 @@ export function LoginPage() {
     setOtpLoading(true);
     try {
       await verifyLoginOtp(loginToken, otpCode, remember);
-      notify('OTP verified! Signing in...');
+      notify('Signed in successfully!');
       navigate('/dashboard');
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'OTP verification failed.', 'error');
+      notify(err instanceof ApiError ? err.message : 'Verification failed.', 'error');
+      setOtpCode('');
     } finally {
       setOtpLoading(false);
     }
-  };
-
-  const handleResendOtp = async () => {
-    if (cooldown > 0) return;
-    try {
-      await resendLoginOtp(loginToken);
-      setCooldown(60);
-      notify('OTP resent to your email!', 'success');
-    } catch (err) {
-      notify(err instanceof ApiError ? err.message : 'Failed to resend OTP.', 'error');
-    }
-  };
-
-  const maskEmail = (e: string) => {
-    const [name, domain] = e.split('@');
-    if (!domain) return e;
-    const masked = name.length > 2
-      ? name[0] + '***' + name[name.length - 1]
-      : name[0] + '***';
-    return `${masked}@${domain}`;
   };
 
   return (
@@ -102,7 +71,7 @@ export function LoginPage() {
       label={step === 'credentials' ? 'Welcome back' : 'Verify your identity'}
       subtitle={step === 'credentials'
         ? 'Sign in to your FlowGuard account.'
-        : `Enter the 6-digit code sent to ${maskEmail(email)}`
+        : 'Enter the code from your authenticator app.'
       }
     >
       {step === 'credentials' ? (
@@ -132,8 +101,8 @@ export function LoginPage() {
             <ShieldCheck size={32} strokeWidth={1.8} />
           </div>
           <p className="otp-step-desc">
-            We sent a verification code to<br />
-            <strong>{maskEmail(email)}</strong>
+            Open your <strong>authenticator app</strong> and enter<br />
+            the 6-digit code for <strong>FlowGuard</strong>.
           </p>
 
           <div className="otp-input-group">
@@ -168,6 +137,7 @@ export function LoginPage() {
               />
             ))}
           </div>
+          <p className="otp-cooldown" style={{ textAlign: 'center', marginTop: '0.3rem' }}>Codes change every 30 seconds.</p>
 
           <button
             className="primary-submit"
@@ -179,13 +149,6 @@ export function LoginPage() {
           </button>
 
           <div className="otp-actions">
-            {cooldown > 0 ? (
-              <p className="otp-cooldown">Resend code in {cooldown}s</p>
-            ) : (
-              <button type="button" className="otp-link-btn" onClick={handleResendOtp}>
-                Resend code
-              </button>
-            )}
             <button
               type="button"
               className="otp-link-btn otp-back"
