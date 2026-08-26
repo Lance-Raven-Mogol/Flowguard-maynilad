@@ -173,7 +173,6 @@ alter table public.material_requests add column if not exists unit_price  numeri
 alter table public.material_requests add column if not exists total_cost  numeric(12,2) default 0;
 alter table public.material_requests add column if not exists source      text default 'external';
 alter table public.material_requests add column if not exists supplier    text;
-alter table public.material_requests add column if not exists supplier_id uuid references public.suppliers(id) on delete set null;
 alter table public.material_requests add column if not exists justification text;
 -- Customer general-request fulfillment fields
 --   payment_option: how the customer intends to pay ('cash_on_delivery' or 'gcash')
@@ -199,6 +198,7 @@ create table if not exists public.audit_logs (
 alter table public.audit_logs add column if not exists archived boolean not null default false;
 
 -- --------------------------------------------- Supplier profiles -----------
+-- Must be created BEFORE material_requests.supplier_id references it.
 create table if not exists public.suppliers (
   id              uuid primary key default gen_random_uuid(),
   name            text unique not null,
@@ -211,7 +211,10 @@ create table if not exists public.suppliers (
   archived        boolean not null default false,
   created_at      timestamptz not null default now()
 );
-alter table public.materials add column if not exists supplier_id uuid references public.suppliers(id) on delete set null;
+
+-- Now safe to add supplier_id FK columns (suppliers table exists).
+alter table public.material_requests add column if not exists supplier_id uuid references public.suppliers(id) on delete set null;
+alter table public.materials         add column if not exists supplier_id uuid references public.suppliers(id) on delete set null;
 
 -- --------------------------------------------- Purchase requests -----------
 create table if not exists public.purchase_requests (

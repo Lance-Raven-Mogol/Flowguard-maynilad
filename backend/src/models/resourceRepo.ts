@@ -14,7 +14,10 @@ export interface DbError {
 }
 
 export async function listRows(table: string, opts: { archived?: 'only' | 'all' } = {}): Promise<Row[]> {
-  const sb = requireSupabase();
+  // When Supabase isn't configured (no .env), return an empty array instead of
+  // crashing with a 500 so the frontend shows an empty state rather than errors.
+  if (!supabase) return [];
+  const sb = supabase;
   let query = sb.from(table).select('*').order('created_at', { ascending: false });
   if (opts.archived === 'only') query = query.eq('archived', true);
   else if (opts.archived !== 'all') query = query.eq('archived', false);
