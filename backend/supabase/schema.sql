@@ -20,6 +20,13 @@ create table if not exists public.app_users (
   password_hash text        not null,
   created_at    timestamptz not null default now()
 );
+alter table public.app_users add column if not exists start_date    date;
+alter table public.app_users add column if not exists is_archived   boolean not null default false;
+alter table public.app_users add column if not exists avatar_url    text;
+alter table public.app_users add column if not exists barangay      text    not null default 'Boac';
+alter table public.app_users add column if not exists otp_secret    text;
+alter table public.app_users add column if not exists otp_enabled   boolean not null default false;
+alter table public.app_users add column if not exists job_level     text;
 create index if not exists app_users_email_idx on public.app_users (lower(email));
 
 -- ----------------------------------------------------- Incident module ------

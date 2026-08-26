@@ -43,7 +43,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function toPublicUser(u: User): PublicUser {
   const { passwordHash: _, otpSecret: __, ...pub } = u;
-  return { ...pub, startDate: u.startDate, isArchived: u.isArchived, barangay: u.barangay, otpEnabled: u.otpEnabled };
+  return { ...pub, startDate: u.startDate, isArchived: u.isArchived, barangay: u.barangay, otpEnabled: u.otpEnabled, jobLevel: u.jobLevel ?? null };
 }
 
 function signToken(u: User): string {
@@ -221,7 +221,7 @@ export const authService = {
     return { token: signToken(user), user: toPublicUser(user), otpRequired: false, message: 'Login successful.' };
   },
 
-  async adminCreateUser(input: { fullName?: string; email?: string; password?: string; role?: string; startDate?: string; barangay?: string }): Promise<PublicUser> {
+  async adminCreateUser(input: { fullName?: string; email?: string; password?: string; role?: string; startDate?: string; barangay?: string; jobLevel?: string }): Promise<PublicUser> {
     const fullName = input.fullName?.trim();
     const email = input.email?.trim().toLowerCase();
     const password = input.password ?? '';
@@ -231,9 +231,24 @@ export const authService = {
     if (password.length < 6) throw badRequest('Password must be at least 6 characters.');
     if (!ROLES.includes(role)) throw badRequest('A valid role is required.');
     if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
-    const user = await userRepo.create({ fullName, email, role, passwordHash: bcrypt.hashSync(password, 10), startDate: input.startDate, barangay: input.barangay });
+    const user = await userRepo.create({ fullName, email, role, passwordHash: bcrypt.hashSync(password, 10), startDate: input.startDate, barangay: input.barangay, jobLevel: input.jobLevel ?? null });
     await audit('admin_create_user', undefined, 'general-manager', user.id, email, { fullName, email, role });
     return toPublicUser(user);
+  },
+
+  async adminUpdateJobLevel(userId: string, jobLevel: string, actorUser?: PublicUser): Promise<PublicUser> {
+    const target = await userRepo.findById(userId);
+    if (!target) throw notFound('User not found.');
+    const prevLevel = target.jobLevel ?? null;
+    const updated = await userRepo.update(userId, { jobLevel });
+    if (!updated) throw notFound('User not found.');
+    await audit('job_level_change', actorUser?.fullName, 'general-manager', userId, updated.email, {
+      target_name: updated.fullName,
+      target_role: updated.role,
+      from: prevLevel,
+      to: jobLevel,
+    });
+    return toPublicUser(updated);
   },
 
   async adminUpdateRole(userId: string, role?: string, actorUser?: PublicUser): Promise<PublicUser> {

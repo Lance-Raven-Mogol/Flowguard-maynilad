@@ -5,6 +5,16 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { resourceService, type EntityRow } from '../services/resourceService';
+import { api } from '../services/apiClient';
+
+/** Minimal user shape needed for job-level promotion alerts. */
+export interface StatsUser {
+  id: string;
+  fullName: string;
+  role: string;
+  jobLevel: string | null;
+  isArchived: boolean;
+}
 
 export interface DashboardStats {
   incidents: EntityRow[];
@@ -14,6 +24,8 @@ export interface DashboardStats {
   assets: EntityRow[];
   advisories: EntityRow[];
   payments: EntityRow[];
+  /** Staff user list — populated only for the General Manager role; empty for others. */
+  users: StatsUser[];
 }
 
 const EMPTY: DashboardStats = {
@@ -24,9 +36,10 @@ const EMPTY: DashboardStats = {
   assets: [],
   advisories: [],
   payments: [],
+  users: [],
 };
 
-const ENTITIES: [keyof DashboardStats, string][] = [
+const ENTITIES: [keyof Omit<DashboardStats, 'users'>, string][] = [
   ['incidents', 'incidents'],
   ['jobOrders', 'job-orders'],
   ['materials', 'materials'],
@@ -52,38 +65,58 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   const [stats, setStats] = useState<DashboardStats>(EMPTY);
   const [loading, setLoading] = useState(true);
 
+  /** Fetch the user list — silently returns [] for non-GM roles (403 is caught). */
+  const fetchUsers = useCallback(async (): Promise<StatsUser[]> => {
+    try {
+      const res = await api.get<{ data: Array<{ id: string; fullName: string; role: string; jobLevel: string | null; isArchived: boolean }> }>('/users');
+      return res.data.map((u) => ({
+        id: u.id,
+        fullName: u.fullName,
+        role: u.role,
+        jobLevel: u.jobLevel ?? null,
+        isArchived: u.isArchived ?? false,
+      }));
+    } catch {
+      return [];
+    }
+  }, []);
+
   /** Full fetch — shows the loading state (used on first mount). */
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const results = await Promise.all(
-        ENTITIES.map(([, slug]) => resourceService.list(slug).catch(() => [] as EntityRow[])),
-      );
+      const [results, users] = await Promise.all([
+        Promise.all(ENTITIES.map(([, slug]) => resourceService.list(slug).catch(() => [] as EntityRow[]))),
+        fetchUsers(),
+      ]);
       const next = { ...EMPTY };
       ENTITIES.forEach(([key], i) => {
         next[key] = results[i];
       });
+      next.users = users;
       setStats(next);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchUsers]);
 
   /** Silent background fetch — no loading flash, just updates the data. */
   const silentReload = useCallback(async () => {
     try {
-      const results = await Promise.all(
-        ENTITIES.map(([, slug]) => resourceService.list(slug).catch(() => [] as EntityRow[])),
-      );
+      const [results, users] = await Promise.all([
+        Promise.all(ENTITIES.map(([, slug]) => resourceService.list(slug).catch(() => [] as EntityRow[]))),
+        fetchUsers(),
+      ]);
       const next = { ...EMPTY };
       ENTITIES.forEach(([key], i) => {
         next[key] = results[i];
       });
+      next.users = users;
       setStats(next);
     } catch {
       /* network blip — keep the last good snapshot */
     }
-  }, []);
+  }, [fetchUsers]);
 
   // Initial load.
   useEffect(() => {
@@ -224,6 +257,19 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
   }
 
   if (role === 'general-manager') {
+    // Staff members whose job level hasn't been set yet.
+    const JOB_LEVEL_ROLES = new Set(['zone-specialist', 'technical-team', 'inventory-officer', 'contractor']);
+    const unleveled = stats.users.filter((u) => !u.isArchived && JOB_LEVEL_ROLES.has(u.role) && u.jobLevel === null);
+    if (unleveled.length) {
+      alerts.push({
+        key: `joblevel:unset:${unleveled.map((u) => u.id).sort().join(',')}`,
+        view: 'users',
+        icon: 'badge',
+        title: `${unleveled.length} staff member${unleveled.length === 1 ? '' : 's'} without a job level`,
+        detail: `Set job levels for: ${unleveled.map((u) => u.fullName).slice(0, 3).join(', ')}${unleveled.length > 3 ? ` +${unleveled.length - 3} more` : ''}`,
+        tone: 'info',
+      });
+    }
     if (draftAdvisories.length) alerts.push({ key: aggKey('draftadv', draftAdvisories), view: 'advisories', icon: 'megaphone', title: `${draftAdvisories.length} advisory(ies) awaiting publish`, detail: 'Review and approve', tone: 'info' });
     if (overduePayments.length) alerts.push({ key: aggKey('overdue', overduePayments), view: 'payments', icon: 'credit-card', title: `${overduePayments.length} payment(s) overdue`, detail: 'Follow up required', tone: 'danger' });
     if (pendingSupplies.length) alerts.push({ key: aggKey('supplies', pendingSupplies), view: 'requests', icon: 'package', title: `${pendingSupplies.length} supply request(s) pending`, detail: 'Awaiting fulfillment', tone: 'warn' });
@@ -249,6 +295,11 @@ export function buildBadgeItems(stats: DashboardStats, role: string, fullName: s
   const overduePayments = ids(stats.payments.filter((p) => p.status === 'overdue' || p.status === 'late'));
   const pendingSupplies = ids(stats.materialRequests.filter((r) => r.request_type === 'general' && r.status === 'pending'));
 
+  const JOB_LEVEL_ROLES = new Set(['zone-specialist', 'technical-team', 'inventory-officer', 'contractor']);
+  const unlevedUsers = stats.users
+    .filter((u) => !u.isArchived && JOB_LEVEL_ROLES.has(u.role) && u.jobLevel === null)
+    .map((u) => u.id);
+
   switch (role) {
     case 'customer':
       return {
@@ -262,7 +313,7 @@ export function buildBadgeItems(stats: DashboardStats, role: string, fullName: s
     case 'inventory-officer':
       return { materials: [...outOfStock, ...lowStock], mrf: [...pendingMrf, ...pendingPurchases] };
     case 'general-manager':
-      return { incidents: open, requests: [...pendingMrf, ...pendingSupplies, ...pendingPurchases], advisories: draftAdv, payments: overduePayments, inventory: [...outOfStock, ...lowStock] };
+      return { incidents: open, requests: [...pendingMrf, ...pendingSupplies, ...pendingPurchases], advisories: draftAdv, payments: overduePayments, inventory: [...outOfStock, ...lowStock], users: unlevedUsers };
     default:
       return {};
   }

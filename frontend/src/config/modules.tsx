@@ -2873,11 +2873,25 @@ export function AdvisoriesModule({ filter, readOnly = false, title }: ModuleProp
 }
 
 /* ----------------------------------------------------- Users (admin only) */
+
+/** Default job level titles per role — what someone holds when first assigned. */
+const JOB_LEVEL_DEFAULTS: Record<string, string[]> = {
+  'zone-specialist':   ['Junior Zone Specialist', 'Senior Zone Specialist'],
+  'technical-team':    ['Junior Technician', 'Senior Technician'],
+  'inventory-officer': ['Junior Inventory Officer', 'Senior Inventory Officer'],
+  'contractor':        ['Junior Contractor', 'Senior Contractor'],
+  'general-manager':   ['General Manager'],
+};
+
+/** Roles that can have a job level (customers and GMs are excluded from manual editing). */
+const JOB_LEVEL_ROLES = new Set(['zone-specialist', 'technical-team', 'inventory-officer', 'contractor']);
+
 interface UserRow {
   id: string;
   fullName: string;
   email: string;
   role: string;
+  jobLevel?: string | null;
   createdAt: string;
   startDate?: string | null;
   isArchived?: boolean;
@@ -2896,6 +2910,12 @@ export function UsersPanel({ filter }: ModuleProps) {
   const [form, setForm] = useState(BLANK_USER);
   const [showArchived, setShowArchived] = useState(false);
   const [showTemporaryPassword, setShowTemporaryPassword] = useState(false);
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+
+  // Job-level edit modal state
+  const [jobLevelTarget, setJobLevelTarget] = useState<UserRow | null>(null);
+  const [jobLevelValue, setJobLevelValue] = useState('');
+  const [savingJobLevel, setSavingJobLevel] = useState(false);
 
   const load = () =>
     api
@@ -2962,8 +2982,27 @@ export function UsersPanel({ filter }: ModuleProps) {
     }
   };
 
+  const openJobLevelModal = (u: UserRow) => {
+    setJobLevelTarget(u);
+    setJobLevelValue(u.jobLevel ?? JOB_LEVEL_DEFAULTS[u.role]?.[0] ?? '');
+  };
+
+  const saveJobLevel = async () => {
+    if (!jobLevelTarget || !jobLevelValue.trim()) return;
+    setSavingJobLevel(true);
+    try {
+      await api.patch(`/users/${jobLevelTarget.id}/job-level`, { jobLevel: jobLevelValue.trim() });
+      notify(`Job level updated to "${jobLevelValue.trim()}".`);
+      setJobLevelTarget(null);
+      await load();
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not update job level.', 'error');
+    } finally {
+      setSavingJobLevel(false);
+    }
+  };
+
   const roleOptions = ROLES.map((r) => ({ value: r.value, label: r.label }));
-  const filteredRows = rows.filter((u) => (showArchived ? Boolean(u.isArchived) : !u.isArchived));
 
   const openCreateUser = () => {
     setForm({ ...BLANK_USER, password: DEFAULT_TEMPORARY_PASSWORD });
@@ -2976,26 +3015,48 @@ export function UsersPanel({ filter }: ModuleProps) {
     setShowTemporaryPassword(false);
   };
 
+  // Roles that actually appear in the user list (excluding customer for the filter bar)
+  const staffRoles = ROLES.filter((r) => r.value !== 'customer');
+  const roleFilteredRows = rows.filter((u) => {
+    if (showArchived ? !u.isArchived : u.isArchived) return false;
+    if (roleFilter === 'all') return true;
+    return u.role === roleFilter;
+  });
+
   const table = useMemo(
     () => ({
       id: 'users',
-      columns: ['Name', 'Email', 'Role', 'Start Date', 'Status'],
-      rows: filteredRows.map((u) => ({
+      columns: ['Name', 'Email', 'Role', 'Job Level', 'Start Date', 'Status'],
+      rows: roleFilteredRows.map((u) => ({
         id: u.id,
         cells: [
           { text: u.fullName, strong: true } as TableCell,
           { text: u.email },
           badgeCell(titleCase(u.role), 'low'),
+          { text: u.jobLevel ?? (JOB_LEVEL_DEFAULTS[u.role]?.[0] ?? '—') },
           { text: u.startDate ? dateShort(u.startDate) : '—' },
           u.isArchived ? badgeCell('Archived', 'high') : { text: 'Active', status: 'paid' as StatusTone },
         ],
       })),
     }),
-    [filteredRows],
+    [roleFilteredRows],
   );
 
   return (
     <>
+      {/* Role filter bar */}
+      <div className="quick-filter-bar" aria-label="Filter by role">
+        <button type="button" className={roleFilter === 'all' ? 'active' : ''} onClick={() => setRoleFilter('all')}>
+          All Roles
+        </button>
+        {staffRoles.map((r) => (
+          <button key={r.value} type="button" className={roleFilter === r.value ? 'active' : ''} onClick={() => setRoleFilter(r.value)}>
+            {r.label}
+            <strong>{rows.filter((u) => u.role === r.value && !u.isArchived).length}</strong>
+          </button>
+        ))}
+      </div>
+
       <PanelHead
         title="User Management"
         action={
@@ -3019,17 +3080,51 @@ export function UsersPanel({ filter }: ModuleProps) {
             const u = rows.find((x) => x.id === id);
             if (!u) return null;
             return (
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <StatusSelect value={u.role} options={roleOptions} disabled={busyId === id} onChange={(role) => changeRole(id, role)} />
-                {u.isArchived ? (
-                  <button className="btn-action" disabled={busyId === id} onClick={() => restoreUser(id)}>Restore</button>
-                ) : (
-                  <button className="btn-action btn-archive" disabled={busyId === id} onClick={() => archiveUser(id)}>Resign</button>
-                )}
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {JOB_LEVEL_ROLES.has(u.role) && !u.isArchived && (
+                    <button className="btn-action" disabled={busyId === id} onClick={() => openJobLevelModal(u)}>
+                      Level
+                    </button>
+                  )}
+                  {u.isArchived ? (
+                    <button className="btn-action" disabled={busyId === id} onClick={() => restoreUser(id)}>Restore</button>
+                  ) : (
+                    <button className="btn-action btn-archive" disabled={busyId === id} onClick={() => archiveUser(id)}>Resign</button>
+                  )}
+                </div>
               </div>
             );
           }}
         />
+      )}
+
+      {/* Job Level Modal */}
+      {jobLevelTarget && (
+        <Modal
+          title={`Job Level — ${jobLevelTarget.fullName}`}
+          open
+          onClose={() => setJobLevelTarget(null)}
+          onSubmit={saveJobLevel}
+          submitText="Save"
+          submitting={savingJobLevel}
+        >
+          <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--muted)' }}>
+            Role: <strong>{titleCase(jobLevelTarget.role)}</strong>
+          </p>
+          <div className="form-group">
+            <label>Job Level</label>
+            <select
+              value={jobLevelValue}
+              onChange={(e) => setJobLevelValue(e.target.value)}
+            >
+              {(JOB_LEVEL_DEFAULTS[jobLevelTarget.role] ?? []).map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+        </Modal>
       )}
 
       {open && (

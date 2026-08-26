@@ -3,7 +3,7 @@ import { requireAuth } from '../middleware/auth.middleware.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { userRepo } from '../models/userRepo.js';
 import { authService } from '../services/auth.service.js';
-import { forbidden } from '../utils/httpError.js';
+import { forbidden, badRequest } from '../utils/httpError.js';
 import type { Request } from 'express';
 
 export const userRoutes = Router();
@@ -53,6 +53,19 @@ userRoutes.patch(
   asyncHandler(async (req, res) => {
     assertAdmin(req);
     const user = await authService.adminUpdateRole(req.params.id, req.body?.role, req.user);
+    res.json({ data: user });
+  }),
+);
+
+// Update a user's job level (GM only).
+userRoutes.patch(
+  '/:id/job-level',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    assertAdmin(req);
+    const jobLevel = String(req.body?.jobLevel ?? '').trim();
+    if (!jobLevel) throw badRequest('jobLevel is required.');
+    const user = await authService.adminUpdateJobLevel(req.params.id, jobLevel, req.user);
     res.json({ data: user });
   }),
 );

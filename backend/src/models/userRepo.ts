@@ -27,6 +27,7 @@ interface UserRow {
   barangay: string | null;
   otp_secret: string | null;
   otp_enabled: boolean;
+  job_level: string | null;
 }
 
 function fromRow(row: UserRow): User {
@@ -43,6 +44,7 @@ function fromRow(row: UserRow): User {
     barangay: row.barangay ?? 'Boac',
     otpSecret: row.otp_secret ?? undefined,
     otpEnabled: row.otp_enabled ?? false,
+    jobLevel: row.job_level ?? null,
   };
 }
 
@@ -55,6 +57,7 @@ export interface NewUser {
   barangay?: string;
   otpSecret?: string;
   otpEnabled?: boolean;
+  jobLevel?: string | null;
 }
 
 export const userRepo = {
@@ -96,6 +99,7 @@ export const userRepo = {
         start_date: input.startDate ?? new Date().toISOString().slice(0, 10),
         otp_enabled: input.otpEnabled ?? false,
         ...(input.otpSecret ? { otp_secret: input.otpSecret } : {}),
+        ...(input.jobLevel != null ? { job_level: input.jobLevel } : {}),
       })
       .select('*')
       .single<UserRow>();
@@ -105,7 +109,7 @@ export const userRepo = {
 
   async update(
     id: string,
-    fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string; startDate?: string; isArchived?: boolean; barangay?: string; otpSecret?: string; otpEnabled?: boolean },
+    fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string; startDate?: string; isArchived?: boolean; barangay?: string; otpSecret?: string; otpEnabled?: boolean; jobLevel?: string | null },
   ): Promise<User | undefined> {
     if (!supabase) return store.updateUser(id, fields);
 
@@ -120,6 +124,7 @@ export const userRepo = {
     if (fields.barangay !== undefined) row.barangay = fields.barangay;
     if (fields.otpSecret !== undefined) row.otp_secret = fields.otpSecret;
     if (fields.otpEnabled !== undefined) row.otp_enabled = fields.otpEnabled;
+    if (fields.jobLevel !== undefined) row.job_level = fields.jobLevel;
 
     const { data, error } = await supabase
       .from(TABLE)
@@ -136,7 +141,7 @@ export const userRepo = {
     if (!supabase) return [];
     const { data, error } = await supabase
       .from(TABLE)
-      .select('id, full_name, email, role, created_at, avatar_url, start_date, is_archived, barangay')
+      .select('id, full_name, email, role, created_at, avatar_url, start_date, is_archived, barangay, job_level')
       .order('created_at', { ascending: true });
     if (error) throw new Error(`Supabase listPublic failed: ${error.message}`);
     return (data ?? []).map((r: Record<string, unknown>) => ({
@@ -149,6 +154,7 @@ export const userRepo = {
       startDate: r.start_date as string | null,
       isArchived: (r.is_archived as boolean) ?? false,
       barangay: (r.barangay as string) ?? 'Boac',
+      jobLevel: (r.job_level as string | null) ?? null,
     }));
   },
 

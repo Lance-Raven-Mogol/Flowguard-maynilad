@@ -34,6 +34,7 @@ export interface User {
   barangay?: string;
   otpSecret?: string;
   otpEnabled?: boolean;
+  jobLevel?: string | null;
 }
 
 /** Safe projection of a user for API responses. */
@@ -48,6 +49,7 @@ export interface PublicUser {
   isArchived?: boolean;
   barangay?: string;
   otpEnabled?: boolean;
+  jobLevel?: string | null;
 }
 
 /** Visual status pill variants reused across every table. */
