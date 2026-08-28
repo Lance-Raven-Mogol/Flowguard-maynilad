@@ -3068,7 +3068,59 @@ td strong {
 .saved-payment-list { display: grid; gap: 8px; max-height: 190px; margin-bottom: 22px; overflow-y: auto; }
 .saved-payment-list > div { display: grid; gap: 3px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); }
 .saved-payment-list strong { color: var(--text); }
+
+/* Payment Profile Cards — full detail view in Payment Information modal */
+.payment-profile-card { display: grid; grid-template-columns: 80px 1fr auto; align-items: start; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-soft); }
+.payment-profile-card--editing { grid-template-columns: 1fr; }
+.payment-profile-card__qr { width: 80px; height: 80px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; background: #fff; flex-shrink: 0; }
+.payment-profile-card__qr img { width: 100%; height: 100%; object-fit: contain; }
+.payment-profile-card__qr-placeholder { font-size: 26px; color: var(--muted); font-weight: 700; }
+.payment-profile-card__body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.payment-profile-card__name { font-size: 15px; font-weight: 700; color: var(--text); }
+.payment-profile-card__method { font-size: 13px; color: var(--blue); font-weight: 600; }
+.payment-profile-card__details { display: grid; gap: 4px; margin: 6px 0 0; }
+.payment-profile-card__details > div { display: grid; grid-template-columns: 100px 1fr; gap: 6px; font-size: 12px; }
+.payment-profile-card__details dt { color: var(--muted); }
+.payment-profile-card__details dd { margin: 0; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.payment-profile-card__actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
 .saved-payment-list span { color: var(--text-soft); font-size: 12px; }
+
+/* Always-visible Payment Options panel in the Billing tab */
+.billing-payment-info-panel {
+  margin-bottom: 18px;
+  padding: 20px 22px;
+}
+.billing-payment-info-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.billing-payment-info-title {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+}
+.billing-payment-info-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.billing-add-payment-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.billing-payment-info-list {
+  display: grid;
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .billing-payment-info-head { flex-direction: column; }
+  .billing-add-payment-btn { width: 100%; }
+}
+
 .complaint-billing-summary { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
 .complaint-bill-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 0; border-bottom: 1px solid var(--line); }
 .complaint-bill-row > div:first-child { display: grid; gap: 3px; min-width: 0; }

@@ -14,7 +14,8 @@ create table if not exists public.app_users (
   role          text        not null check (
                   role in (
                     'customer','zone-specialist','general-manager',
-                    'inventory-officer','technical-team','contractor'
+                    'inventory-officer','technical-team','contractor',
+                    'inhouse-team','commercial-department'
                   )
                 ),
   password_hash text        not null,
@@ -329,12 +330,13 @@ alter table public.pending_registrations enable row level security;
 -- ============================================================================
 
 -- --------------------------------------------- Role constraint migration ----
--- Adds 'contractor' to the app_users role check. Safe to re-run.
+-- Adds 'inhouse-team' and 'commercial-department' to the app_users role check. Safe to re-run.
 alter table public.app_users drop constraint if exists app_users_role_check;
 alter table public.app_users add constraint app_users_role_check
   check (
     role in (
       'customer','zone-specialist','general-manager',
-      'inventory-officer','technical-team','contractor'
+      'inventory-officer','technical-team','contractor',
+      'inhouse-team','commercial-department'
     )
   );

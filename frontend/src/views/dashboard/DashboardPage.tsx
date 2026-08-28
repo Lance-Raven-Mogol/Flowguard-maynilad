@@ -54,7 +54,7 @@ function DashboardShell() {
 
       <main className="main-panel">
         <Topbar config={config} filter={filter} onFilter={setFilter} onNavigate={selectView} />
-        <section className="view-section active-view">{activeView?.render({ filter })}</section>
+        <section className="view-section active-view">{activeView?.render({ filter, navigate: selectView })}</section>
       </main>
 
       <Modal

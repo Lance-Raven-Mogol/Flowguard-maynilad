@@ -17,6 +17,7 @@ import {
   IncidentsModule,
   JobOrdersModule,
   MaterialsModule,
+  PaymentOptionsModule,
   RequestsModule,
   SuppliersModule,
   UsersPanel,
@@ -24,6 +25,7 @@ import {
 
 export interface ViewContext {
   filter: string;
+  navigate: (viewId: string) => void;
 }
 
 export interface ViewDef {
@@ -31,7 +33,8 @@ export interface ViewDef {
   label: string;
   icon: string;
   badge?: string;
-  group: 'main' | 'support';
+  /** 'hidden' views are reachable by navigate() but not shown in the sidebar. */
+  group: 'main' | 'support' | 'hidden';
   render: (ctx: ViewContext) => ReactNode;
 }
 
@@ -71,6 +74,15 @@ const faqView = (id: string, label: string, icon: string, title: string, items: 
     </>
   ),
 });
+
+/** Hidden view for the Payment Options page — navigated to via button in Billing. */
+const paymentOptionsView: ViewDef = {
+  id: 'payment-options',
+  label: 'Payment Options',
+  icon: 'wallet',
+  group: 'hidden',
+  render: () => <PaymentOptionsModule />,
+};
 
 export const ROLE_CONFIG: Record<Role, RoleConfig> = {
   // ---------------------------------------------------------------- CUSTOMER
@@ -140,8 +152,9 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       },
       {
         id: 'payments', label: 'Billing', icon: 'credit-card', group: 'main',
-        render: ({ filter }) => <BillingModule filter={filter} />,
+        render: ({ filter, navigate }) => <BillingModule filter={filter} navigate={navigate} />,
       },
+      paymentOptionsView,
       {
         id: 'assets', label: 'Asset Lifecycle', icon: 'box', group: 'main',
         render: ({ filter }) => <AssetsModule filter={filter} />,
@@ -266,6 +279,70 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         { q: 'How do I request materials?', a: "In 'Material Requests', click 'New Request'. Select the material from inventory or type a custom item, enter the quantity, and optionally link it to a job order reference." },
         { q: 'How do I register an installed asset?', a: "In 'Asset Registry', click 'Register Asset'. Enter the asset name, type, location, and the installation date. The system will begin tracking its health score from that date." },
         { q: 'What is the Asset Health Score?', a: "The health score (0–100) is automatically calculated based on the asset's age relative to its expected lifespan and its reported condition. It updates every time the asset record is viewed." },
+      ]),
+      settings(),
+    ],
+  },
+
+  // ------------------------------------------------------------- INHOUSE TEAM
+  'inhouse-team': {
+    brand: { title: 'IN-HOUSE', subtitle: 'Assigned Field Work' },
+    menuTitle: 'WORK MENU',
+    supportTitle: 'HELP & SUPPORT',
+    searchPlaceholder: 'Search job order or asset',
+    views: [
+      overview('My Assignments'),
+      {
+        id: 'joborders', label: 'Job Orders', icon: 'clipboard-list', group: 'main',
+        render: ({ filter }) => <JobOrdersModule filter={filter} title="Assigned Job Orders" />,
+      },
+      {
+        id: 'requests', label: 'Material Requests', icon: 'hammer', group: 'main',
+        render: ({ filter }) => <RequestsModule filter={filter} title="My Material Requests" />,
+      },
+      {
+        id: 'assets', label: 'Asset Registry', icon: 'box', group: 'main',
+        render: ({ filter }) => <AssetsModule filter={filter} title="Asset Registry" />,
+      },
+      faqView('support', 'Field Support', 'help-circle', 'In-house Team Field Support', [
+        { q: 'How do I update a job order?', a: "In 'Job Orders', use the status dropdown to move a job from Pending → In Progress → Completed. You can also add notes or update the assigned team details." },
+        { q: 'How do I request materials?', a: "In 'Material Requests', click 'New Request'. Select the material from inventory or type a custom item, enter the quantity, and optionally link it to a job order reference." },
+        { q: 'How do I register an installed asset?', a: "In 'Asset Registry', click 'Register Asset'. Enter the asset name, type, location, and the installation date. The system will begin tracking its health score from that date." },
+        { q: 'What is the Asset Health Score?', a: "The health score (0–100) is automatically calculated based on the asset's age relative to its expected lifespan and its reported condition. It updates every time the asset record is viewed." },
+      ]),
+      settings(),
+    ],
+  },
+
+  // ------------------------------------------------------- COMMERCIAL DEPARTMENT
+  'commercial-department': {
+    brand: { title: 'COMMERCIAL', subtitle: 'Customer & Service Operations' },
+    menuTitle: 'MAIN MENU',
+    supportTitle: 'HELP & SUPPORT',
+    searchPlaceholder: 'Search incidents or job orders',
+    views: [
+      overview('Overview'),
+      {
+        id: 'incidents', label: 'Incidents', icon: 'message-square', group: 'main',
+        render: ({ filter }) => <IncidentsModule filter={filter} title="Customer Complaints & Incidents" />,
+      },
+      {
+        id: 'joborders', label: 'Job Orders', icon: 'clipboard-list', group: 'main',
+        render: ({ filter }) => <JobOrdersModule filter={filter} title="Job Order Management" />,
+      },
+      {
+        id: 'billing', label: 'Billing', icon: 'credit-card', group: 'main',
+        render: ({ filter, navigate }) => <BillingModule filter={filter} navigate={navigate} />,
+      },
+      paymentOptionsView,
+      {
+        id: 'advisories', label: 'Service Advisories', icon: 'megaphone', group: 'main',
+        render: ({ filter }) => <AdvisoriesModule filter={filter} readOnly title="Service Advisories" />,
+      },
+      faqView('support', 'Help & Support', 'circle-help', 'Commercial Department Support', [
+        { q: 'How do I view customer complaints?', a: "Open 'Incidents' to see all reported complaints. You can filter by status, urgency, or type to prioritize follow-up." },
+        { q: 'How do I create a job order?', a: "In 'Job Orders', click 'New Job Order'. Fill in the title, scope, assign a team, set a schedule date, and optionally link it to an incident reference." },
+        { q: 'How do I track a job order status?', a: "In 'Job Orders', each row shows its current status: Pending, In Progress, Completed, or Cancelled. Use the status dropdown to update it." },
       ]),
       settings(),
     ],

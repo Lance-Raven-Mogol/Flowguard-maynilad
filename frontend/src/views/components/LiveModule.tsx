@@ -36,6 +36,10 @@ export interface ModuleField {
   suggestionsFromRows?: (rows: EntityRow[]) => string[];
   /** Render select options with the shared custom dropdown instead of the browser-native menu. */
   styledSelect?: boolean;
+  /** For images fields: max number of attachments (default 5). */
+  maxFiles?: number;
+  /** For images fields: max bytes per file (default 5 MB). */
+  maxSizeBytes?: number;
 }
 
 /** Today's date as YYYY-MM-DD — used as the min for scheduling date pickers. */
@@ -437,7 +441,7 @@ export function LiveModule({
 
   return (
     <>
-      {metrics && !showArchived && rows.length > 0 && <MetricsGrid metrics={metrics(rows)} />}
+      {metrics && !showArchived && <MetricsGrid metrics={metrics(visibleRows)} />}
       {quickFilterItems.length > 0 && !showArchived && (
         <div className="quick-filter-bar" aria-label="Quick filters">
           <button type="button" className={quickFilter === 'all' ? 'active' : ''} onClick={() => setQuickFilter('all')}>All Categories</button>
@@ -492,6 +496,8 @@ export function LiveModule({
                 <ImageUpload
                   value={(values[f.name] as string[]) ?? []}
                   onChange={(imgs) => setValues((p) => ({ ...p, [f.name]: imgs }))}
+                  maxFiles={f.maxFiles}
+                  maxSizeBytes={f.maxSizeBytes}
                 />
               ) : f.kind === 'textarea' ? (
                 <textarea
@@ -551,10 +557,10 @@ export function LiveModule({
  * Files are downscaled + re-encoded client-side so payloads stay small and the
  * request never trips the server body limit.
  */
-const MAX_IMAGES = 6;
-const MAX_INPUT_BYTES = 12 * 1024 * 1024; // reject absurdly large source files
-const MAX_DIM = 1280; // longest edge after downscale
-const REENCODE_OVER = 350 * 1024; // re-encode anything bigger than this
+const MAX_IMAGES = 5;                      // default max attachments per record
+const MAX_INPUT_BYTES = 5 * 1024 * 1024;   // 5 MB — reject files above this
+const MAX_DIM = 1280;                       // longest edge after downscale
+const REENCODE_OVER = 350 * 1024;          // re-encode anything bigger than this
 
 const readDataUrl = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -596,7 +602,17 @@ async function compressImage(file: File): Promise<string> {
   }
 }
 
-export function ImageUpload({ value, onChange }: { value: string[]; onChange: (imgs: string[]) => void }) {
+export function ImageUpload({
+  value,
+  onChange,
+  maxFiles = MAX_IMAGES,
+  maxSizeBytes = MAX_INPUT_BYTES,
+}: {
+  value: string[];
+  onChange: (imgs: string[]) => void;
+  maxFiles?: number;
+  maxSizeBytes?: number;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const { notify } = useToast();
   const [busy, setBusy] = useState(false);
@@ -607,17 +623,17 @@ export function ImageUpload({ value, onChange }: { value: string[]; onChange: (i
     if (!files.length) return;
     setBusy(true);
     try {
-      const room = MAX_IMAGES - value.length;
+      const room = maxFiles - value.length;
       const picked = files.slice(0, Math.max(0, room));
-      if (files.length > room) notify(`You can attach up to ${MAX_IMAGES} images.`, 'error');
+      if (files.length > room) notify(`You can attach up to ${maxFiles} image${maxFiles === 1 ? '' : 's'}.`, 'error');
       const next: string[] = [];
       for (const file of picked) {
         if (!file.type.startsWith('image/')) {
           notify('Only image files can be attached.', 'error');
           continue;
         }
-        if (file.size > MAX_INPUT_BYTES) {
-          notify(`"${file.name}" is too large and was skipped.`, 'error');
+        if (file.size > maxSizeBytes) {
+          notify(`"${file.name}" exceeds the ${Math.round(maxSizeBytes / 1024 / 1024)} MB limit and was skipped.`, 'error');
           continue;
         }
         next.push(await compressImage(file));
@@ -643,7 +659,7 @@ export function ImageUpload({ value, onChange }: { value: string[]; onChange: (i
           </button>
         </div>
       ))}
-      {value.length < MAX_IMAGES && (
+      {value.length < maxFiles && (
         <button type="button" className="image-add" onClick={() => inputRef.current?.click()} disabled={busy}>
           <ImagePlus size={20} />
           {busy ? 'Adding…' : 'Add Photo'}

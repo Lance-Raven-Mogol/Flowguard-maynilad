@@ -41,7 +41,7 @@ export interface ResourceDef {
 export const RESOURCES: Record<string, ResourceDef> = {
   incidents: {
     table: 'incidents',
-    writeRoles: ['customer', 'zone-specialist', 'technical-team'],
+    writeRoles: ['customer', 'zone-specialist', 'technical-team', 'commercial-department'],
     allowed: ['type', 'description', 'location', 'urgency', 'status', 'reported_by', 'remarks', 'images', 'archived'],
     required: ['description'],
     // Zone-specialist remarks have no fallback column — they must be stored, or
@@ -53,7 +53,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
 
   'job-orders': {
     table: 'job_orders',
-    writeRoles: ['technical-team'],
+    writeRoles: ['technical-team', 'commercial-department'],
     allowed: [
       'incident_ref', 'title', 'scope', 'team', 'assigned_to',
       'team_name', 'team_leader', 'team_members',
@@ -88,7 +88,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
     //   'mrf'      — formal Material Request Form, linked to inventory SKU / job order (technical-team, inventory-officer)
     //   'general'  — informal supply request open to all roles including customers
     //   'purchase' — procurement request with pricing & supplier (inventory-officer only, enforced frontend-side)
-    writeRoles: ['customer', 'zone-specialist', 'technical-team', 'contractor', 'inventory-officer'],
+    writeRoles: ['customer', 'zone-specialist', 'technical-team', 'contractor', 'inhouse-team', 'inventory-officer'],
     allowed: [
       // shared
       'material_name', 'quantity', 'requested_by', 'requested_by_id', 'status', 'archived', 'request_type',
@@ -110,7 +110,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
 
   assets: {
     table: 'assets',
-    writeRoles: ['technical-team', 'zone-specialist', 'contractor'],
+    writeRoles: ['technical-team', 'zone-specialist', 'contractor', 'inhouse-team'],
     allowed: ['asset_tag', 'name', 'type', 'location', 'install_date', 'expected_lifespan_years', 'last_maintenance', 'condition', 'archived'],
     required: ['name'],
     numeric: ['expected_lifespan_years'],
@@ -135,7 +135,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
 
   payments: {
     table: 'payments',
-    writeRoles: ['general-manager', 'inventory-officer'],
+    writeRoles: ['general-manager', 'inventory-officer', 'commercial-department'],
     allowed: [
       'customer_name', 'customer_email', 'incident_ref', 'job_order_ref', 'service_description',
       'amount', 'due_date', 'paid_date', 'status', 'notes', 'archived',
@@ -150,7 +150,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
 
   'payment-methods': {
     table: 'payment_methods',
-    writeRoles: ['general-manager'],
+    writeRoles: ['general-manager', 'commercial-department'],
     allowed: ['name', 'payment_method', 'account_name', 'account_number', 'payment_qr', 'archived'],
     required: ['name', 'payment_method', 'account_name'],
   },

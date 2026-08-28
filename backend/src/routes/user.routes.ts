@@ -17,7 +17,12 @@ userRoutes.get(
   '/',
   requireAuth,
   asyncHandler(async (req, res) => {
-    assertAdmin(req);
+    const role = req.user?.role;
+    // General manager has full management access; commercial-department can
+    // read the list (needed to look up customer emails for billing).
+    if (role !== 'general-manager' && role !== 'commercial-department') {
+      throw forbidden('Only the general manager can manage users.');
+    }
     res.json({ data: await userRepo.listPublic() });
   }),
 );
@@ -30,7 +35,7 @@ userRoutes.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const all = await userRepo.listPublic();
-    const teamRoles = new Set(['technical-team', 'contractor']);
+    const teamRoles = new Set(['technical-team', 'contractor', 'inhouse-team']);
     res.json({ data: all.filter((u) => teamRoles.has(u.role) && !u.isArchived) });
   }),
 );

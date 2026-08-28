@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Operational module configurations — thin wrappers over <LiveModule> that map
  * each FlowGuard module from the paper (incidents, job orders, inventory,
  * material requests, assets + health scoring, advisories, users) to live data.
@@ -52,18 +52,19 @@ const metric = (id: string, label: string, value: string, icon: string, accent: 
 });
 
 const WRITE: Record<string, string[]> = {
-  incidents: ['customer', 'zone-specialist', 'technical-team', 'general-manager'],
-  'job-orders': ['technical-team', 'general-manager'],
+  incidents: ['customer', 'zone-specialist', 'technical-team', 'general-manager', 'commercial-department'],
+  'job-orders': ['technical-team', 'general-manager', 'commercial-department'],
   materials: ['inventory-officer', 'general-manager'],
   suppliers: ['inventory-officer', 'general-manager'],
-  'material-requests': ['customer', 'zone-specialist', 'technical-team', 'contractor', 'inventory-officer', 'general-manager'],
-  assets: ['technical-team', 'zone-specialist', 'contractor', 'general-manager'],
+  'material-requests': ['customer', 'zone-specialist', 'technical-team', 'contractor', 'inhouse-team', 'inventory-officer', 'general-manager'],
+  assets: ['technical-team', 'zone-specialist', 'contractor', 'inhouse-team', 'general-manager'],
   advisories: ['technical-team', 'general-manager'],
-  payments: ['general-manager'],
+  payments: ['general-manager', 'commercial-department'],
 };
 
 interface ModuleProps {
   filter?: string;
+  navigate?: (viewId: string) => void;
 }
 
 /** Edit button shown only for active rows. */
@@ -154,48 +155,48 @@ interface UserLite {
 }
 
 /**
- * Registered technical-team members, for job-order assignment.
- * Calls the /users/team-members endpoint which is open to any authenticated
- * role, so both the GM and the technical-team can populate the picker.
+ * Fetches all assignable team accounts (technical-team, inhouse-team,
+ * contractor) from /users/team-members in one call, then exposes them
+ * split by role so the job-order form can filter by the chosen team type.
  */
-function useTechTeam(): { members: UserLite[]; loading: boolean; error: string | null } {
-  const [members, setMembers] = useState<UserLite[]>([]);
+function useAllTeamMembers(): {
+  inhouseMembers: UserLite[];
+  contractorMembers: UserLite[];
+  loading: boolean;
+  error: string | null;
+} {
+  const [all, setAll] = useState<UserLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
     api
       .get<{ data: UserLite[] }>('/users/team-members')
-      .then((r) => {
-        if (alive) setMembers(r.data.filter((u) => u.role === 'technical-team'));
-      })
-      .catch(() => alive && setError('Could not load technical-team members.'))
+      .then((r) => { if (alive) setAll(r.data); })
+      .catch(() => alive && setError('Could not load team accounts.'))
       .finally(() => alive && setLoading(false));
     return () => { alive = false; };
   }, []);
-  return { members, loading, error };
+  const inhouseMembers  = all.filter((u) => u.role === 'inhouse-team');
+  const contractorMembers = all.filter((u) => u.role === 'contractor');
+  return { inhouseMembers, contractorMembers, loading, error };
 }
 
 /**
- * Registered contractor accounts, for job-order assignment.
- * Uses the same /users/team-members endpoint as useTechTeam.
+ * @deprecated Use useAllTeamMembers instead.
+ * Kept temporarily so nothing else breaks while we transition.
+ */
+function useTechTeam(): { members: UserLite[]; loading: boolean; error: string | null } {
+  const { inhouseMembers, loading, error } = useAllTeamMembers();
+  return { members: inhouseMembers, loading, error };
+}
+
+/**
+ * @deprecated Use useAllTeamMembers instead.
  */
 function useContractors(): { members: UserLite[]; loading: boolean; error: string | null } {
-  const [members, setMembers] = useState<UserLite[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    api
-      .get<{ data: UserLite[] }>('/users/team-members')
-      .then((r) => {
-        if (alive) setMembers(r.data.filter((u) => u.role === 'contractor'));
-      })
-      .catch(() => alive && setError('Could not load contractor accounts.'))
-      .finally(() => alive && setLoading(false));
-    return () => { alive = false; };
-  }, []);
-  return { members, loading, error };
+  const { contractorMembers, loading, error } = useAllTeamMembers();
+  return { members: contractorMembers, loading, error };
 }
 
 /**
@@ -281,11 +282,13 @@ function MembersMultiSelect({
   value,
   onChange,
   placeholder = 'Select team members…',
+  leaderName = '',
 }: {
   members: UserLite[];
   value: string[];
   onChange: (names: string[]) => void;
   placeholder?: string;
+  leaderName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -329,6 +332,7 @@ function MembersMultiSelect({
           <p className="ms-hint">Click to select/deselect — {value.length} selected</p>
           {members.map((m) => {
             const selected = value.includes(m.fullName);
+            const isLeader = leaderName && m.fullName === leaderName;
             return (
               <button
                 key={m.id}
@@ -339,7 +343,12 @@ function MembersMultiSelect({
                 onMouseDown={(e) => { e.preventDefault(); toggle(m.fullName); }}
               >
                 <span className="ls-avatar">{m.fullName[0].toUpperCase()}</span>
-                <span className="ms-option-name">{m.fullName}</span>
+                <span className="ms-option-name">
+                  {m.fullName}
+                  {isLeader && (
+                    <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--blue)', fontWeight: 600 }}>Leader</span>
+                  )}
+                </span>
                 <span className={`ms-tick${selected ? ' is-selected' : ''}`}>
                   {selected ? (
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -372,9 +381,10 @@ function JobOrderForm({
   onCreated: () => Promise<void> | void;
 }) {
   const { notify } = useToast();
-  const techTeam = useTechTeam();
-  const contractors = useContractors();
+  const { inhouseMembers, contractorMembers, loading, error } = useAllTeamMembers();
 
+  // 'in-house' | 'contractor'
+  const [teamType, setTeamType] = useState<'in-house' | 'contractor'>('in-house');
   const [teamName, setTeamName] = useState('');
   const [leader, setLeader] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
@@ -386,17 +396,33 @@ function JobOrderForm({
   const [scheduled, setScheduled] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // The member pool shown in the pickers depends on the selected team type.
+  const memberPool = teamType === 'in-house' ? inhouseMembers : contractorMembers;
+  const poolLabel  = teamType === 'in-house' ? 'In-house Team' : 'Contractor';
+  const emptyMsg   = teamType === 'in-house'
+    ? 'No in-house team accounts registered yet. Add them in User Management first.'
+    : 'No contractor accounts registered yet. Add them in User Management first.';
+
+  // Reset pickers whenever the team type changes so stale selections are cleared.
+  const handleTeamTypeChange = (t: 'in-house' | 'contractor') => {
+    setTeamType(t);
+    setLeader('');
+    setPicked([]);
+  };
+
   const save = async () => {
     if (!title.trim()) return notify('A job title is required.', 'error');
     if (!leader) return notify('Select a team leader.', 'error');
-    const membersList = picked.length > 0 ? [leader, ...picked] : [leader];
+    // Leader is always first; picked members are deduped so the leader isn't listed twice.
+    const otherMembers = picked.filter((m) => m !== leader);
+    const membersList = [leader, ...otherMembers];
     setSaving(true);
     try {
       await resourceService.create('job-orders', {
         title: title.trim(),
         incident_ref: incident ? String(incident.ref_code ?? '') : '',
         scope: scope.trim(),
-        team: 'in-house',
+        team: teamType,
         team_name: teamName.trim(),
         team_leader: leader,
         team_members: membersList,
@@ -444,46 +470,64 @@ function JobOrderForm({
       </div>
 
       <p className="detail-section-title">Team Assignment</p>
+
+      {/* ── Team Type ── */}
+      <div className="form-group">
+        <label>Assign To</label>
+        <select value={teamType} onChange={(e) => handleTeamTypeChange(e.target.value as 'in-house' | 'contractor')}>
+          <option value="in-house">In-house Team</option>
+          <option value="contractor">Contractor</option>
+        </select>
+      </div>
+
       <div className="form-group">
         <label>Team Name</label>
         <input value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder="e.g. Alpha Crew" />
       </div>
 
-      {/* ── Team Leader — styled single-select ── */}
+      {/* ── Team Leader ── */}
       <div className="form-group">
         <label>
           Team Leader{' '}
-          <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12 }}>(Technical Team)</span>
+          <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12 }}>({poolLabel})</span>
         </label>
-        {techTeam.loading ? (
-          <p style={{ color: 'var(--muted)', margin: 0 }}>Loading technical-team members…</p>
-        ) : techTeam.error ? (
-          <p style={{ color: '#e25577', margin: 0 }}>{techTeam.error}</p>
-        ) : techTeam.members.length === 0 ? (
-          <p style={{ color: '#e25577', margin: 0 }}>
-            No technical-team accounts registered yet. Add them in User Management first.
-          </p>
+        {loading ? (
+          <p style={{ color: 'var(--muted)', margin: 0 }}>Loading {poolLabel.toLowerCase()} accounts…</p>
+        ) : error ? (
+          <p style={{ color: '#e25577', margin: 0 }}>{error}</p>
+        ) : memberPool.length === 0 ? (
+          <p style={{ color: '#e25577', margin: 0 }}>{emptyMsg}</p>
         ) : (
-          <LeaderSelect members={techTeam.members} value={leader} onChange={setLeader} />
+          <LeaderSelect
+            key={teamType}
+            members={memberPool}
+            value={leader}
+            onChange={setLeader}
+            placeholder={`Select a ${poolLabel.toLowerCase()} leader…`}
+          />
         )}
       </div>
 
-      {/* ── Team Members — styled multi-select ── */}
+      {/* ── Team Members (multi-select, optional) ── */}
       <div className="form-group">
         <label>
           Team Members{' '}
-          <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12 }}>(Contractors — optional)</span>
+          <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12 }}>({poolLabel} — optional)</span>
         </label>
-        {contractors.loading ? (
-          <p style={{ color: 'var(--muted)', margin: 0 }}>Loading contractor accounts…</p>
-        ) : contractors.error ? (
-          <p style={{ color: '#e25577', margin: 0 }}>{contractors.error}</p>
-        ) : contractors.members.length === 0 ? (
-          <p style={{ color: '#e25577', margin: 0 }}>
-            No contractor accounts registered yet. Add them in User Management first.
-          </p>
+        {loading ? (
+          <p style={{ color: 'var(--muted)', margin: 0 }}>Loading…</p>
+        ) : error ? (
+          <p style={{ color: '#e25577', margin: 0 }}>{error}</p>
+        ) : memberPool.length === 0 ? (
+          <p style={{ color: 'var(--muted)', margin: 0 }}>No additional members available.</p>
         ) : (
-          <MembersMultiSelect members={contractors.members} value={picked} onChange={setPicked} />
+          <MembersMultiSelect
+            key={teamType}
+            members={memberPool}
+            value={picked}
+            onChange={setPicked}
+            leaderName={leader}
+          />
         )}
       </div>
 
@@ -556,18 +600,22 @@ function IncidentViewButton({
   canEditRemarks,
   canCreateJobOrder = false,
   showCustomerBilling = false,
+  canEditUrgency = false,
 }: {
   c: RowActionCtx;
   canEditRemarks: boolean;
   canCreateJobOrder?: boolean;
   showCustomerBilling?: boolean;
+  canEditUrgency?: boolean;
 }) {
   const { stats } = useStats();
   const [open, setOpen] = useState(false);
   const [showJobForm, setShowJobForm] = useState(false);
   const [remarks, setRemarks] = useState('');
+  const [urgency, setUrgency] = useState('');
   const [saving, setSaving] = useState(false);
   const editable = canEditRemarks && !c.archived;
+  const urgencyEditable = canEditUrgency && !c.archived;
 
   const hasRemarks = String(c.row.remarks ?? '').trim() !== '';
   // A job order already exists for this incident — no second one may be created.
@@ -575,10 +623,11 @@ function IncidentViewButton({
     (j) => String(j.incident_ref ?? '') === String(c.row.ref_code ?? ''),
   );
   const hasJobOrder = Boolean(linkedJobOrder);
-  // The general manager can dispatch a crew once, and only while a complaint is
-  // triaged (has a remark, still "in progress", and not yet scheduled/ordered).
-  const canDispatch =
-    canCreateJobOrder && !c.archived && hasRemarks && c.row.status === 'in_progress' && !hasJobOrder;
+  // Oversight roles (GM, Commercial Dept) can dispatch a job order as soon as
+  // the complaint is In Progress — no zone-specialist remark required.
+  // For other roles, a remark must exist first.
+  const remarksOk = canCreateJobOrder || hasRemarks;
+  const canDispatch = canCreateJobOrder && !c.archived && remarksOk && c.row.status === 'in_progress' && !hasJobOrder;
 
   const afterCreate = async () => {
     setShowJobForm(false);
@@ -588,21 +637,30 @@ function IncidentViewButton({
 
   const openModal = () => {
     setRemarks(String(c.row.remarks ?? ''));
+    setUrgency(String(c.row.urgency ?? 'medium'));
     setOpen(true);
   };
   const save = async () => {
     setSaving(true);
     try {
-      const patch: Record<string, unknown> = { remarks: remarks.trim() };
-      // Adding a remark advances a freshly-reported complaint to "in progress"
-      // so the general manager can act on it (and create a job order).
-      if (c.row.status === 'under_verification') patch.status = 'in_progress';
-      await c.update(patch);
+      const patch: Record<string, unknown> = {};
+      if (editable) {
+        patch.remarks = remarks.trim();
+        // Adding a remark advances a freshly-reported complaint to "in progress"
+        // so the general manager can act on it (and create a job order).
+        if (c.row.status === 'under_verification') patch.status = 'in_progress';
+      }
+      if (urgencyEditable) {
+        patch.urgency = urgency;
+      }
+      if (Object.keys(patch).length > 0) await c.update(patch);
       setOpen(false);
     } finally {
       setSaving(false);
     }
   };
+
+  const hasEdits = editable || urgencyEditable;
 
   return (
     <>
@@ -615,8 +673,8 @@ function IncidentViewButton({
           open
           wide
           onClose={() => setOpen(false)}
-          onSubmit={editable ? save : undefined}
-          submitText="Save Remarks"
+          onSubmit={hasEdits ? save : undefined}
+          submitText="Save Changes"
           submitting={saving}
         >
           <IncidentDetail row={c.row} hideRemarks={editable} />
@@ -639,6 +697,16 @@ function IncidentViewButton({
               No work order has been dispatched for this complaint yet.
             </p>
           )}
+          {urgencyEditable && (
+            <div className="form-group" style={{ marginTop: 18, marginBottom: 0 }}>
+              <label>Urgency</label>
+              <select value={urgency} onChange={(e) => setUrgency(e.target.value)}>
+                {URGENCY.map((u) => (
+                  <option key={u} value={u}>{titleCase(u)}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {editable && (
             <div className="form-group" style={{ marginTop: 18, marginBottom: 0 }}>
               <label>Zone Specialist Remarks</label>
@@ -658,7 +726,7 @@ function IncidentViewButton({
             <p style={{ marginTop: 16, color: 'var(--muted)', fontSize: 13 }}>
               {hasJobOrder
                 ? 'A job order has already been created for this complaint.'
-                : 'A job order can be created once this complaint has a zone-specialist remark and its status is “In Progress”.'}
+                : 'A job order can be created once the complaint status is set to “In Progress”.'}
             </p>
           )}
         </Modal>
@@ -675,6 +743,7 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
   const role = user!.role;
   const canWrite = WRITE.incidents.includes(role);
   const manage = !mine && role !== 'customer';
+  const canManageUrgency = ['general-manager', 'commercial-department', 'zone-specialist', 'technical-team'].includes(role);
 
   const columns: ModuleColumn[] = [
     { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
@@ -689,8 +758,16 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
     { name: 'type', label: 'Type', kind: 'select', optionList: INCIDENT_TYPE_OPTIONS, default: 'complaint' },
     { name: 'description', label: 'Description', kind: 'textarea', placeholder: 'Describe the concern…' },
     { name: 'location', label: 'Location', placeholder: 'Brgy., Boac', default: user!.barangay ?? 'Boac' },
-    { name: 'urgency', label: 'Urgency', kind: 'select', options: URGENCY, default: 'medium' },
-    { name: 'images', label: 'Photos (optional)', kind: 'images' },
+    {
+      name: 'urgency',
+      label: 'Urgency',
+      kind: canManageUrgency ? 'select' : 'text',
+      options: canManageUrgency ? URGENCY : undefined,
+      default: 'medium',
+      readOnly: !canManageUrgency,
+      hint: !canManageUrgency ? 'Urgency is assessed by the Commercial Department or General Manager.' : undefined,
+    },
+    { name: 'images', label: 'Photos (optional)', kind: 'images', maxFiles: 5 },
     // Reporter is always the signed-in account — read-only, never editable.
     {
       name: 'reported_by',
@@ -704,7 +781,7 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
   const actions = canWrite
     ? (c: RowActionCtx) => (
         <>
-          {manage && !c.archived && !(role === 'general-manager' && c.row.status === 'under_verification') && (
+          {manage && !c.archived && (
             <StatusSelect value={String(c.row.status)} options={INCIDENT_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />
           )}
           <div className="btn-row">
@@ -712,7 +789,8 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
               <IncidentViewButton
                 c={c}
                 canEditRemarks={role === 'zone-specialist'}
-                canCreateJobOrder={role === 'general-manager'}
+                canCreateJobOrder={['general-manager', 'commercial-department'].includes(role)}
+                canEditUrgency={canManageUrgency}
                 showCustomerBilling={role === 'customer'}
               />
             )}
@@ -1212,12 +1290,14 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
   const { user } = useAuth();
   const role = user!.role;
   const canWrite = !readOnly && WRITE['job-orders'].includes(role);
-  // Both general-manager and technical-team create job orders through the team form.
-  const canAssign = role === 'general-manager' || role === 'technical-team';
+  // general-manager, technical-team, and commercial-department create job orders
+  // through the full team-assignment form (JobOrderForm).
+  const canAssign = ['general-manager', 'technical-team', 'commercial-department'].includes(role);
   const isTechTeam = role === 'technical-team';
   const isContractor = role === 'contractor';
+  const isInhouseTeam = role === 'inhouse-team';
   // Technical-team members only see the job orders their crew is assigned to.
-  // Contractors only see job orders assigned to them (by their fullName).
+  // Contractors and in-house team members only see job orders assigned to them.
   const me = user!.fullName.toLowerCase();
   const rowFilter =
     isTechTeam
@@ -1229,7 +1309,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
           const assigned = String(r.assigned_to ?? '').toLowerCase();
           return leader === me || members.includes(me) || assigned.includes(me);
         }
-      : isContractor
+      : isContractor || isInhouseTeam
       ? (r: EntityRow) => {
           const members = Array.isArray(r.team_members)
             ? (r.team_members as string[]).map((s) => String(s).toLowerCase())
@@ -1269,7 +1349,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
    */
   const techTeamActions = (c: RowActionCtx) => {
     const isLeader = String(c.row.team_leader ?? '').toLowerCase() === me;
-    const isGM = role === 'general-manager';
+    const isGM = role === 'general-manager' || role === 'commercial-department';
     const canChangeStatus = (isLeader || isGM) && !c.archived && c.row.status === 'in_progress';
     return (
       <>
@@ -1308,7 +1388,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
       filter={filter}
       rowFilter={rowFilter}
       actionLabel="Action"
-      archivable={canWrite && !isContractor}
+      archivable={canWrite && !isContractor && !isInhouseTeam}
       renderCreate={
         canAssign
           ? ({ reload }) => <CreateJobOrderButton onCreated={reload} />
@@ -1321,7 +1401,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
         metric('j4', 'Completed', count(rows, (r) => r.status === 'completed'), 'check-circle', 'invoices'),
       ]}
       actions={
-        isContractor
+        isContractor || isInhouseTeam
           ? contractorActions
           : isTechTeam
           ? techTeamActions
@@ -3535,7 +3615,7 @@ function CustomerBillingAction({ c }: { c: RowActionCtx }) {
         </div>
         <div className="form-group">
           <label>Screenshot / Proof of Payment</label>
-          <ImageUpload value={proof} onChange={setProof} />
+          <ImageUpload value={proof} onChange={setProof} maxFiles={3} />
         </div>
       </Modal>
     </>
@@ -3575,6 +3655,92 @@ function BillingReviewAction({ c }: { c: RowActionCtx }) {
   </>;
 }
 
+/**
+ * A single saved payment profile card — shows full details including QR code,
+ * with inline edit and delete capability.
+ */
+function PaymentProfileCard({ profile, onDeleted }: { profile: EntityRow; onDeleted: () => void }) {
+  const { notify } = useToast();
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const [name, setName]             = useState(String(profile.name ?? ''));
+  const [method, setMethod]         = useState(String(profile.payment_method ?? ''));
+  const [acctName, setAcctName]     = useState(String(profile.account_name ?? ''));
+  const [acctNum, setAcctNum]       = useState(String(profile.account_number ?? ''));
+  const [qr, setQr]                 = useState<string[]>(Array.isArray(profile.payment_qr) ? profile.payment_qr as string[] : []);
+
+  const save = async () => {
+    if (!name.trim() || !method.trim() || !acctName.trim()) {
+      notify('Profile name, payment method, and account name are required.', 'error'); return;
+    }
+    setSaving(true);
+    try {
+      await resourceService.update('payment-methods', String(profile.id), {
+        name, payment_method: method, account_name: acctName, account_number: acctNum, payment_qr: qr,
+      });
+      notify('Payment profile updated.');
+      setEditing(false);
+      onDeleted(); // refresh parent list
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not update profile.', 'error');
+    } finally { setSaving(false); }
+  };
+
+  const remove = async () => {
+    if (!confirm(`Delete payment profile "${String(profile.name)}"?`)) return;
+    setDeleting(true);
+    try {
+      await resourceService.update('payment-methods', String(profile.id), { archived: true });
+      notify('Payment profile removed.');
+      onDeleted();
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not delete profile.', 'error');
+    } finally { setDeleting(false); }
+  };
+
+  if (editing) {
+    return (
+      <div className="payment-profile-card payment-profile-card--editing">
+        <div className="form-grid">
+          <div className="form-group"><label>Profile Name</label><input value={name} onChange={(e) => setName(e.target.value)} /></div>
+          <div className="form-group"><label>Payment Method</label><input value={method} onChange={(e) => setMethod(e.target.value)} /></div>
+          <div className="form-group"><label>Account Name</label><input value={acctName} onChange={(e) => setAcctName(e.target.value)} /></div>
+          <div className="form-group"><label>Account Number</label><input value={acctNum} onChange={(e) => setAcctNum(e.target.value)} /></div>
+        </div>
+        <div className="form-group"><label>QR Code</label><ImageUpload value={qr} onChange={setQr} maxFiles={1} /></div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button className="btn-action" onClick={() => setEditing(false)} disabled={saving}>Cancel</button>
+          <button className="btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="payment-profile-card">
+      <div className="payment-profile-card__qr">
+        {Array.isArray(profile.payment_qr) && profile.payment_qr[0]
+          ? <img src={String(profile.payment_qr[0])} alt={`${String(profile.name)} QR`} />
+          : <span className="payment-profile-card__qr-placeholder">₱</span>}
+      </div>
+      <div className="payment-profile-card__body">
+        <strong className="payment-profile-card__name">{String(profile.name)}</strong>
+        <span className="payment-profile-card__method">{String(profile.payment_method)}</span>
+        <dl className="payment-profile-card__details">
+          <div><dt>Account Name</dt><dd>{String(profile.account_name)}</dd></div>
+          {Boolean(profile.account_number) && <div><dt>Account No.</dt><dd>{String(profile.account_number ?? '')}</dd></div>}
+        </dl>
+      </div>
+      <div className="payment-profile-card__actions">
+        <button className="btn-action" onClick={() => setEditing(true)}>Edit</button>
+        <button className="btn-action btn-archive" onClick={remove} disabled={deleting}>{deleting ? '…' : 'Delete'}</button>
+      </div>
+    </div>
+  );
+}
+
 interface BillingUser { fullName: string; email: string; role: string }
 interface BillableWork {
   key: string;
@@ -3588,13 +3754,19 @@ interface BillableWork {
   alreadyBilled?: boolean;
 }
 
-function BillingControls({ onCreated }: { onCreated: () => Promise<void> }) {
+function BillingControls({
+  onCreated,
+  profiles,
+  onPaymentOptions,
+}: {
+  onCreated: () => Promise<void>;
+  profiles: EntityRow[];
+  onPaymentOptions?: () => void;
+}) {
   const { notify } = useToast();
   const [issueOpen, setIssueOpen] = useState(false);
-  const [profilesOpen, setProfilesOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [works, setWorks] = useState<BillableWork[]>([]);
-  const [profiles, setProfiles] = useState<EntityRow[]>([]);
   const [users, setUsers] = useState<BillingUser[]>([]);
   const [workKey, setWorkKey] = useState('');
   const [profileIds, setProfileIds] = useState<string[]>([]);
@@ -3603,11 +3775,6 @@ function BillingControls({ onCreated }: { onCreated: () => Promise<void> }) {
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [existingBills, setExistingBills] = useState<EntityRow[]>([]);
-  const [profileName, setProfileName] = useState('');
-  const [profileMethod, setProfileMethod] = useState('GCash');
-  const [accountName, setAccountName] = useState('');
-  const [accountNumber, setAccountNumber] = useState('');
-  const [profileQr, setProfileQr] = useState<string[]>([]);
 
   // All bills loaded for the "already billed" check and display.
   const [allBills, setAllBills] = useState<EntityRow[]>([]);
@@ -3615,11 +3782,10 @@ function BillingControls({ onCreated }: { onCreated: () => Promise<void> }) {
   const loadOptions = async () => {
     setLoading(true);
     try {
-      const [incidents, jobs, bills, savedProfiles, requests, userResponse] = await Promise.all([
+      const [incidents, jobs, bills, requests, userResponse] = await Promise.all([
         resourceService.list('incidents'),
         resourceService.list('job-orders'),
         resourceService.list('payments'),
-        resourceService.list('payment-methods'),
         resourceService.list('material-requests'),
         api.get<{ data: BillingUser[] }>('/users'),
       ]);
@@ -3667,7 +3833,6 @@ function BillingControls({ onCreated }: { onCreated: () => Promise<void> }) {
         });
 
       setWorks([...jobWorks, ...requestWorks]);
-      setProfiles(savedProfiles.filter((p) => !p.archived));
       setUsers(userResponse.data);
     } catch (cause) {
       notify(cause instanceof ApiError ? cause.message : 'Could not load bill options.', 'error');
@@ -3764,27 +3929,11 @@ function BillingControls({ onCreated }: { onCreated: () => Promise<void> }) {
     } finally { setSaving(false); }
   };
 
-  const addProfile = async () => {
-    if (!profileName.trim() || !profileMethod.trim() || !accountName.trim()) {
-      notify('Profile name, payment method, and account name are required.', 'error'); return;
-    }
-    setSaving(true);
-    try {
-      await resourceService.create('payment-methods', {
-        name: profileName, payment_method: profileMethod, account_name: accountName,
-        account_number: accountNumber, payment_qr: profileQr,
-      });
-      await loadOptions();
-      notify('Payment information saved.');
-      setProfileName(''); setAccountName(''); setAccountNumber(''); setProfileQr([]);
-    } catch (cause) {
-      notify(cause instanceof ApiError ? cause.message : 'Could not save payment information.', 'error');
-    } finally { setSaving(false); }
-  };
-
   return <>
     <div className="panel-head-actions">
-      <ActionButton label="Payment Information" icon="wallet" variant="secondary" onClick={() => { setProfilesOpen(true); void loadOptions(); }} />
+      {onPaymentOptions && (
+        <ActionButton label="Payment Options" icon="wallet" variant="secondary" onClick={onPaymentOptions} />
+      )}
       <ActionButton label="Issue Final Bill" icon="plus-circle" onClick={openIssue} />
     </div>
     <Modal title="Issue Final Bill" open={issueOpen} wide onClose={() => setIssueOpen(false)} onSubmit={issueBill} submitText="Issue Bill" submitting={saving}>
@@ -3905,25 +4054,31 @@ function BillingControls({ onCreated }: { onCreated: () => Promise<void> }) {
                 <div className="form-group"><label>Service Description</label><textarea value={description} onChange={(e) => setDescription(e.target.value)} /></div>
       </>}
     </Modal>
-    <Modal title="Saved Payment Information" open={profilesOpen} wide onClose={() => setProfilesOpen(false)} onSubmit={addProfile} submitText="Save Payment Info" submitting={saving}>
-      {profiles.length > 0 && <div className="saved-payment-list">{profiles.map((profile) => <div key={profile.id}><strong>{String(profile.name)}</strong><span>{String(profile.payment_method)} · {String(profile.account_name)} · {String(profile.account_number ?? 'No account number')}</span></div>)}</div>}
-      <p className="detail-section-title">Add Payment Information</p>
-      <div className="form-grid">
-        <div className="form-group"><label>Profile Name</label><input value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="Main GCash" /></div>
-        <div className="form-group"><label>Payment Method</label><input value={profileMethod} onChange={(e) => setProfileMethod(e.target.value)} /></div>
-        <div className="form-group"><label>Account Name</label><input value={accountName} onChange={(e) => setAccountName(e.target.value)} /></div>
-        <div className="form-group"><label>Account Number</label><input value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} /></div>
-      </div>
-      <div className="form-group"><label>QR Code</label><ImageUpload value={profileQr} onChange={setProfileQr} /></div>
-    </Modal>
   </>;
 }
 
 
 
-export function BillingModule({ filter }: ModuleProps) {
+export function BillingModule({ filter, navigate }: ModuleProps) {
   const { user } = useAuth();
   const customer = user!.role === 'customer';
+
+  // ── Payment profiles (needed in the Issue Final Bill modal) ──
+  const [profiles, setProfiles] = useState<EntityRow[]>([]);
+
+  const loadProfiles = async () => {
+    try {
+      const saved = await resourceService.list('payment-methods');
+      setProfiles(saved.filter((p) => !p.archived));
+    } catch {
+      // ignore — profiles just won't appear in the bill modal
+    }
+  };
+
+  useEffect(() => {
+    if (!customer) void loadProfiles();
+  }, [customer]);
+
   const columns: ModuleColumn[] = [
     { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
     ...(!customer ? [{ header: 'Customer', cell: (r: EntityRow) => String(r.customer_name ?? '') }] : []),
@@ -3946,19 +4101,128 @@ export function BillingModule({ filter }: ModuleProps) {
     { name: 'payment_qr', label: 'Payment QR Code', kind: 'images' },
     { name: 'notes', label: 'Billing Notes', kind: 'textarea' },
   ];
-  return <LiveModule
-    entity="payments" title={customer ? 'My Billing' : 'Billing'} createLabel="Issue Final Bill"
-    columns={columns} fields={customer ? [] : fields} canWrite={!customer} filter={filter} archivable={!customer}
-    tableClassName="billing-table"
-    renderCreate={!customer ? ({ reload }) => <BillingControls onCreated={reload} /> : undefined}
-    metrics={(rows) => [
-      metric('bill1', customer ? 'My Bills' : 'Total Bills', String(rows.length), 'credit-card', 'customers'),
-      metric('bill2', 'Unpaid', count(rows, (r) => ['pending', 'unpaid'].includes(String(r.status))), 'clock', 'revenue'),
-      metric('bill3', 'For Verification', count(rows, (r) => r.status === 'for_verification'), 'shield', 'profit'),
-      metric('bill4', 'Paid', count(rows, (r) => r.status === 'paid'), 'check-circle', 'invoices'),
-    ]}
-    actions={(c) => customer ? <CustomerBillingAction c={c} /> : <><BillingReviewAction c={c} /><EditBtn c={c} /><ArchiveBtn c={c} /></>}
-  />;
+
+  return (
+    <LiveModule
+      entity="payments" title={customer ? 'My Billing' : 'Billing'} createLabel="Issue Final Bill"
+      columns={columns} fields={customer ? [] : fields} canWrite={!customer} filter={filter} archivable={!customer}
+      tableClassName="billing-table"
+      renderCreate={!customer ? ({ reload }) => <BillingControls onCreated={reload} profiles={profiles} onPaymentOptions={navigate ? () => navigate('payment-options') : undefined} /> : undefined}
+      metrics={(rows) => [
+        metric('bill1', customer ? 'My Bills' : 'Total Bills', String(rows.length), 'credit-card', 'customers'),
+        metric('bill2', 'Unpaid', count(rows, (r) => ['pending', 'unpaid'].includes(String(r.status))), 'clock', 'revenue'),
+        metric('bill3', 'For Verification', count(rows, (r) => r.status === 'for_verification'), 'shield', 'profit'),
+        metric('bill4', 'Paid', count(rows, (r) => r.status === 'paid'), 'check-circle', 'invoices'),
+      ]}
+      actions={(c) => customer ? <CustomerBillingAction c={c} /> : <><BillingReviewAction c={c} /><EditBtn c={c} /><ArchiveBtn c={c} /></>}
+    />
+  );
+}
+
+/* ------------------------------------------------- Payment Options */
+export function PaymentOptionsModule() {
+  const { notify } = useToast();
+  const [profiles, setProfiles] = useState<EntityRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [addOpen, setAddOpen] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [profileMethod, setProfileMethod] = useState('GCash');
+  const [accountName, setAccountName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [profileQr, setProfileQr] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const loadProfiles = async () => {
+    setLoading(true);
+    try {
+      const saved = await resourceService.list('payment-methods');
+      setProfiles(saved.filter((p) => !p.archived));
+    } catch {
+      // silently ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void loadProfiles(); }, []);
+
+  const addProfile = async () => {
+    if (!profileName.trim() || !profileMethod.trim() || !accountName.trim()) {
+      notify('Profile name, payment method, and account name are required.', 'error'); return;
+    }
+    setSaving(true);
+    try {
+      await resourceService.create('payment-methods', {
+        name: profileName, payment_method: profileMethod, account_name: accountName,
+        account_number: accountNumber, payment_qr: profileQr,
+      });
+      await loadProfiles();
+      notify('Payment option saved.');
+      setProfileName(''); setProfileMethod('GCash'); setAccountName(''); setAccountNumber(''); setProfileQr([]);
+      setAddOpen(false);
+    } catch (cause) {
+      notify(cause instanceof ApiError ? cause.message : 'Could not save payment option.', 'error');
+    } finally { setSaving(false); }
+  };
+
+  const closeModal = () => {
+    setAddOpen(false);
+    setProfileName(''); setProfileMethod('GCash'); setAccountName(''); setAccountNumber(''); setProfileQr([]);
+  };
+
+  return (
+    <>
+      <div className="billing-payment-info-panel panel">
+        <div className="billing-payment-info-head">
+          <div>
+            <h3 className="billing-payment-info-title">Payment Options</h3>
+            <p className="billing-payment-info-sub">
+              {loading
+                ? 'Loading…'
+                : profiles.length > 0
+                  ? `${profiles.length} active payment option${profiles.length !== 1 ? 's' : ''}`
+                  : 'No payment options saved yet'}
+            </p>
+          </div>
+          <button className="btn-primary billing-add-payment-btn" onClick={() => setAddOpen(true)}>
+            + Add Payment Option
+          </button>
+        </div>
+
+        {loading ? (
+          <p style={{ color: 'var(--muted)', padding: '8px 0' }}>Loading payment options…</p>
+        ) : profiles.length === 0 ? (
+          <p style={{ color: 'var(--muted)', padding: '8px 0' }}>
+            No payment options yet. Add one to attach it to bills you issue.
+          </p>
+        ) : (
+          <div className="billing-payment-info-list">
+            {profiles.map((p) => (
+              <PaymentProfileCard key={String(p.id)} profile={p} onDeleted={loadProfiles} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Modal
+        title="Add Payment Option"
+        open={addOpen}
+        wide
+        onClose={closeModal}
+        onSubmit={addProfile}
+        submitText="Save Payment Option"
+        submitting={saving}
+      >
+        <div className="form-grid">
+          <div className="form-group"><label>Profile Name</label><input value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="e.g. Main GCash" /></div>
+          <div className="form-group"><label>Payment Method</label><input value={profileMethod} onChange={(e) => setProfileMethod(e.target.value)} placeholder="e.g. GCash, Maya, BDO" /></div>
+          <div className="form-group"><label>Account Name</label><input value={accountName} onChange={(e) => setAccountName(e.target.value)} /></div>
+          <div className="form-group"><label>Account Number / Mobile No.</label><input value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} /></div>
+        </div>
+        <div className="form-group"><label>QR Code</label><ImageUpload value={profileQr} onChange={setProfileQr} maxFiles={1} /></div>
+      </Modal>
+    </>
+  );
 }
 
 /* --------------------------------------------------- Supply Requests */

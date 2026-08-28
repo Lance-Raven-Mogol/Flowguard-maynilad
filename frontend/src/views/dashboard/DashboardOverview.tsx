@@ -57,6 +57,11 @@ export function DashboardOverview() {
       return <TechnicalOverview stats={stats} />;
     case 'zone-specialist':
       return <ZoneOverview stats={stats} />;
+    case 'contractor':
+    case 'inhouse-team':
+      return <FieldTeamOverview stats={stats} />;
+    case 'commercial-department':
+      return <CommercialOverview stats={stats} />;
     default:
       return null;
   }
@@ -317,6 +322,137 @@ function ZoneOverview({ stats }: { stats: DashboardStats }) {
           table={recent(
             ['Ref', 'Type', 'Location', 'Urgency', 'Status'],
             open.slice(0, 6).map((i) => [{ text: String(i.ref_code), strong: true }, { text: title(i.type) }, { text: String(i.location ?? '—') }, bCell(title(i.urgency), String(i.urgency) as BadgeTone), sCell(i.status)]),
+          )}
+        />
+      </div>
+    </>
+  );
+}
+
+/* --------------------------------------------------------- Commercial Dept. */
+function CommercialOverview({ stats }: { stats: DashboardStats }) {
+  const open = stats.incidents.filter((i) => i.status !== 'resolved');
+  const pendingVerification = stats.incidents.filter((i) => i.status === 'under_verification');
+  const inProgress = stats.incidents.filter((i) => i.status === 'in_progress');
+  const activeJobs = stats.jobOrders.filter((j) => j.status !== 'completed' && j.status !== 'cancelled');
+  const pendingJobs = stats.jobOrders.filter((j) => j.status === 'pending');
+
+  return (
+    <>
+      <MetricsGrid
+        metrics={[
+          metric('cd1', 'Pending Verification', pendingVerification.length, 'clock', 'customers'),
+          metric('cd2', 'In Progress', inProgress.length, 'wrench', 'revenue'),
+          metric('cd3', 'High Urgency', n(open, (i) => i.urgency === 'high'), 'alert-triangle', 'profit'),
+          metric('cd4', 'Pending Payments', n(stats.payments, (p) => p.status === 'unpaid' || p.status === 'overdue' || p.status === 'for_verification'), 'credit-card', 'invoices'),
+        ]}
+      />
+      <section className="analytics-grid" style={{ marginTop: 22 }}>
+        <article className="panel">
+          <PanelHead title="Incident Status" />
+          <DonutPanel
+            value={String(stats.incidents.length)}
+            label="Incidents"
+            legend={[
+              { label: 'Pending Verification', value: String(pendingVerification.length), dot: 'dark' },
+              { label: 'In Progress / Scheduled', value: String(n(open, (i) => i.status === 'in_progress' || i.status === 'scheduled')), dot: 'blue' },
+              { label: 'Resolved', value: String(n(stats.incidents, (i) => i.status === 'resolved')), dot: 'pale' },
+            ]}
+          />
+        </article>
+        <StatList
+          title="Job Orders Snapshot"
+          items={[
+            { icon: 'clock', color: '#f59e0b', label: 'Pending Job Orders', value: String(pendingJobs.length) },
+            { icon: 'wrench', color: 'var(--blue)', label: 'In Progress', value: String(n(stats.jobOrders, (j) => j.status === 'in_progress')) },
+            { icon: 'check-circle', color: '#16a34a', label: 'Completed', value: String(n(stats.jobOrders, (j) => j.status === 'completed')) },
+            { icon: 'alert-triangle', color: 'var(--pink)', label: 'High Urgency Incidents', value: String(n(open, (i) => i.urgency === 'high')) },
+          ]}
+        />
+      </section>
+      <div style={{ marginTop: 22 }}>
+        <PanelHead title="Recent Complaints" />
+        <DataTable
+          table={recent(
+            ['Ref', 'Type', 'Location', 'Urgency', 'Status'],
+            stats.incidents.slice(0, 8).map((i) => [
+              { text: String(i.ref_code), strong: true },
+              { text: title(i.type) },
+              { text: String(i.location ?? '—') },
+              bCell(title(i.urgency), String(i.urgency) as BadgeTone),
+              sCell(i.status),
+            ]),
+          )}
+        />
+      </div>
+      {activeJobs.length > 0 && (
+        <div style={{ marginTop: 22 }}>
+          <PanelHead title="Active Job Orders" />
+          <DataTable
+            table={recent(
+              ['Ref', 'Title', 'Incident', 'Scheduled', 'Status'],
+              activeJobs.slice(0, 6).map((j) => [
+                { text: String(j.ref_code), strong: true },
+                { text: String(j.title ?? '—') },
+                { text: String(j.incident_ref ?? '—') },
+                { text: j.scheduled_date ? new Date(String(j.scheduled_date)).toLocaleDateString('en-GB') : '—' },
+                sCell(j.status),
+              ]),
+            )}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ------------------------------------------------------- Contractor / In-house */
+function FieldTeamOverview({ stats }: { stats: DashboardStats }) {
+  const activeJobs = stats.jobOrders.filter((j) => j.status !== 'completed' && j.status !== 'cancelled');
+  return (
+    <>
+      <MetricsGrid
+        metrics={[
+          metric('ft1', 'Total Job Orders', stats.jobOrders.length, 'clipboard-list', 'customers'),
+          metric('ft2', 'In Progress', n(stats.jobOrders, (j) => j.status === 'in_progress'), 'wrench', 'revenue'),
+          metric('ft3', 'Pending', n(stats.jobOrders, (j) => j.status === 'pending'), 'clock', 'profit'),
+          metric('ft4', 'Completed', n(stats.jobOrders, (j) => j.status === 'completed'), 'check-circle', 'invoices'),
+        ]}
+      />
+      <section className="analytics-grid" style={{ marginTop: 22 }}>
+        <article className="panel">
+          <PanelHead title="Job Order Status" />
+          <DonutPanel
+            value={String(stats.jobOrders.length)}
+            label="Job Orders"
+            legend={[
+              { label: 'Pending', value: String(n(stats.jobOrders, (j) => j.status === 'pending')), dot: 'dark' },
+              { label: 'In Progress', value: String(n(stats.jobOrders, (j) => j.status === 'in_progress')), dot: 'blue' },
+              { label: 'Completed', value: String(n(stats.jobOrders, (j) => j.status === 'completed')), dot: 'pale' },
+            ]}
+          />
+        </article>
+        <StatList
+          title="Field Snapshot"
+          items={[
+            { icon: 'file-input', color: '#f59e0b', label: 'Pending Requests', value: String(n(stats.materialRequests, (r) => r.status === 'pending')) },
+            { icon: 'check-circle', color: '#16a34a', label: 'Released Requests', value: String(n(stats.materialRequests, (r) => r.status === 'released')) },
+            { icon: 'box', color: 'var(--blue)', label: 'Assets Registered', value: String(stats.assets.length) },
+            { icon: 'wrench', color: 'var(--pink)', label: 'Assets Needing Work', value: String(n(stats.assets, (a) => a.condition !== 'good')) },
+          ]}
+        />
+      </section>
+      <div style={{ marginTop: 22 }}>
+        <PanelHead title="Active Job Orders" />
+        <DataTable
+          table={recent(
+            ['Ref', 'Title', 'Schedule', 'Status'],
+            activeJobs.slice(0, 6).map((j) => [
+              { text: String(j.ref_code), strong: true },
+              { text: String(j.title ?? '—') },
+              { text: j.scheduled_date ? new Date(String(j.scheduled_date)).toLocaleDateString('en-GB') : '—' },
+              sCell(j.status),
+            ]),
           )}
         />
       </div>

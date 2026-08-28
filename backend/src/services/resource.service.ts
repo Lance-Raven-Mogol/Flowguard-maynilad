@@ -294,11 +294,11 @@ async function settlePurchaseReceived(prId: string, user: PublicUser): Promise<v
 export const resourceService = {
   async list(entity: string, user: PublicUser, archived?: 'only' | 'all'): Promise<Row[]> {
     const def = getDef(entity);
-    if (entity === 'payments' && !['general-manager', 'customer'].includes(user.role)) {
+    if (entity === 'payments' && !['general-manager', 'commercial-department', 'customer'].includes(user.role)) {
       throw forbidden('You do not have permission to view billing records.');
     }
-    if (entity === 'payment-methods' && user.role !== 'general-manager') {
-      throw forbidden('Only the General Manager can view payment profiles.');
+    if (entity === 'payment-methods' && !['general-manager', 'commercial-department'].includes(user.role)) {
+      throw forbidden('Only the General Manager or Commercial Department can view payment profiles.');
     }
     let rows = await repo.listRows(def.table, { archived });
     if (entity === 'payments' && user.role === 'customer') {
@@ -337,6 +337,13 @@ export const resourceService = {
     // and keeps it linked through display-name changes).
     if (entity === 'incidents' && user.role === 'customer') {
       values.reported_by = user.fullName;
+    }
+
+    // Urgency is assessed by the Commercial Department or General Manager only.
+    // Strip it from customer submissions so it always defaults to 'medium'.
+    if (entity === 'incidents' && user.role === 'customer') {
+      delete values.urgency;
+      values.urgency = 'medium';
     }
 
     for (const field of def.required) {
@@ -465,14 +472,19 @@ export const resourceService = {
     }
 
     // Complaints awaiting verification belong to the Zone Specialist's triage
-    // step. The General Manager must wait for the specialist's remarks, which
-    // advance the complaint to In Progress, before changing its workflow state.
-    if (entity === 'incidents' && user.role === 'general-manager' && 'status' in values) {
+    // step. Oversight roles (GM, Commercial Department) can override this freely;
+    // other write roles must wait for the specialist to move it forward.
+    if (entity === 'incidents' && !['general-manager', 'commercial-department'].includes(user.role) && 'status' in values) {
       const currentIncident = await repo.getRowById(def.table, id);
       if (!currentIncident) throw notFound('Record not found.');
       if (currentIncident.status === 'under_verification' && values.status !== 'under_verification') {
         throw forbidden('Only the Zone Specialist can verify this incident and move it from Under Verification.');
       }
+    }
+
+    // Urgency can only be set or changed by staff roles, not by customers.
+    if (entity === 'incidents' && user.role === 'customer' && 'urgency' in values) {
+      delete values.urgency;
     }
 
     const currentMaterial = entity === 'materials' ? await repo.getRowById(def.table, id) : null;

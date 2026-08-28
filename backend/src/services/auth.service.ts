@@ -15,7 +15,7 @@ import { badRequest, conflict, notFound, unauthorized } from '../utils/httpError
 
 /* ---------------------------------------------------------- Audit */
 function fmtRole(r?: string): string {
-  const m: Record<string, string> = { 'general-manager': 'Manager', 'inventory-officer': 'Inventory Officer', 'zone-specialist': 'Zone Specialist', 'technical-team': 'Technical Team', 'customer': 'Customer' };
+  const m: Record<string, string> = { 'general-manager': 'Manager', 'inventory-officer': 'Inventory Officer', 'zone-specialist': 'Zone Specialist', 'technical-team': 'Technical Team', 'customer': 'Customer', 'contractor': 'Contractor', 'inhouse-team': 'In-house Team', 'commercial-department': 'Commercial Department' };
   return m[r || ''] || r || 'User';
 }
 
