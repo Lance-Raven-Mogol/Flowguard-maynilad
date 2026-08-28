@@ -38,13 +38,35 @@ create table if not exists public.incidents (
               check (type in ('complaint','leak','new-connection','disconnection','other')),
   description text not null,
   location    text,
-  urgency     text not null default 'medium' check (urgency in ('low','medium','high')),
+  urgency     text check (urgency in ('low','medium','high')),
   status      text not null default 'under_verification'
-              check (status in ('under_verification','in_progress','scheduled','resolved')),
+              check (status in ('under_verification','in_progress','for_estimation','for_billing','resolved','cancelled','declined')),
   reported_by text,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+-- Migrate existing tables: replace the old status check constraint (without
+-- for_billing) with the new one that includes it. Safe to re-run (DO block
+-- checks if the old constraint exists before dropping).
+do $$ begin
+  -- Drop old constraint if it exists (any version)
+  if exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.incidents'::regclass
+      and conname = 'incidents_status_check'
+  ) then
+    alter table public.incidents drop constraint incidents_status_check;
+  end if;
+  -- Migrate any existing rows that use old status values
+  update public.incidents set status = 'for_estimation'  where status = 'scheduled';
+  -- Add new constraint
+  begin
+    alter table public.incidents
+      add constraint incidents_status_check
+      check (status in ('under_verification','in_progress','for_estimation','for_billing','resolved','cancelled','declined'));
+  exception when duplicate_object then null;
+  end;
+end $$;
 
 -- ---------------------------------------------------- Job order module ------
 create table if not exists public.job_orders (
@@ -144,10 +166,31 @@ alter table public.app_users         add column if not exists barangay text defa
 alter table public.app_users         add column if not exists otp_secret text;
 alter table public.app_users         add column if not exists otp_enabled boolean not null default false;
 alter table public.app_users         alter column otp_enabled set default false;
+-- Make incidents.urgency nullable (Commercial Dept/GM sets it; null = not yet assessed).
+alter table public.incidents         alter column urgency drop not null;
+alter table public.incidents         alter column urgency drop default;
+-- Drop the old urgency check constraint and re-add allowing NULL.
+do $$ begin
+  if exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.incidents'::regclass
+      and conname = 'incidents_urgency_check'
+  ) then
+    alter table public.incidents drop constraint incidents_urgency_check;
+  end if;
+  begin
+    alter table public.incidents
+      add constraint incidents_urgency_check
+      check (urgency in ('low','medium','high'));
+  exception when duplicate_object then null;
+  end;
+end $$;
 alter table public.incidents         add column if not exists archived boolean not null default false;
 -- Zone-specialist remarks forwarded to the technical team + customer photo evidence.
 alter table public.incidents         add column if not exists remarks text;
 alter table public.incidents         add column if not exists images  jsonb not null default '[]'::jsonb;
+-- Estimated cost added by the Technical Team (triggers for_estimation status).
+alter table public.incidents         add column if not exists estimated_cost numeric(12,2);
 alter table public.job_orders        add column if not exists archived boolean not null default false;
 -- Team assignment for a job order (general manager assigns a tech-team crew).
 alter table public.job_orders        add column if not exists team_name    text;

@@ -42,13 +42,17 @@ export const RESOURCES: Record<string, ResourceDef> = {
   incidents: {
     table: 'incidents',
     writeRoles: ['customer', 'zone-specialist', 'technical-team', 'commercial-department'],
-    allowed: ['type', 'description', 'location', 'urgency', 'status', 'reported_by', 'remarks', 'images', 'archived'],
+    allowed: ['type', 'description', 'location', 'urgency', 'status', 'reported_by', 'remarks', 'images', 'archived', 'estimated_cost'],
     required: ['description'],
+    numeric: ['estimated_cost'],
+    nullable: ['estimated_cost'],
     // Zone-specialist remarks have no fallback column — they must be stored, or
     // the save is a lie. Fail loudly (prompt a migration) rather than silently.
-    critical: ['remarks'],
+    critical: ['remarks', 'estimated_cost'],
     autoKeys: [{ column: 'ref_code', prefix: 'INC', digits: 4 }],
     touch: 'updated_at',
+    // Valid incident statuses (informational — enforced in DB check constraint):
+    // under_verification | in_progress | for_estimation | for_billing | resolved | cancelled | declined
   },
 
   'job-orders': {

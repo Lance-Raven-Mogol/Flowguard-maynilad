@@ -340,10 +340,9 @@ export const resourceService = {
     }
 
     // Urgency is assessed by the Commercial Department or General Manager only.
-    // Strip it from customer submissions so it always defaults to 'medium'.
+    // Strip it entirely from customer submissions so it stays NULL until assessed.
     if (entity === 'incidents' && user.role === 'customer') {
       delete values.urgency;
-      values.urgency = 'medium';
     }
 
     for (const field of def.required) {
@@ -417,11 +416,11 @@ export const resourceService = {
           }
         : values;
       await logAudit(entity, String(row.id ?? ''), 'create', user.fullName, user.role, auditDetails);
-      // A job order dispatched for an incident schedules that incident.
+      // A job order dispatched for an incident marks it as for_estimation.
       if (incidentRef) {
         try {
           await repo.updateRowsBy('incidents', 'ref_code', incidentRef, {
-            status: 'scheduled',
+            status: 'for_estimation',
             updated_at: new Date().toISOString(),
           });
         } catch (statusErr) {
@@ -455,6 +454,24 @@ export const resourceService = {
       }
       values.status = 'for_verification';
       values.verification_notes = '';
+
+      // When the customer resubmits on a rejected bill, flip the linked incident
+      // from 'declined' back to 'for_billing' so commercial dept can re-verify.
+      const incidentRef = String(current.incident_ref ?? '').trim();
+      if (incidentRef) {
+        try {
+          const incidents = await repo.findRowsBy('incidents', 'ref_code', incidentRef);
+          const incident = incidents.find((i) => !i.archived) ?? incidents[0];
+          if (incident && String(incident.status ?? '') === 'declined') {
+            await repo.updateRow('incidents', String(incident.id), {
+              status: 'for_billing',
+              updated_at: new Date().toISOString(),
+            });
+          }
+        } catch (err) {
+          console.warn('[resource] payment resubmit: could not flip incident back to for_billing:', err);
+        }
+      }
     }
     if (entity === 'payments' && user.role === 'general-manager' && values.status === 'paid') {
       values.paid_date = new Date().toISOString().slice(0, 10);
@@ -471,19 +488,63 @@ export const resourceService = {
       }
     }
 
-    // Complaints awaiting verification belong to the Zone Specialist's triage
-    // step. Oversight roles (GM, Commercial Department) can override this freely;
-    // other write roles must wait for the specialist to move it forward.
-    if (entity === 'incidents' && !['general-manager', 'commercial-department'].includes(user.role) && 'status' in values) {
+    // Role-based incident status transition guards.
+    // The General Manager can always move to any status (management override).
+    // Each role may only perform the transitions assigned to them:
+    //   zone-specialist      : under_verification → in_progress (requires urgency set)
+    //   technical-team       : in_progress → for_estimation (requires estimated_cost)
+    //   commercial-department: for_estimation → for_billing (issue bill)
+    //                          for_billing → resolved (payment confirmed)
+    if (entity === 'incidents' && user.role !== 'general-manager' && 'status' in values) {
       const currentIncident = await repo.getRowById(def.table, id);
       if (!currentIncident) throw notFound('Record not found.');
-      if (currentIncident.status === 'under_verification' && values.status !== 'under_verification') {
-        throw forbidden('Only the Zone Specialist can verify this incident and move it from Under Verification.');
+      const from = String(currentIncident.status ?? '');
+      const to = String(values.status ?? '');
+
+      // Allow no-op (same status) for any role.
+      if (from !== to) {
+        if (user.role === 'zone-specialist') {
+          // Zone specialist: only allowed to move under_verification → in_progress.
+          if (!(from === 'under_verification' && to === 'in_progress')) {
+            throw forbidden('Zone Specialists can only move complaints from Under Verification to In Progress.');
+          }
+          // Urgency is set by Commercial Department, not Zone Specialist — no check needed here.
+        } else if (user.role === 'technical-team') {
+          // Technical team: only allowed to move in_progress → for_estimation (with cost).
+          if (!(from === 'in_progress' && to === 'for_estimation')) {
+            throw forbidden('Technical Team can only move complaints from In Progress to For Estimation.');
+          }
+          const cost = values.estimated_cost !== undefined ? Number(values.estimated_cost) : Number(currentIncident.estimated_cost ?? NaN);
+          if (isNaN(cost) || cost <= 0) {
+            throw badRequest('Please provide a valid estimated cost before submitting for estimation.');
+          }
+        } else if (user.role === 'commercial-department') {
+          // Commercial dept: for_estimation → for_billing, for_billing → resolved (payment confirmed),
+          // or for_billing → declined (payment rejected, customer may resubmit).
+          const validTransitions = [
+            ['for_estimation', 'for_billing'],
+            ['for_billing', 'resolved'],
+            ['for_billing', 'declined'],
+            // After a rejection the customer resubmits → commercial dept can re-verify to resolved.
+            ['declined', 'resolved'],
+          ];
+          const allowed = validTransitions.some(([f, t]) => f === from && t === to);
+          if (!allowed) {
+            throw forbidden('Commercial Department can only move: For Estimation → For Billing, For Billing → Resolved / Declined, or Declined → Resolved.');
+          }
+        } else {
+          // All other write roles (customer, zone-specialist already handled above)
+          // cannot change incident status at all except their own assigned transitions.
+          if (from === 'under_verification' && to !== 'under_verification') {
+            throw forbidden('Only the Zone Specialist can move a complaint from Under Verification.');
+          }
+        }
       }
     }
 
-    // Urgency can only be set or changed by staff roles, not by customers.
-    if (entity === 'incidents' && user.role === 'customer' && 'urgency' in values) {
+    // Urgency can only be set by Commercial Department or General Manager.
+    // Strip it from all other roles on update.
+    if (entity === 'incidents' && !['commercial-department', 'general-manager'].includes(user.role) && 'urgency' in values) {
       delete values.urgency;
     }
 

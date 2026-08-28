@@ -89,7 +89,7 @@ function CustomerOverview({ stats, fullName }: { stats: DashboardStats; fullName
             label="Total"
             legend={[
               { label: 'Awaiting Verification', value: String(n(mine, (i) => i.status === 'under_verification')), dot: 'dark' },
-              { label: 'In Progress / Scheduled', value: String(n(mine, (i) => i.status === 'in_progress' || i.status === 'scheduled')), dot: 'blue' },
+              { label: 'In Progress / For Estimation', value: String(n(mine, (i) => i.status === 'in_progress' || i.status === 'for_estimation')), dot: 'blue' },
               { label: 'Resolved', value: String(n(mine, (i) => i.status === 'resolved')), dot: 'pale' },
             ]}
           />
@@ -355,7 +355,7 @@ function CommercialOverview({ stats }: { stats: DashboardStats }) {
             label="Incidents"
             legend={[
               { label: 'Pending Verification', value: String(pendingVerification.length), dot: 'dark' },
-              { label: 'In Progress / Scheduled', value: String(n(open, (i) => i.status === 'in_progress' || i.status === 'scheduled')), dot: 'blue' },
+              { label: 'In Progress / For Estimation', value: String(n(open, (i) => i.status === 'in_progress' || i.status === 'for_estimation')), dot: 'blue' },
               { label: 'Resolved', value: String(n(stats.incidents, (i) => i.status === 'resolved')), dot: 'pale' },
             ]}
           />

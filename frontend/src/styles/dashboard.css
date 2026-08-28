@@ -2130,6 +2130,7 @@ td strong {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   animation: modalIn 0.3s ease-out;
 }
 
@@ -2181,6 +2182,11 @@ td strong {
   overflow-x: hidden;
   overflow-y: auto;
   flex: 1 1 auto;
+  min-height: 0;
+  max-height: calc(100vh - 200px);
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -2278,15 +2284,19 @@ td strong {
 .detail-list {
   display: grid;
   gap: 0;
+  width: 100%;
+  min-width: 0;
 }
 
 .detail-row {
   display: grid;
-  grid-template-columns: 170px 1fr;
+  grid-template-columns: 140px 1fr;
   gap: 12px;
   padding: 11px 0;
   border-bottom: 1px solid var(--line);
   align-items: start;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .detail-row:last-child {
@@ -2308,6 +2318,10 @@ td strong {
   font-size: 14px;
   color: var(--text);
   word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .detail-section-title {

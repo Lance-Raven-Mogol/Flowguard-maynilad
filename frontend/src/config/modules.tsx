@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Operational module configurations — thin wrappers over <LiveModule> that map
  * each FlowGuard module from the paper (incidents, job orders, inventory,
  * material requests, assets + health scoring, advisories, users) to live data.
@@ -21,12 +21,14 @@ const roleLabel = (role: unknown): string => ROLES.find((r) => r.value === role)
 
 /* ------------------------------------------------------------------ helpers */
 const GREEN = new Set(['active', 'resolved', 'completed', 'released', 'published', 'approved', 'in_stock', 'good', 'paid']);
-const RED = new Set(['inactive', 'rejected', 'cancelled', 'needs_replacement', 'dispose', 'defective', 'overdue', 'critical', 'out_of_stock', 'unpaid']);
+const RED = new Set(['inactive', 'rejected', 'cancelled', 'declined', 'needs_replacement', 'dispose', 'defective', 'overdue', 'critical', 'out_of_stock', 'unpaid']);
+const AMBER = new Set(['for_billing', 'for_estimation']);
 
 function statusTone(v: unknown): StatusTone {
   const k = String(v ?? '').toLowerCase();
   if (GREEN.has(k)) return 'paid';
   if (RED.has(k)) return 'overdue';
+  if (AMBER.has(k)) return 'pending';
   return 'pending';
 }
 const titleCase = (v: unknown): string =>
@@ -558,8 +560,11 @@ function CreateJobOrderButton({ onCreated }: { onCreated: () => Promise<void> | 
 const INCIDENT_STATUS = [
   { value: 'under_verification', label: 'Under Verification' },
   { value: 'in_progress', label: 'In Progress' },
-  { value: 'scheduled', label: 'Scheduled' },
+  { value: 'for_estimation', label: 'For Estimation' },
+  { value: 'for_billing', label: 'For Billing' },
   { value: 'resolved', label: 'Resolved' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'declined', label: 'Declined' },
 ];
 const INCIDENT_TYPE_OPTIONS = [
   { value: 'complaint', label: 'General Complaint' },
@@ -572,6 +577,7 @@ const URGENCY = ['low', 'medium', 'high'];
 
 /** Read-only detail body for a complaint/incident, incl. customer photos + remarks. */
 function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRemarks?: boolean }) {
+  const hasEstimate = row.estimated_cost !== null && row.estimated_cost !== undefined && Number(row.estimated_cost) > 0;
   return (
     <>
       <p className="detail-section-title">Complaint Details</p>
@@ -579,14 +585,217 @@ function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRema
         <DetailRow label="Reference">{String(row.ref_code ?? '')}</DetailRow>
         <DetailRow label="Type">{titleCase(row.type)}</DetailRow>
         <DetailRow label="Status">{titleCase(row.status)}</DetailRow>
-        <DetailRow label="Urgency">{titleCase(row.urgency)}</DetailRow>
+        <DetailRow label="Urgency">{row.urgency ? titleCase(row.urgency) : '— Not yet assessed'}</DetailRow>
         <DetailRow label="Location">{String(row.location ?? '')}</DetailRow>
         <DetailRow label="Reported By">{String(row.reported_by ?? '')}</DetailRow>
         <DetailRow label="Filed On">{dateShort(row.created_at)}</DetailRow>
         <DetailRow label="Description">{String(row.description ?? '')}</DetailRow>
         {!hideRemarks && <DetailRow label="Zone Specialist Remarks">{String(row.remarks ?? '')}</DetailRow>}
+        {hasEstimate && <DetailRow label="Estimated Cost">{money(row.estimated_cost)}</DetailRow>}
       </dl>
       <ImageGallery images={row.images} />
+    </>
+  );
+}
+
+/**
+ * Inline "Issue Bill" form shown inside the incident View modal for commercial-department.
+ * Pre-fills the incident ref and shows the estimated cost for reference.
+ */
+function IssueBillInline({
+  incident,
+  onIssued,
+}: {
+  incident: EntityRow;
+  onIssued: () => Promise<void>;
+}) {
+  const { notify } = useToast();
+  const { stats } = useStats();
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState(
+    Number(incident.estimated_cost ?? 0) > 0 ? String(incident.estimated_cost) : '',
+  );
+  const [dueDate, setDueDate] = useState('');
+  const [description, setDescription] = useState(String(incident.description ?? ''));
+  const [profiles, setProfiles] = useState<EntityRow[]>([]);
+  const [profileIds, setProfileIds] = useState<string[]>([]);
+  const [users, setUsers] = useState<Array<{ fullName: string; email: string }>>([]);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Check if a bill already exists for this incident.
+  const alreadyBilled = stats.payments.some(
+    (p) => String(p.incident_ref ?? '') === String(incident.ref_code ?? ''),
+  );
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [pms, userResp] = await Promise.all([
+        resourceService.list('payment-methods'),
+        api.get<{ data: Array<{ fullName: string; email: string }> }>('/users'),
+      ]);
+      setProfiles(pms.filter((p) => !p.archived));
+      setUsers(userResp.data);
+    } catch {
+      notify('Could not load payment options.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openForm = () => { setOpen(true); void load(); };
+  const toggleProfile = (id: string) =>
+    setProfileIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+
+  const customerName = String(incident.reported_by ?? '');
+  const customer = users.find(
+    (u) => u.fullName.trim().toLowerCase() === customerName.trim().toLowerCase(),
+  );
+  const selectedProfiles = profiles.filter((p) => profileIds.includes(String(p.id)));
+
+  const submit = async () => {
+    if (!customer?.email) { notify('No registered email found for this customer.', 'error'); return; }
+    if (!(Number(amount) > 0)) { notify('Enter the billing amount.', 'error'); return; }
+    if (!dueDate) { notify('Set a due date.', 'error'); return; }
+    if (selectedProfiles.length === 0) { notify('Select at least one payment profile.', 'error'); return; }
+
+    setSaving(true);
+    try {
+      await resourceService.create('payments', {
+        customer_name: customerName,
+        customer_email: customer.email,
+        incident_ref: String(incident.ref_code ?? ''),
+        job_order_ref: '',
+        service_description: description,
+        amount: Number(amount),
+        due_date: dueDate,
+        payment_method: selectedProfiles.map((p) => String(p.payment_method)).join(' / '),
+        account_name: selectedProfiles.map((p) => String(p.account_name)).join(' / '),
+        account_number: selectedProfiles.map((p) => String(p.account_number || '')).filter(Boolean).join(' / '),
+        payment_qr: selectedProfiles.flatMap((p) => Array.isArray(p.payment_qr) ? p.payment_qr as string[] : []),
+      });
+      // Advance incident to for_billing after bill is issued.
+      await resourceService.update('incidents', String(incident.id), {
+        status: 'for_billing',
+      });
+      notify('Bill issued. Incident moved to For Billing.');
+      setOpen(false);
+      await onIssued();
+    } catch (cause) {
+      notify(cause instanceof ApiError ? cause.message : 'Could not issue the bill.', 'error');
+    } finally { setSaving(false); }
+  };
+
+  if (alreadyBilled) {
+    return (
+      <p style={{ marginTop: 14, color: 'var(--muted)', fontSize: 13 }}>
+        A bill has already been issued for this complaint.
+      </p>
+    );
+  }
+
+  return (
+    <>
+      <div style={{ marginTop: 18 }}>
+        <ActionButton label="Issue Bill" icon="file-text" onClick={openForm} />
+      </div>
+      {open && (
+        <Modal
+          title={`Issue Bill — ${incident.ref_code}`}
+          open
+          wide
+          onClose={() => setOpen(false)}
+          onSubmit={submit}
+          submitText="Issue Bill"
+          submitting={saving}
+        >
+          {loading ? <p className="billing-helper">Loading payment options…</p> : (
+            <>
+              <div className="form-group">
+                <label>Incident</label>
+                <input value={`${incident.ref_code} — ${String(incident.description ?? '').slice(0, 60)}`} readOnly />
+              </div>
+              <div className="form-group">
+                <label>Customer</label>
+                <input value={customerName} readOnly />
+                {customer?.email
+                  ? <small style={{ color: 'var(--muted)', display: 'block', marginTop: 4 }}>{customer.email}</small>
+                  : <small style={{ color: '#e25577', display: 'block', marginTop: 4 }}>No registered account email found.</small>}
+              </div>
+              {Number(incident.estimated_cost ?? 0) > 0 && (
+                <div className="form-group">
+                  <label>Technical Estimate</label>
+                  <input value={money(incident.estimated_cost)} readOnly />
+                </div>
+              )}
+              <div className="form-group">
+                <label>Service Description</label>
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+              </div>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>Final Amount</label>
+                  <div className="peso-input">
+                    <span>₱</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={amount}
+                      onChange={(e) => { const v = e.target.value; if (/^\d*(\.\d{0,2})?$/.test(v)) setAmount(v); }}
+                      onKeyDown={(e) => { if (['-', '+', 'e', 'E'].includes(e.key)) e.preventDefault(); }}
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Due Date</label>
+                  <input type="date" min={todayISO()} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Payment Profile {profileIds.length > 0 && <span className="profile-count-badge">{profileIds.length} selected</span>}</label>
+                {profiles.length === 0
+                  ? <small style={{ color: '#e25577' }}>No payment profiles saved. Add one via Payment Options.</small>
+                  : (
+                    <div className="profile-card-list">
+                      {profiles.map((p) => {
+                        const selected = profileIds.includes(String(p.id));
+                        return (
+                          <div
+                            key={String(p.id)}
+                            className={`selected-payment-profile profile-card-selectable${selected ? ' profile-card-active' : ''}`}
+                            onClick={() => toggleProfile(String(p.id))}
+                            role="checkbox"
+                            aria-checked={selected}
+                            tabIndex={0}
+                            onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleProfile(String(p.id)); } }}
+                          >
+                            {selected && <span className="profile-card-check" aria-hidden="true">✓</span>}
+                            <div className="selected-payment-icon">
+                              {Array.isArray(p.payment_qr) && p.payment_qr[0]
+                                ? <img src={String(p.payment_qr[0])} alt="QR" />
+                                : <span>₱</span>}
+                            </div>
+                            <div className="selected-payment-copy">
+                              <small>{selected ? 'Selected — click to remove' : 'Click to select'}</small>
+                              <strong>{String(p.name)}</strong>
+                              <span>{String(p.payment_method)}</span>
+                            </div>
+                            <dl>
+                              <div><dt>Account name</dt><dd>{String(p.account_name)}</dd></div>
+                              <div><dt>Account number</dt><dd>{String(p.account_number || 'Not provided')}</dd></div>
+                            </dl>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+              </div>
+            </>
+          )}
+        </Modal>
+      )}
     </>
   );
 }
@@ -601,21 +810,28 @@ function IncidentViewButton({
   canCreateJobOrder = false,
   showCustomerBilling = false,
   canEditUrgency = false,
+  canEstimate = false,
+  canIssueBill = false,
 }: {
   c: RowActionCtx;
   canEditRemarks: boolean;
   canCreateJobOrder?: boolean;
   showCustomerBilling?: boolean;
   canEditUrgency?: boolean;
+  canEstimate?: boolean;
+  canIssueBill?: boolean;
 }) {
   const { stats } = useStats();
   const [open, setOpen] = useState(false);
   const [showJobForm, setShowJobForm] = useState(false);
   const [remarks, setRemarks] = useState('');
   const [urgency, setUrgency] = useState('');
+  const [estimatedCost, setEstimatedCost] = useState('');
   const [saving, setSaving] = useState(false);
   const editable = canEditRemarks && !c.archived;
   const urgencyEditable = canEditUrgency && !c.archived;
+  // Technical team can enter estimate only when complaint is in_progress.
+  const estimateEditable = canEstimate && !c.archived && c.row.status === 'in_progress';
 
   const hasRemarks = String(c.row.remarks ?? '').trim() !== '';
   // A job order already exists for this incident — no second one may be created.
@@ -623,11 +839,11 @@ function IncidentViewButton({
     (j) => String(j.incident_ref ?? '') === String(c.row.ref_code ?? ''),
   );
   const hasJobOrder = Boolean(linkedJobOrder);
-  // Oversight roles (GM, Commercial Dept) can dispatch a job order as soon as
-  // the complaint is In Progress — no zone-specialist remark required.
+  // Technical Team and GM can dispatch a job order once the complaint is Resolved
+  // — no zone-specialist remark required for these roles.
   // For other roles, a remark must exist first.
   const remarksOk = canCreateJobOrder || hasRemarks;
-  const canDispatch = canCreateJobOrder && !c.archived && remarksOk && c.row.status === 'in_progress' && !hasJobOrder;
+  const canDispatch = canCreateJobOrder && !c.archived && remarksOk && c.row.status === 'resolved' && !hasJobOrder;
 
   const afterCreate = async () => {
     setShowJobForm(false);
@@ -637,22 +853,45 @@ function IncidentViewButton({
 
   const openModal = () => {
     setRemarks(String(c.row.remarks ?? ''));
-    setUrgency(String(c.row.urgency ?? 'medium'));
+    setUrgency(String(c.row.urgency ?? ''));
+    setEstimatedCost(
+      Number(c.row.estimated_cost ?? 0) > 0 ? String(c.row.estimated_cost) : '',
+    );
     setOpen(true);
   };
+
+  const { notify } = useToast();
+
   const save = async () => {
     setSaving(true);
     try {
       const patch: Record<string, unknown> = {};
+
       if (editable) {
         patch.remarks = remarks.trim();
-        // Adding a remark advances a freshly-reported complaint to "in progress"
-        // so the general manager can act on it (and create a job order).
-        if (c.row.status === 'under_verification') patch.status = 'in_progress';
-      }
-      if (urgencyEditable) {
+        // Zone specialist: advancing from under_verification to in_progress.
+        // Urgency is set separately by Commercial Department — no check needed here.
+        if (c.row.status === 'under_verification') {
+          patch.status = 'in_progress';
+        }
+      } else if (urgencyEditable) {
         patch.urgency = urgency;
       }
+
+      // Technical team: saving an estimate auto-advances to for_estimation.
+      if (estimateEditable) {
+        const cost = Number(estimatedCost);
+        if (estimatedCost.trim() !== '' && (isNaN(cost) || cost <= 0)) {
+          notify('Enter a valid estimated cost greater than 0.', 'error');
+          setSaving(false);
+          return;
+        }
+        if (cost > 0) {
+          patch.estimated_cost = cost;
+          patch.status = 'for_estimation';
+        }
+      }
+
       if (Object.keys(patch).length > 0) await c.update(patch);
       setOpen(false);
     } finally {
@@ -660,7 +899,8 @@ function IncidentViewButton({
     }
   };
 
-  const hasEdits = editable || urgencyEditable;
+  // Show Save button if there are editable fields.
+  const hasEdits = editable || urgencyEditable || estimateEditable;
 
   return (
     <>
@@ -674,7 +914,7 @@ function IncidentViewButton({
           wide
           onClose={() => setOpen(false)}
           onSubmit={hasEdits ? save : undefined}
-          submitText="Save Changes"
+          submitText={estimateEditable ? 'Submit Estimate' : 'Save Changes'}
           submitting={saving}
         >
           <IncidentDetail row={c.row} hideRemarks={editable} />
@@ -717,6 +957,45 @@ function IncidentViewButton({
               />
             </div>
           )}
+          {/* Technical Team: estimation input — only visible when in_progress */}
+          {estimateEditable && (
+            <div className="form-group" style={{ marginTop: 18, marginBottom: 0 }}>
+              <label>Estimated Cost</label>
+              <div className="peso-input">
+                <span>₱</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={estimatedCost}
+                  onChange={(e) => { const v = e.target.value; if (/^\d*(\.\d{0,2})?$/.test(v)) setEstimatedCost(v); }}
+                  onKeyDown={(e) => { if (['-', '+', 'e', 'E'].includes(e.key)) e.preventDefault(); }}
+                  placeholder="0.00"
+                />
+              </div>
+              <small style={{ color: 'var(--muted)', display: 'block', marginTop: 4 }}>
+                Saving an estimate will automatically move this complaint to For Estimation.
+              </small>
+            </div>
+          )}
+          {/* Technical Team: estimate already submitted or wrong status hint */}
+          {canEstimate && !estimateEditable && !c.archived && (
+            <p style={{ marginTop: 14, color: 'var(--muted)', fontSize: 13 }}>
+              {c.row.status === 'in_progress'
+                ? 'Set an estimated cost above to submit for estimation.'
+                : Number(c.row.estimated_cost ?? 0) > 0
+                ? `Estimate of ${money(c.row.estimated_cost)} has been submitted.`
+                : 'Estimation can be entered once the complaint is In Progress.'}
+            </p>
+          )}
+          {/* Commercial Department: Issue Bill button for for_estimation incidents */}
+          {canIssueBill && c.row.status === 'for_estimation' && (
+            <IssueBillInline incident={c.row} onIssued={async () => { setOpen(false); await c.reload(); }} />
+          )}
+          {canIssueBill && c.row.status !== 'for_estimation' && c.row.status !== 'for_billing' && c.row.status !== 'resolved' && (
+            <p style={{ marginTop: 14, color: 'var(--muted)', fontSize: 13 }}>
+              The Issue Bill button will appear once the Technical Team submits their estimate.
+            </p>
+          )}
           {canDispatch && (
             <div style={{ marginTop: 18 }}>
               <ActionButton label="Create Job Order" icon="clipboard-list" onClick={() => setShowJobForm(true)} />
@@ -726,7 +1005,7 @@ function IncidentViewButton({
             <p style={{ marginTop: 16, color: 'var(--muted)', fontSize: 13 }}>
               {hasJobOrder
                 ? 'A job order has already been created for this complaint.'
-                : 'A job order can be created once the complaint status is set to “In Progress”.'}
+                : 'A job order can be created once the complaint status is set to "Resolved".'}
             </p>
           )}
         </Modal>
@@ -743,14 +1022,14 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
   const role = user!.role;
   const canWrite = WRITE.incidents.includes(role);
   const manage = !mine && role !== 'customer';
-  const canManageUrgency = ['general-manager', 'commercial-department', 'zone-specialist', 'technical-team'].includes(role);
+  const canManageUrgency = ['general-manager', 'commercial-department'].includes(role);
 
   const columns: ModuleColumn[] = [
     { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
     { header: 'Type', cell: (r) => titleCase(r.type) },
     { header: 'Description', cell: (r) => String(r.description ?? '') },
     { header: 'Location', cell: (r) => String(r.location ?? '—') },
-    { header: 'Urgency', cell: (r) => badgeCell(titleCase(r.urgency), String(r.urgency) as BadgeTone) },
+    { header: 'Urgency', cell: (r) => r.urgency ? badgeCell(titleCase(r.urgency), String(r.urgency) as BadgeTone) : { text: '—' } },
     { header: 'Status', cell: (r) => statusCell(r.status) },
   ];
 
@@ -758,15 +1037,13 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
     { name: 'type', label: 'Type', kind: 'select', optionList: INCIDENT_TYPE_OPTIONS, default: 'complaint' },
     { name: 'description', label: 'Description', kind: 'textarea', placeholder: 'Describe the concern…' },
     { name: 'location', label: 'Location', placeholder: 'Brgy., Boac', default: user!.barangay ?? 'Boac' },
-    {
+    ...(canManageUrgency ? [{
       name: 'urgency',
       label: 'Urgency',
-      kind: canManageUrgency ? 'select' : 'text',
-      options: canManageUrgency ? URGENCY : undefined,
+      kind: 'select' as const,
+      options: URGENCY,
       default: 'medium',
-      readOnly: !canManageUrgency,
-      hint: !canManageUrgency ? 'Urgency is assessed by the Commercial Department or General Manager.' : undefined,
-    },
+    }] : []),
     { name: 'images', label: 'Photos (optional)', kind: 'images', maxFiles: 5 },
     // Reporter is always the signed-in account — read-only, never editable.
     {
@@ -789,9 +1066,11 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
               <IncidentViewButton
                 c={c}
                 canEditRemarks={role === 'zone-specialist'}
-                canCreateJobOrder={['general-manager', 'commercial-department'].includes(role)}
+                canCreateJobOrder={['general-manager', 'technical-team'].includes(role)}
                 canEditUrgency={canManageUrgency}
                 showCustomerBilling={role === 'customer'}
+                canEstimate={role === 'technical-team'}
+                canIssueBill={role === 'commercial-department'}
               />
             )}
             <EditBtn c={c} />
@@ -811,6 +1090,7 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
       fields={fields}
       canWrite={canWrite}
       filter={filter}
+      rowFilter={role === 'zone-specialist' ? (r) => r.urgency != null && String(r.urgency).trim() !== '' : undefined}
       mineField={mine ? 'reported_by' : undefined}
       mineValue={mine ? user!.fullName : undefined}
       actions={actions}
@@ -1279,13 +1559,6 @@ function JobOrderViewButton({ row, onReload }: { row: EntityRow; onReload: () =>
   );
 }
 
-/** Status options the technical-team team leader can choose from (no pending). */
-const JOB_STATUS_TECH = [
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'cancelled', label: 'Cancelled' },
-];
-
 export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps & { readOnly?: boolean; title?: string }) {
   const { user } = useAuth();
   const role = user!.role;
@@ -1296,20 +1569,11 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
   const isTechTeam = role === 'technical-team';
   const isContractor = role === 'contractor';
   const isInhouseTeam = role === 'inhouse-team';
-  // Technical-team members only see the job orders their crew is assigned to.
   // Contractors and in-house team members only see job orders assigned to them.
+  // Technical-team and managers see everything.
   const me = user!.fullName.toLowerCase();
   const rowFilter =
-    isTechTeam
-      ? (r: EntityRow) => {
-          const leader = String(r.team_leader ?? '').toLowerCase();
-          const members = Array.isArray(r.team_members)
-            ? (r.team_members as string[]).map((s) => String(s).toLowerCase())
-            : [];
-          const assigned = String(r.assigned_to ?? '').toLowerCase();
-          return leader === me || members.includes(me) || assigned.includes(me);
-        }
-      : isContractor || isInhouseTeam
+    isContractor || isInhouseTeam
       ? (r: EntityRow) => {
           const members = Array.isArray(r.team_members)
             ? (r.team_members as string[]).map((s) => String(s).toLowerCase())
@@ -1344,30 +1608,25 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
   const viewAction = (c: RowActionCtx) => <JobOrderViewButton row={c.row} onReload={c.reload} />;
 
   /**
-   * For tech-team: the StatusSelect (in_progress/completed/cancelled) is only
-   * shown to the team leader of the specific row (not regular members).
+   * Tech-team: full access — all status options, edit, and archive.
    */
-  const techTeamActions = (c: RowActionCtx) => {
-    const isLeader = String(c.row.team_leader ?? '').toLowerCase() === me;
-    const isGM = role === 'general-manager' || role === 'commercial-department';
-    const canChangeStatus = (isLeader || isGM) && !c.archived && c.row.status === 'in_progress';
-    return (
-      <>
-        {canChangeStatus && (
-          <StatusSelect
-            value={String(c.row.status)}
-            options={JOB_STATUS_TECH}
-            disabled={c.busy}
-            onChange={(s) => c.update({ status: s })}
-          />
-        )}
-        <div className="btn-row">
-          {viewAction(c)}
-          <ArchiveBtn c={c} />
-        </div>
-      </>
-    );
-  };
+  const techTeamActions = (c: RowActionCtx) => (
+    <>
+      {!c.archived && (
+        <StatusSelect
+          value={String(c.row.status)}
+          options={JOB_STATUS}
+          disabled={c.busy}
+          onChange={(s) => c.update({ status: s })}
+        />
+      )}
+      <div className="btn-row">
+        {viewAction(c)}
+        <EditBtn c={c} />
+        <ArchiveBtn c={c} />
+      </div>
+    </>
+  );
 
   /** Contractor: view only — no status changes (only the team leader / GM can change status). */
   const contractorActions = (c: RowActionCtx) => (
@@ -3624,6 +3883,7 @@ function CustomerBillingAction({ c }: { c: RowActionCtx }) {
 
 function BillingReviewAction({ c }: { c: RowActionCtx }) {
   const { notify } = useToast();
+  const { stats } = useStats();
   const [open, setOpen] = useState(false);
   const [notes, setNotes] = useState(String(c.row.verification_notes ?? ''));
   const [saving, setSaving] = useState(false);
@@ -3633,8 +3893,28 @@ function BillingReviewAction({ c }: { c: RowActionCtx }) {
     setSaving(true);
     try {
       await resourceService.update('payments', c.row.id, { status, verification_notes: notes.trim() });
+
+      // Auto-update the linked incident status.
+      const incidentRef = String(c.row.incident_ref ?? '').trim();
+      if (incidentRef) {
+        const incident = stats.incidents.find((i) => String(i.ref_code ?? '') === incidentRef);
+        if (incident && !incident.archived) {
+          if (status === 'paid' && String(incident.status) === 'for_billing') {
+            // Payment confirmed → incident is fully resolved.
+            try {
+              await resourceService.update('incidents', String(incident.id), { status: 'resolved' });
+            } catch { /* non-blocking — billing record is already saved */ }
+          } else if (status === 'rejected' && String(incident.status) === 'for_billing') {
+            // Payment rejected → mark incident as declined so customer knows.
+            try {
+              await resourceService.update('incidents', String(incident.id), { status: 'declined' });
+            } catch { /* non-blocking */ }
+          }
+        }
+      }
+
       await c.reload();
-      notify(status === 'paid' ? 'Payment verified as Paid.' : 'Payment rejected; customer may resubmit.');
+      notify(status === 'paid' ? 'Payment verified as Paid. Incident marked as Resolved.' : 'Payment rejected; customer may resubmit. Incident marked as Declined.');
       setOpen(false);
     } catch (cause) {
       notify(cause instanceof ApiError ? cause.message : 'Could not review payment.', 'error');
@@ -3745,9 +4025,8 @@ interface BillingUser { fullName: string; email: string; role: string }
 interface BillableWork {
   key: string;
   label: string;
-  /** Present for job-order-backed billing. */
+  /** Present for incident-direct billing (for_billing status). */
   incident?: EntityRow;
-  job?: EntityRow;
   /** Present for approved general-request billing. */
   request?: EntityRow;
   /** True when a payment record already references this work item. */
@@ -3782,9 +4061,8 @@ function BillingControls({
   const loadOptions = async () => {
     setLoading(true);
     try {
-      const [incidents, jobs, bills, requests, userResponse] = await Promise.all([
+      const [incidents, bills, requests, userResponse] = await Promise.all([
         resourceService.list('incidents'),
-        resourceService.list('job-orders'),
         resourceService.list('payments'),
         resourceService.list('material-requests'),
         api.get<{ data: BillingUser[] }>('/users'),
@@ -3792,18 +4070,15 @@ function BillingControls({
 
       setAllBills(bills);
 
-      // --- Job-order-backed billable work (include already-billed ones too — show status) ---
-      const jobWorks: BillableWork[] = jobs
-        .filter((job) => job.status === 'completed')
-        .map((job) => ({ job, incident: incidents.find((i) => String(i.ref_code) === String(job.incident_ref)) }))
-        .filter((item): item is { job: EntityRow; incident: EntityRow } => Boolean(item.incident))
-        .map(({ job, incident }) => {
-          const alreadyBilled = bills.some((b) => String(b.job_order_ref ?? '') === String(job.ref_code));
+      // --- Incident-backed billable work (status = for_billing) ---
+      const incidentWorks: BillableWork[] = incidents
+        .filter((i) => String(i.status ?? '') === 'for_billing' && !i.archived)
+        .map((i) => {
+          const alreadyBilled = bills.some((b) => String(b.incident_ref ?? '') === String(i.ref_code));
           return {
-            key: `job:${job.id}`,
-            label: `[Job Order] ${job.ref_code} — ${job.title} (${incident.reported_by})${alreadyBilled ? ' ✓ Billed' : ''}`,
-            job,
-            incident,
+            key: `inc:${i.id}`,
+            label: `[Incident] ${i.ref_code} — ${String(i.description ?? '').slice(0, 60)} (${i.reported_by})${alreadyBilled ? ' ✓ Billed' : ''}`,
+            incident: i,
             alreadyBilled,
           };
         });
@@ -3832,7 +4107,7 @@ function BillingControls({
           };
         });
 
-      setWorks([...jobWorks, ...requestWorks]);
+      setWorks([...incidentWorks, ...requestWorks]);
       setUsers(userResponse.data);
     } catch (cause) {
       notify(cause instanceof ApiError ? cause.message : 'Could not load bill options.', 'error');
@@ -3859,8 +4134,8 @@ function BillingControls({
   // Existing bills for the currently selected work item.
   useEffect(() => {
     if (!selectedWork) { setExistingBills([]); return; }
-    if (selectedWork.job) {
-      setExistingBills(allBills.filter((b) => String(b.job_order_ref ?? '') === String(selectedWork.job!.ref_code)));
+    if (selectedWork.incident) {
+      setExistingBills(allBills.filter((b) => String(b.incident_ref ?? '') === String(selectedWork.incident!.ref_code)));
     } else if (selectedWork.request) {
       const ref = String(selectedWork.request.ref_code ?? '').toUpperCase();
       setExistingBills(allBills.filter((b) => String(b.service_description ?? '').toUpperCase().includes(ref)));
@@ -3878,8 +4153,11 @@ function BillingControls({
           (Number(work.request.quantity ?? 0) > 0 ? ` × ${work.request.quantity}${work.request.unit ? ` ${work.request.unit}` : ''}` : ''),
       );
       setAmount(Number(work.request.total_cost ?? 0) > 0 ? String(work.request.total_cost) : '');
+    } else if (work?.incident) {
+      setDescription(String(work.incident.description ?? ''));
+      setAmount('');
     } else {
-      setDescription(String(work?.job?.title ?? work?.incident?.description ?? ''));
+      setDescription('');
       setAmount('');
     }
   };
@@ -3888,12 +4166,12 @@ function BillingControls({
     setProfileIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
 
   const issueBill = async () => {
-    if (!selectedWork) { notify('Select a completed job order or approved item request.', 'error'); return; }
+    if (!selectedWork) { notify('Select an incident marked For Billing or an approved item request.', 'error'); return; }
     if (!customer?.email) { notify('No registered account email found for this customer.', 'error'); return; }
     if (!(Number(amount) > 0)) { notify('Enter the billing amount.', 'error'); return; }
     if (!dueDate) { notify('Set a due date.', 'error'); return; }
     if (needsProfile && selectedProfiles.length === 0) {
-      notify('Select at least one payment profile, or add one via Payment Information.', 'error'); return;
+      notify('Select at least one payment profile, or add one via Payment Options.', 'error'); return;
     }
 
     setSaving(true);
@@ -3912,7 +4190,7 @@ function BillingControls({
         customer_name: customerName,
         customer_email: customer.email,
         incident_ref: isReq ? '' : String(selectedWork.incident?.ref_code ?? ''),
-        job_order_ref: isReq ? '' : String(selectedWork.job?.ref_code ?? ''),
+        job_order_ref: '',
         service_description: description,
         notes: isCodRequest ? `Cash on Delivery — deliver to: ${String(selectedRequest?.delivery_address ?? '').trim() || 'address on file'}` : '',
         amount: Number(amount),
@@ -3921,7 +4199,7 @@ function BillingControls({
       });
 
       await onCreated();
-      notify('Final bill issued to the customer.');
+      notify('Bill issued to the customer.');
       setIssueOpen(false);
       setWorkKey(''); setAmount(''); setDueDate(''); setDescription(''); setProfileIds([]);
     } catch (cause) {
@@ -3940,12 +4218,12 @@ function BillingControls({
       {loading ? <p className="billing-helper">Loading billable work…</p> : <>
         {/* Work selector — only show unbilled items */}
         <div className="form-group">
-          <label>Completed Job Order or Approved Item Request</label>
+          <label>Incident (For Billing) or Approved Item Request</label>
           <select value={workKey} onChange={(e) => selectWork(e.target.value)}>
             <option value="">Select…</option>
-            {works.filter((w) => w.job && !w.alreadyBilled).length > 0 && (
-              <optgroup label="Completed Job Orders">
-                {works.filter((w) => w.job && !w.alreadyBilled).map((work) => (
+            {works.filter((w) => w.incident && !w.alreadyBilled).length > 0 && (
+              <optgroup label="Incidents — For Billing">
+                {works.filter((w) => w.incident && !w.alreadyBilled).map((work) => (
                   <option key={work.key} value={work.key}>{work.label}</option>
                 ))}
               </optgroup>
@@ -3959,7 +4237,10 @@ function BillingControls({
             )}
           </select>
           {works.length > 0 && works.every((w) => w.alreadyBilled) && (
-            <small style={{ color: 'var(--muted)' }}>All completed work has already been billed.</small>
+            <small style={{ color: 'var(--muted)' }}>All billable items have already been billed.</small>
+          )}
+          {works.length === 0 && !loading && (
+            <small style={{ color: 'var(--muted)' }}>No items ready to bill. Set an incident status to "For Billing" first.</small>
           )}
         </div>
 
@@ -3967,7 +4248,7 @@ function BillingControls({
         {existingBills.length > 0 && (
           <div className="billing-existing-bills">
             <p className="detail-section-title" style={{ marginTop: 0 }}>
-              Existing Bill{existingBills.length > 1 ? 's' : ''} for this {selectedWork?.job ? 'Job Order' : 'Request'}
+              Existing Bill{existingBills.length > 1 ? 's' : ''} for this {selectedWork?.request ? 'Request' : 'Incident'}
             </p>
             {existingBills.map((b) => (
               <div key={String(b.id)} className="billing-existing-bill-row">
