@@ -394,7 +394,6 @@ function JobOrderForm({
     incident ? `${titleCase(incident.type)} — ${String(incident.location ?? '')}`.trim().replace(/—\s*$/, '').trim() : '',
   );
   const [scope, setScope] = useState(incident ? String(incident.remarks || incident.description || '') : '');
-  const [cost, setCost] = useState('');
   const [scheduled, setScheduled] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -429,7 +428,6 @@ function JobOrderForm({
         team_leader: leader,
         team_members: membersList,
         assigned_to: membersList.join(', '),
-        estimated_cost: cost || 0,
         scheduled_date: scheduled,
         status: 'in_progress',
       });
@@ -533,10 +531,6 @@ function JobOrderForm({
         )}
       </div>
 
-      <div className="form-group">
-        <label>Estimated Cost (₱)</label>
-        <input type="number" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="0" />
-      </div>
       <div className="form-group">
         <label>Scheduled Date</label>
         <input type="date" min={todayISO()} value={scheduled} onChange={(e) => setScheduled(e.target.value)} />
