@@ -360,10 +360,15 @@ export const resourceService = {
 
     // Mirror the update rule: creating an advisory as "published" or "approved"
     // sets published_at immediately so it is visible to customers right away.
+    // Technical-team can only create drafts — force status to draft regardless.
     if (entity === 'advisories') {
-      if (values.status === 'published') values.status = 'approved';
-      if (values.status === 'approved' && !values.published_at) {
-        values.published_at = new Date().toISOString();
+      if (user.role === 'technical-team') {
+        values.status = 'draft';
+      } else {
+        if (values.status === 'published') values.status = 'approved';
+        if (values.status === 'approved' && !values.published_at) {
+          values.published_at = new Date().toISOString();
+        }
       }
     }
 
@@ -481,10 +486,17 @@ export const resourceService = {
 
     // Approving an advisory publishes it immediately — no separate "published" step.
     // Also accept the legacy "published" value from older clients and treat it as approved.
+    // Technical-team cannot change status at all — strip it from their updates.
     if (entity === 'advisories' && 'status' in values) {
-      if (values.status === 'published') values.status = 'approved';
-      if (values.status === 'approved' && !values.published_at) {
-        values.published_at = new Date().toISOString();
+      if (user.role === 'technical-team') {
+        // Technical-team can only edit content (title, body, area, type) — never status.
+        delete values.status;
+        delete values.published_at;
+      } else {
+        if (values.status === 'published') values.status = 'approved';
+        if (values.status === 'approved' && !values.published_at) {
+          values.published_at = new Date().toISOString();
+        }
       }
     }
 

@@ -666,6 +666,9 @@ export function ImageUpload({
         </button>
       )}
       <input ref={inputRef} type="file" accept="image/*" multiple hidden onChange={onFiles} />
+      <p className="image-field-hint">
+        Max {maxFiles} image{maxFiles === 1 ? '' : 's'} · {Math.round(maxSizeBytes / 1024 / 1024)} MB per file
+      </p>
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { ApiError } from '../../services/apiClient';
 import { ROLES } from '../../models/types';
 import { avatarFor } from './Topbar';
 import { ToggleSwitch } from '../components/ToggleSwitch';
+import { AddressInput } from '../components/BarangayCombobox';
 
 // ── Installation Guide images ──────────────────────────────────────────────
 import img1 from '../../assets/images/1.png';
@@ -71,14 +72,6 @@ const GUIDE_STEPS = [
   },
 ];
 
-const BARANGAYS = [
-  'Boac', 'Bagsangan', 'Buenavista', 'Buhangin', 'Burnay', 'Buyabod',
-  'Cabanbanan', 'Calatrava', 'Camating', 'Canuto', 'Capayang', 'Cogan',
-  'Daykitin', 'Del Carmen', 'Guinsiguiban', 'Imelda', 'Mabuhay',
-  'Malapad', 'Mataas na Bayan', 'Maysalang', 'Pajo', 'Palale',
-  'Pinggan', 'Quirino', 'Rizal', 'Sabang', 'San Isidro', 'San Jose',
-  'San Miguel', 'San Vicente', 'Tagumpay', 'Tugtug', 'Umabang',
-];
 
 export function AccountSettings() {
   const { user, updateProfile, changePassword, updateAvatar } = useAuth();
@@ -89,7 +82,7 @@ export function AccountSettings() {
   const [uploading, setUploading] = useState(false);
 
   const [fullName, setFullName] = useState(user!.fullName);
-  const [barangay, setBarangay] = useState(user!.barangay ?? 'Boac');
+  const [barangay, setBarangay] = useState(user!.barangay ?? 'Isok II Poblacion, Boac');
   const [savingProfile, setSavingProfile] = useState(false);
 
   const [current, setCurrent] = useState('');
@@ -283,12 +276,12 @@ export function AccountSettings() {
               <input value={user!.startDate ? new Date(user!.startDate).toLocaleDateString('en-GB') : new Date(user!.createdAt).toLocaleDateString('en-GB')} readOnly style={{ background: 'var(--panel-soft)' }} />
             </div>
             <div className="form-group">
-              <label><MapPin size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />Barangay (Default Location)</label>
-              <select value={barangay} onChange={(e) => setBarangay(e.target.value)}>
-                {BARANGAYS.map((b) => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
+              <label><MapPin size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />Address</label>
+              <AddressInput
+                value={barangay}
+                onChange={setBarangay}
+                variant="dashboard"
+              />
             </div>
           </div>
           <div className="account-actions">

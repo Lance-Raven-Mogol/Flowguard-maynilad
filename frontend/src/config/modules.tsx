@@ -16,6 +16,12 @@ import { ImageUpload, LiveModule, StatusSelect, type ModuleColumn, type ModuleFi
 import { DataTable } from '../views/components/DataTable';
 import { Modal } from '../views/components/Modal';
 import { ActionButton, PanelHead, QRLabelModal } from '../views/components/panels';
+import { AddressInput, BARANGAYS } from '../views/components/BarangayCombobox';
+
+/** Flat list of all barangay values for autocomplete suggestions. */
+const BARANGAY_SUGGESTIONS = BARANGAYS.flatMap(({ municipality, barangays }) =>
+  barangays.map((b) => `${b}, ${municipality}`),
+);
 
 const roleLabel = (role: unknown): string => ROLES.find((r) => r.value === role)?.label ?? String(role ?? '');
 
@@ -1030,7 +1036,7 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
   const fields: ModuleField[] = [
     { name: 'type', label: 'Type', kind: 'select', optionList: INCIDENT_TYPE_OPTIONS, default: 'complaint' },
     { name: 'description', label: 'Description', kind: 'textarea', placeholder: 'Describe the concern…' },
-    { name: 'location', label: 'Location', placeholder: 'Brgy., Boac', default: user!.barangay ?? 'Boac' },
+    { name: 'location', label: 'Location', placeholder: 'e.g. Isok II Poblacion, Boac', default: user!.barangay ?? 'Isok II Poblacion, Boac', suggestionsFromRows: () => BARANGAY_SUGGESTIONS },
     ...(canManageUrgency ? [{
       name: 'urgency',
       label: 'Urgency',
@@ -2610,10 +2616,10 @@ function RequestForm({
           </div>
           <div className="form-group">
             <label>Delivery Address</label>
-            <input
+            <AddressInput
               value={form.delivery_address}
-              onChange={set('delivery_address')}
-              placeholder="e.g. Brgy. Sanzol, Boac, Marinduque"
+              onChange={(v) => setForm((f) => ({ ...f, delivery_address: v }))}
+              variant="dashboard"
             />
             <small style={{ display: 'block', marginTop: 4, color: 'var(--muted)' }}>
               Auto-filled from your account's address. Edit if delivery is to a different location.
@@ -3215,11 +3221,160 @@ const ADVISORY_STATUS = [
 ];
 const ADVISORY_TYPE_BADGE: Record<string, BadgeTone> = { emergency: 'high', interruption: 'medium', maintenance: 'low' };
 
+/** Advisory type labels for display inside the view modal. */
+const ADVISORY_TYPE_LABEL: Record<string, string> = {
+  maintenance: 'Scheduled Maintenance',
+  interruption: 'Service Interruption',
+  emergency: 'Emergency',
+};
+
+/**
+ * Read-only modal that shows the full advisory details and lets the
+ * Commercial Department share it directly to Facebook.
+ */
+function ViewAdvisoryModal({ row, onClose }: { row: EntityRow; onClose: () => void }) {
+  const { notify } = useToast();
+  const typeLabel = ADVISORY_TYPE_LABEL[String(row.type)] ?? titleCase(row.type);
+  const typeEmoji =
+    row.type === 'emergency' ? '🚨' : row.type === 'interruption' ? '⚠️' : '🔧';
+  const [copied, setCopied] = useState(false);
+
+  /**
+   * Build the Facebook post text — bilingual (Filipino + English), structured.
+   *
+   * Format:
+   *   [emoji] [TYPE] — SERVICE ADVISORY
+   *   Maynilad Water Services – Boac, Marinduque
+   *
+   *   📢 [Title]
+   *   📍 Affected Area: [area]
+   *   📅 Date Issued: [date]
+   *
+   *   [body]
+   *
+   *   Para sa mga katanungan...
+   *   #MayniladBoac #ServiceAdvisory #[Type]
+   */
+  const buildPostText = (): string => {
+    const dateIssued = new Date(
+      String(row.published_at ?? row.created_at),
+    ).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    const typeTag = String(row.type ?? '').replace(/[^a-zA-Z]/g, '');
+    const tag = typeTag.charAt(0).toUpperCase() + typeTag.slice(1);
+
+    return [
+      `${typeEmoji} ${typeLabel.toUpperCase()} — SERVICE ADVISORY`,
+      `Maynilad Water Services – Boac, Marinduque`,
+      ``,
+      `📢 ${String(row.title)}`,
+      `📍 Affected Area: ${String(row.area ?? 'To be announced')}`,
+      `📅 Date Issued: ${dateIssued}`,
+      ``,
+      String(row.body ?? ''),
+      ``,
+      `Nais naming ipaabot ang aming paghingi ng paumanhin para sa abot-kamay na abala.`,
+      `We apologize for any inconvenience this may cause.`,
+      ``,
+      `Para sa mga katanungan, makipag-ugnayan sa aming opisina.`,
+      `For inquiries, please contact our office.`,
+      ``,
+      `#MayniladBoac #ServiceAdvisory #${tag}`,
+    ].join('\n');
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(buildPostText());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+    } catch {
+      notify('Hindi ma-kopya ang text. I-copy mo manually mula sa preview.', 'error');
+    }
+  };
+
+  const postText = buildPostText();
+
+  return (
+    <Modal
+      title="Service Advisory"
+      open
+      wide
+      onClose={onClose}
+    >
+      {/* Type + Status banner */}
+      <div className={`adv-modal-banner adv-modal-banner--${String(row.type)}`}>
+        <span className="adv-modal-banner-emoji">{typeEmoji}</span>
+        <div>
+          <p className="adv-modal-banner-type">{typeLabel}</p>
+          <p className="adv-modal-banner-status">
+            {row.status === 'published' ? 'Published' : 'Approved & Published'}
+          </p>
+        </div>
+      </div>
+
+      {/* Details grid */}
+      <dl>
+        <div className="detail-row">
+          <dt>Title</dt>
+          <dd className="adv-modal-title">{String(row.title)}</dd>
+        </div>
+        <div className="detail-row">
+          <dt>Affected Area</dt>
+          <dd>{String(row.area ?? '—')}</dd>
+        </div>
+        <div className="detail-row">
+          <dt>Date Issued</dt>
+          <dd>{dateShort(row.published_at ?? row.created_at)}</dd>
+        </div>
+        <div className="detail-row">
+          <dt>Details</dt>
+          <dd className="adv-modal-body-text">{String(row.body ?? '—')}</dd>
+        </div>
+      </dl>
+
+      {/* Post preview */}
+      <div className="adv-modal-preview">
+        <div className="adv-modal-preview-header">
+          <span className="adv-modal-preview-label">Post Preview</span>
+          <span className="adv-modal-preview-hint">Ready to paste on Facebook</span>
+        </div>
+        <pre className="adv-modal-preview-text">{postText}</pre>
+      </div>
+
+      {/* Copy button */}
+      <button
+        type="button"
+        className={`adv-modal-copy-btn${copied ? ' is-copied' : ''}`}
+        onClick={handleCopy}
+      >
+        {copied ? (
+          <>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+            Nakopya! I-paste na sa Facebook
+          </>
+        ) : (
+          <>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy Post Text
+          </>
+        )}
+      </button>
+    </Modal>
+  );
+}
+
 export function AdvisoriesModule({ filter, readOnly = false, title }: ModuleProps & { readOnly?: boolean; title?: string }) {
   const { user } = useAuth();
   const role = user!.role;
   const canWrite = !readOnly && WRITE.advisories.includes(role);
+  // Only the General Manager can approve/publish advisories.
+  // Technical-team can only create (always draft) and edit content — no status control.
   const canApprove = role === 'general-manager';
+  // Commercial Department can view approved/published advisories and share them.
+  const isCommercial = role === 'commercial-department';
+
+  const [viewRow, setViewRow] = useState<EntityRow | null>(null);
 
   const columns: ModuleColumn[] = [
     { header: 'Title', cell: (r) => ({ text: String(r.title), strong: true }) },
@@ -3234,31 +3389,63 @@ export function AdvisoriesModule({ filter, readOnly = false, title }: ModuleProp
     { name: 'body', label: 'Details', kind: 'textarea', placeholder: 'Advisory details…' },
     { name: 'area', label: 'Affected Area', placeholder: 'Brgy. / Poblacion' },
     { name: 'type', label: 'Type', kind: 'select', optionList: [{ value: 'maintenance', label: 'Scheduled Maintenance' }, { value: 'interruption', label: 'Service Interruption' }, { value: 'emergency', label: 'Emergency' }] },
-    { name: 'status', label: 'Status', kind: 'select', optionList: ADVISORY_STATUS },
+    // GM can set status on create; technical-team always creates as draft (field hidden).
+    ...(canApprove ? [{ name: 'status', label: 'Status', kind: 'select' as const, optionList: ADVISORY_STATUS }] : []),
   ];
 
+  /** Whether a row is approved/published — only these get the View button. */
+  const isPublished = (row: EntityRow) =>
+    row.status === 'approved' || row.status === 'published';
+
   return (
-    <LiveModule
-      entity="advisories"
-      title={title ?? 'Service Advisory Management'}
-      createLabel="Create Advisory"
-      columns={columns}
-      fields={fields}
-      canWrite={canWrite}
-      filter={filter}
-      rowFilter={readOnly ? (r) => r.status === 'approved' || r.status === 'published' : undefined}
-      actions={
-        canWrite
-          ? (c) => (
-              <>
-                {canApprove && !c.archived && <StatusSelect value={String(c.row.status)} options={ADVISORY_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />}
-                <EditBtn c={c} />
-                <ArchiveBtn c={c} />
-              </>
-            )
-          : undefined
-      }
-    />
+    <>
+      <LiveModule
+        entity="advisories"
+        title={title ?? 'Service Advisory Management'}
+        createLabel="Create Advisory"
+        columns={columns}
+        fields={fields}
+        // Technical-team always creates as draft regardless of what the form sends.
+        prepareValues={!canApprove ? (values) => ({ ...values, status: 'draft' }) : undefined}
+        canWrite={canWrite}
+        filter={filter}
+        rowFilter={readOnly ? (r) => isPublished(r) : undefined}
+        actions={
+          canWrite || isCommercial
+            ? (c) => (
+                <>
+                  {/* Only GM sees the approve/publish dropdown */}
+                  {canApprove && !c.archived && (
+                    <StatusSelect
+                      value={String(c.row.status)}
+                      options={ADVISORY_STATUS}
+                      disabled={c.busy}
+                      onChange={(s) => c.update({ status: s })}
+                    />
+                  )}
+                  {/* View button — shown to Commercial Department for approved/published advisories */}
+                  {isCommercial && isPublished(c.row) && (
+                    <button
+                      className="btn-action btn-view"
+                      disabled={c.busy}
+                      onClick={() => setViewRow(c.row)}
+                    >
+                      View
+                    </button>
+                  )}
+                  {canWrite && <EditBtn c={c} />}
+                  {canWrite && <ArchiveBtn c={c} />}
+                </>
+              )
+            : undefined
+        }
+      />
+
+      {/* View Advisory modal — shown when a row is selected */}
+      {viewRow && (
+        <ViewAdvisoryModal row={viewRow} onClose={() => setViewRow(null)} />
+      )}
+    </>
   );
 }
 

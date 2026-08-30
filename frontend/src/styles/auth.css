@@ -840,3 +840,195 @@ html {
 .totp-manual-hint,
 .totp-notice-num,
 .totp-notice-text { display: none; }
+
+/* ================================================================
+   BarangayCombobox — auth variant
+   ================================================================ */
+
+.brgy-wrap {
+  position: relative;
+  width: 100%;
+}
+
+/* Make the input-shell not clip the dropdown */
+.brgy-shell {
+  cursor: text;
+}
+
+.brgy-shell--open {
+  border-color: var(--a-blue) !important;
+  background: #fff !important;
+  box-shadow: 0 0 0 4px rgba(47, 107, 255, 0.12) !important;
+}
+
+.brgy-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.brgy-input-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.brgy-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.brgy-clear {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--a-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.brgy-clear:hover {
+  background: #fee2e2;
+  color: #e25577;
+}
+
+.brgy-caret {
+  color: var(--a-muted);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.brgy-caret--open {
+  transform: rotate(180deg);
+}
+
+/* Dropdown list */
+.brgy-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: #fff;
+  border: 1.5px solid var(--a-line-strong);
+  border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(10, 22, 48, 0.14);
+  max-height: 280px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 0;
+  list-style: none;
+  margin: 0;
+  animation: brgyIn 0.15s ease-out;
+}
+
+@keyframes brgyIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.brgy-dropdown ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.brgy-group {
+  list-style: none;
+}
+
+.brgy-group-label {
+  margin: 0;
+  padding: 8px 14px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--a-blue, #2f6bff);
+  border-top: 1px solid var(--a-line, #e6ecf5);
+}
+
+.brgy-group:first-child .brgy-group-label {
+  border-top: 0;
+}
+
+.brgy-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  font-size: 13.5px;
+  color: #14233f;
+  cursor: pointer;
+  transition: background 0.1s;
+  list-style: none;
+}
+
+.brgy-option:hover,
+.brgy-option.is-highlighted {
+  background: #eaf1ff;
+}
+
+.brgy-option.is-selected {
+  background: #eaf1ff;
+  font-weight: 600;
+  color: #1f55e0;
+}
+
+.brgy-option-name {
+  min-width: 0;
+}
+
+.brgy-match {
+  font-weight: 700;
+  color: #1f55e0;
+  background: rgba(47, 107, 255, 0.1);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+.brgy-option-check {
+  font-size: 12px;
+  color: #2f6bff;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.brgy-empty {
+  padding: 16px 14px;
+  font-size: 13px;
+  color: var(--a-muted);
+  text-align: center;
+  margin: 0;
+}
+
+
+/* ================================================================
+   AddressInput — purok + barangay stacked field
+   ================================================================ */
+
+.address-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+/* Auth variant: purok shell matches the input-shell style */
+.address-purok-shell {
+  min-height: 52px !important;
+}
+
+.address-optional {
+  font-weight: 400;
+  text-transform: none;
+  font-size: 0.7rem;
+  opacity: 0.7;
+  letter-spacing: 0;
+}

@@ -2272,6 +2272,14 @@ td strong {
   cursor: not-allowed;
 }
 
+.image-field-hint {
+  width: 100%;
+  margin: 2px 0 0 0;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 /* --------------------------------------------------------- Read-only field */
 .form-group input[readonly],
 .field-readonly {
@@ -4385,4 +4393,237 @@ input:checked + .slider:before {
   color: #cbd5e1;
   text-align: center;
   border-top: 1px solid #f1f5f9;
+}
+
+/* ================================================================
+   Advisory View Modal — Commercial Department
+   ================================================================ */
+
+/* Top banner — color-coded by advisory type */
+.adv-modal-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  margin-bottom: 20px;
+}
+
+.adv-modal-banner--maintenance {
+  background: var(--blue-50);
+  border: 1px solid var(--blue-100);
+}
+
+.adv-modal-banner--interruption {
+  background: #fff8eb;
+  border: 1px solid #fde68a;
+}
+
+.adv-modal-banner--emergency {
+  background: #fff1f3;
+  border: 1px solid #fecdd3;
+}
+
+.adv-modal-banner-emoji {
+  font-size: 28px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.adv-modal-banner-type {
+  margin: 0 0 2px 0;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text);
+}
+
+.adv-modal-banner--maintenance .adv-modal-banner-type { color: var(--blue-600); }
+.adv-modal-banner--interruption .adv-modal-banner-type { color: #b45309; }
+.adv-modal-banner--emergency .adv-modal-banner-type { color: #be123c; }
+
+.adv-modal-banner-status {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Title inside detail grid */
+.adv-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Body text — preserve line breaks */
+.adv-modal-body-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.7;
+}
+
+/* Post preview block */
+.adv-modal-preview {
+  margin-top: 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.adv-modal-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--panel-soft);
+  border-bottom: 1px solid var(--line);
+}
+
+.adv-modal-preview-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-soft);
+}
+
+.adv-modal-preview-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.adv-modal-preview-text {
+  margin: 0;
+  padding: 14px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-soft);
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fff;
+}
+
+/* Copy button */
+.adv-modal-copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px 20px;
+  border-radius: 12px;
+  border: 1.5px solid var(--blue-100);
+  background: var(--blue-50);
+  color: var(--blue-600);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.adv-modal-copy-btn:hover {
+  background: var(--blue-100);
+  border-color: var(--blue);
+  transform: translateY(-1px);
+}
+
+.adv-modal-copy-btn:active {
+  transform: none;
+}
+
+.adv-modal-copy-btn.is-copied {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+  color: #059669;
+}
+
+.adv-modal-copy-btn.is-copied:hover {
+  background: #d1fae5;
+}
+
+/* View button in the table row actions */
+.btn-action.btn-view {
+  background: var(--blue-50);
+  color: var(--blue);
+  border-color: var(--blue-100);
+}
+
+.btn-action.btn-view:hover {
+  background: var(--blue-100);
+}
+
+/* ================================================================
+   BarangayCombobox — dashboard variant
+   ================================================================ */
+
+.brgy-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 42px;
+  border-radius: 10px;
+  border: 1.5px solid var(--line-strong);
+  background: var(--panel-soft);
+  cursor: text;
+  transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+}
+
+.brgy-field--open,
+.brgy-field:focus-within {
+  border-color: var(--blue);
+  background: var(--panel);
+  box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.12);
+}
+
+.brgy-field-icon {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.brgy-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font: 500 13.5px/1 inherit;
+  color: var(--text);
+}
+
+.brgy-field input::placeholder {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+
+/* AddressInput — dashboard purok text input */
+.address-purok-input {
+  width: 100%;
+  padding: 0 12px;
+  height: 42px;
+  border-radius: 10px;
+  border: 1.5px solid var(--line-strong);
+  background: var(--panel-soft);
+  font: 500 13.5px/1 inherit;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+  box-sizing: border-box;
+}
+
+.address-purok-input::placeholder {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.address-purok-input:focus {
+  border-color: var(--blue);
+  background: var(--panel);
+  box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.12);
 }

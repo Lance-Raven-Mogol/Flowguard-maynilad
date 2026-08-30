@@ -6,15 +6,7 @@ import { useToast } from '../../controllers/ToastContext';
 import { ApiError } from '../../services/apiClient';
 import { AuthCard } from './AuthCard';
 import { PasswordInput } from './PasswordInput';
-
-const BARANGAYS = [
-  'Boac', 'Bagsangan', 'Buenavista', 'Buhangin', 'Burnay', 'Buyabod',
-  'Cabanbanan', 'Calatrava', 'Camating', 'Canuto', 'Capayang', 'Cogan',
-  'Daykitin', 'Del Carmen', 'Guinsiguiban', 'Imelda', 'Mabuhay',
-  'Malapad', 'Mataas na Bayan', 'Maysalang', 'Pajo', 'Palale',
-  'Pinggan', 'Quirino', 'Rizal', 'Sabang', 'San Isidro', 'San Jose',
-  'San Miguel', 'San Vicente', 'Tagumpay', 'Tugtug', 'Umabang',
-];
+import { AddressInput } from '../components/BarangayCombobox';
 
 type Step = 'form' | 'totp';
 
@@ -28,7 +20,7 @@ export function SignupPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [barangay, setBarangay] = useState('Boac');
+  const [barangay, setBarangay] = useState('Isok II Poblacion, Boac');
   const [submitting, setSubmitting] = useState(false);
 
   // TOTP step state
@@ -128,16 +120,11 @@ export function SignupPage() {
 
           <PasswordInput id="signup-confirm" label="Confirm Password" value={confirm} onChange={setConfirm} placeholder="Confirm your password" autoComplete="new-password" />
 
-          <div className="input-shell">
-            <label className="input-copy" htmlFor="barangay">
-              <span className="input-label">Barangay</span>
-              <select id="barangay" value={barangay} onChange={(e) => setBarangay(e.target.value)}>
-                {BARANGAYS.map((b) => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <AddressInput
+            value={barangay}
+            onChange={setBarangay}
+            variant="auth"
+          />
 
           <p className="auth-hint">
             You'll be registered as a <strong>Customer</strong>. Staff accounts and roles are
