@@ -4627,3 +4627,58 @@ input:checked + .slider:before {
   background: var(--panel);
   box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.12);
 }
+
+
+/* ================================================================
+   Users Table — action column
+   ================================================================ */
+
+/* Give the action column enough room to breathe */
+.users-table th:last-child,
+.users-table td:last-child {
+  width: 200px;
+  min-width: 200px;
+}
+
+.user-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+/* Role select — always full width */
+.user-actions select.btn-action {
+  width: 100%;
+  padding-inline: 8px;
+  font-size: 12px;
+  text-align: left;
+}
+
+/* Buttons row — always a row, buttons share equal space */
+.user-actions .user-action-btns {
+  display: flex;
+  gap: 5px;
+}
+
+.user-actions .user-action-btns .btn-action {
+  flex: 1;
+  justify-content: center;
+  font-size: 11.5px;
+  padding: 7px 8px;
+  white-space: nowrap;
+}
+
+/* Restore button — green tint */
+.btn-action.btn-restore {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #16a34a;
+}
+
+.btn-action.btn-restore:hover {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #15803d;
+  transform: translateY(-1px);
+}

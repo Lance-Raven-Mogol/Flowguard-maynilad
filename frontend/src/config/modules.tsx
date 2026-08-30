@@ -3457,11 +3457,12 @@ const JOB_LEVEL_DEFAULTS: Record<string, string[]> = {
   'technical-team':    ['Junior Technician', 'Senior Technician'],
   'inventory-officer': ['Junior Inventory Officer', 'Senior Inventory Officer'],
   'contractor':        ['Junior Contractor', 'Senior Contractor'],
+  'inhouse-team':      ['Junior In-house Technician', 'Senior In-house Technician'],
   'general-manager':   ['General Manager'],
 };
 
 /** Roles that can have a job level (customers and GMs are excluded from manual editing). */
-const JOB_LEVEL_ROLES = new Set(['zone-specialist', 'technical-team', 'inventory-officer', 'contractor']);
+const JOB_LEVEL_ROLES = new Set(['zone-specialist', 'technical-team', 'inventory-officer', 'contractor', 'inhouse-team']);
 
 interface UserRow {
   id: string;
@@ -3653,22 +3654,33 @@ export function UsersPanel({ filter }: ModuleProps) {
           table={table}
           filter={filter}
           actionLabel="Action"
+          className=" users-table"
           renderActions={(id) => {
             const u = rows.find((x) => x.id === id);
             if (!u) return null;
+            const busy = busyId === id;
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <StatusSelect value={u.role} options={roleOptions} disabled={busyId === id} onChange={(role) => changeRole(id, role)} />
-                <div style={{ display: 'flex', gap: 4 }}>
+              <div className="user-actions">
+                <StatusSelect
+                  value={u.role}
+                  options={roleOptions}
+                  disabled={busy}
+                  onChange={(role) => changeRole(id, role)}
+                />
+                <div className="user-action-btns">
                   {JOB_LEVEL_ROLES.has(u.role) && !u.isArchived && (
-                    <button className="btn-action" disabled={busyId === id} onClick={() => openJobLevelModal(u)}>
-                      Level
+                    <button className="btn-action" disabled={busy} onClick={() => openJobLevelModal(u)}>
+                      Set Level
                     </button>
                   )}
                   {u.isArchived ? (
-                    <button className="btn-action" disabled={busyId === id} onClick={() => restoreUser(id)}>Restore</button>
+                    <button className="btn-action btn-restore" disabled={busy} onClick={() => restoreUser(id)}>
+                      Restore
+                    </button>
                   ) : (
-                    <button className="btn-action btn-archive" disabled={busyId === id} onClick={() => archiveUser(id)}>Resign</button>
+                    <button className="btn-action btn-archive" disabled={busy} onClick={() => archiveUser(id)}>
+                      Resign
+                    </button>
                   )}
                 </div>
               </div>
