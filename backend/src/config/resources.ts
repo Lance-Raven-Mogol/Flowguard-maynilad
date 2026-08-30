@@ -57,7 +57,12 @@ export const RESOURCES: Record<string, ResourceDef> = {
 
   'job-orders': {
     table: 'job_orders',
-    writeRoles: ['technical-team', 'commercial-department'],
+    // technical-team and commercial-department create/edit full job orders.
+    // contractor and inhouse-team are team members who may update the status of
+    // a job order they are leading — enforced on the frontend by checking that
+    // the logged-in user's name matches the team_leader field. Including them
+    // here so that their PATCH requests are not rejected by the write-role guard.
+    writeRoles: ['technical-team', 'commercial-department', 'contractor', 'inhouse-team'],
     allowed: [
       'incident_ref', 'title', 'scope', 'team', 'assigned_to',
       'team_name', 'team_leader', 'team_members',

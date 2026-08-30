@@ -561,6 +561,28 @@ export const resourceService = {
       );
     }
 
+    // Role-based material request status transition guards.
+    // General Manager: can approve, reject, or release any request.
+    // Inventory Officer: can ONLY release requests that are already approved by GM.
+    // All other write roles: cannot change status at all.
+    if (entity === 'material-requests' && 'status' in values && user.role !== 'general-manager') {
+      const currentMrf = await repo.getRowById(def.table, id);
+      if (!currentMrf) throw notFound('Record not found.');
+      const from = String(currentMrf.status ?? '');
+      const to = String(values.status ?? '');
+      if (from !== to) {
+        if (user.role === 'inventory-officer') {
+          // Inventory Officer may only move approved → released.
+          if (!(from === 'approved' && to === 'released')) {
+            throw forbidden('Inventory Officers can only release requests that have already been approved by the General Manager.');
+          }
+        } else {
+          // All other write roles (requester roles) cannot change status.
+          throw forbidden('Only the General Manager can approve or reject material requests.');
+        }
+      }
+    }
+
     // Approving/releasing a material request deducts its quantity from stock —
     // once. Runs before the status write so insufficient stock blocks approval.
     if (entity === 'material-requests' && (values.status === 'approved' || values.status === 'released')) {

@@ -1501,11 +1501,16 @@ function MaterialReturnModal({
 function JobOrderViewButton({ row, onReload }: { row: EntityRow; onReload: () => Promise<void> }) {
   const { user } = useAuth();
   const role = user!.role;
-  const canRequest = WRITE['material-requests'].includes(role);
+  const isGM = role === 'general-manager';
+  // A user is the team leader of this specific job order when their name matches.
+  const isLeader = String(row.team_leader ?? '').toLowerCase() === user!.fullName.toLowerCase();
+  // For contractor/inhouse-team/technical-team: only the team leader of this job
+  // order may request materials. GM can always request.
+  const canRequest = isGM
+    ? WRITE['material-requests'].includes(role)
+    : WRITE['material-requests'].includes(role) && isLeader;
   const isActive = ['pending', 'in_progress'].includes(String(row.status));
   const isCompleted = String(row.status) === 'completed';
-  const isGM = role === 'general-manager';
-  const isLeader = String(row.team_leader ?? '').toLowerCase() === user!.fullName.toLowerCase();
   const canReturn = isCompleted && (isGM || isLeader);
 
   const [open, setOpen] = useState(false);
@@ -1602,32 +1607,54 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
   const viewAction = (c: RowActionCtx) => <JobOrderViewButton row={c.row} onReload={c.reload} />;
 
   /**
-   * Tech-team: full access — all status options, edit, and archive.
+   * Tech-team: edit/archive for all rows they can see, but the status dropdown
+   * is only shown when they are the designated team leader of that job order.
    */
-  const techTeamActions = (c: RowActionCtx) => (
-    <>
-      {!c.archived && (
-        <StatusSelect
-          value={String(c.row.status)}
-          options={JOB_STATUS}
-          disabled={c.busy}
-          onChange={(s) => c.update({ status: s })}
-        />
-      )}
-      <div className="btn-row">
-        {viewAction(c)}
-        <EditBtn c={c} />
-        <ArchiveBtn c={c} />
-      </div>
-    </>
-  );
+  const techTeamActions = (c: RowActionCtx) => {
+    const isLeaderOfRow =
+      String(c.row.team_leader ?? '').toLowerCase() === me;
+    return (
+      <>
+        {!c.archived && isLeaderOfRow && (
+          <StatusSelect
+            value={String(c.row.status)}
+            options={JOB_STATUS}
+            disabled={c.busy}
+            onChange={(s) => c.update({ status: s })}
+          />
+        )}
+        <div className="btn-row">
+          {viewAction(c)}
+          <EditBtn c={c} />
+          <ArchiveBtn c={c} />
+        </div>
+      </>
+    );
+  };
 
-  /** Contractor: view only — no status changes (only the team leader / GM can change status). */
-  const contractorActions = (c: RowActionCtx) => (
-    <div className="btn-row">
-      {viewAction(c)}
-    </div>
-  );
+  /**
+   * Contractor / In-house team: if the logged-in user is the team leader of this
+   * specific job order they can update the status; otherwise view only.
+   */
+  const contractorActions = (c: RowActionCtx) => {
+    const isLeaderOfRow =
+      String(c.row.team_leader ?? '').toLowerCase() === me;
+    return (
+      <>
+        {!c.archived && isLeaderOfRow && (
+          <StatusSelect
+            value={String(c.row.status)}
+            options={JOB_STATUS}
+            disabled={c.busy}
+            onChange={(s) => c.update({ status: s })}
+          />
+        )}
+        <div className="btn-row">
+          {viewAction(c)}
+        </div>
+      </>
+    );
+  };
 
   return (
     <LiveModule
@@ -2721,20 +2748,18 @@ const requestStatusOptions = (requestType: string) =>
  * single general customer request. Rendered inside the actions callback so
  * each row has its own independent modal state.
  *
- * Behaviour:
- *   • Clicking the StatusSelect to "Approved" on a general customer request
- *     (one with payment_option set) updates the status then opens this modal.
- *   • Modal lets the approver set amount (pre-filled from total_cost) + due date.
- *   • Cash on Delivery → bill with payment_method "Cash on Delivery", no QR needed.
- *   • GCash → load saved payment profiles, pick one.
- *   • Closing without submitting is fine — status is already approved.
+ * Approval workflow:
+ *   Pending → Approved (GM only) → Released (Inventory Officer)
+ *          ↘ Rejected  (GM only)
  */
 function ApprovalBillingRow({
   c,
   canApprove,
+  canRelease,
 }: {
   c: RowActionCtx;
-  canApprove: boolean;
+  canApprove: boolean;  // GM only — can approve or reject
+  canRelease: boolean;  // Inventory Officer — can only release an already-approved request
 }) {
   const { notify } = useToast();
   const t = String(c.row.request_type ?? 'mrf');
@@ -2837,12 +2862,25 @@ function ApprovalBillingRow({
 
   return (
     <>
+      {/* GM: can approve or reject (full status options) */}
       {canApprove && !c.archived && (
         <StatusSelect
           value={String(c.row.status)}
           options={requestStatusOptions(t)}
           disabled={c.busy}
           onChange={handleStatusChange}
+        />
+      )}
+      {/* Inventory Officer: can only release a GM-approved request */}
+      {!canApprove && canRelease && !c.archived && String(c.row.status) === 'approved' && (
+        <StatusSelect
+          value={String(c.row.status)}
+          options={[
+            { value: 'approved', label: 'Approved' },
+            { value: 'released', label: 'Released' },
+          ]}
+          disabled={c.busy}
+          onChange={(s) => void c.update({ status: s })}
         />
       )}
 
@@ -2960,7 +2998,10 @@ export function RequestsModule({ filter, title }: ModuleProps & { title?: string
   const { user } = useAuth();
   const role = user!.role;
   const canWrite = WRITE['material-requests'].includes(role);
-  const canApprove = role === 'inventory-officer' || role === 'general-manager';
+  // GM only can approve or reject requests.
+  const canApprove = role === 'general-manager';
+  // Inventory Officer can only release requests that are already GM-approved.
+  const canRelease = role === 'inventory-officer';
 
   // Non-GM roles see only their own requests. The General Manager sees all so
   // they can review, approve, and release requests from every department.
@@ -3073,7 +3114,7 @@ export function RequestsModule({ filter, title }: ModuleProps & { title?: string
             </ViewAction>
             {canWrite && (
               <>
-                <ApprovalBillingRow c={c} canApprove={canApprove} />
+                <ApprovalBillingRow c={c} canApprove={canApprove} canRelease={canRelease} />
                 <ArchiveBtn c={c} />
               </>
             )}
