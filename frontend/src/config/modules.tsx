@@ -1120,8 +1120,8 @@ function JobOrderDetail({ row }: { row: EntityRow }) {
   const incident = stats.incidents.find((i) => String(i.ref_code) === String(row.incident_ref));
   return (
     <>
-      <p className="detail-section-title">Job Order</p>
-      <dl className="detail-list">
+      <p className="detail-section-title">Job Order Details</p>
+      <dl className="detail-list complaint-detail-grid job-order-detail-grid">
         <DetailRow label="Reference">{String(row.ref_code ?? '')}</DetailRow>
         <DetailRow label="Title">{String(row.title ?? '')}</DetailRow>
         <DetailRow label="Status">{jobStatusLabel(row.status)}</DetailRow>
@@ -1132,21 +1132,35 @@ function JobOrderDetail({ row }: { row: EntityRow }) {
           {Array.isArray(row.team_members) ? (row.team_members as string[]).join(', ') : String(row.assigned_to ?? '')}
         </DetailRow>
         <DetailRow label="Scheduled">{dateShort(row.scheduled_date)}</DetailRow>
-        <DetailRow label="Scope of Work">{String(row.scope ?? '')}</DetailRow>
         <DetailRow label="Linked Complaint">{String(row.incident_ref ?? '')}</DetailRow>
       </dl>
+      <div className="complaint-narratives job-order-narratives">
+        <section className="complaint-note-card is-job-scope">
+          <span>Scope of Work</span>
+          <p>{String(row.scope ?? '') || 'No scope of work provided yet.'}</p>
+        </section>
+      </div>
 
       {incident ? (
         <>
-          <p className="detail-section-title">Linked Complaint — for Material Allocation</p>
-          <dl className="detail-list">
+          <p className="detail-section-title job-order-section-title">Linked Complaint Details</p>
+          <dl className="detail-list complaint-detail-grid">
+            <DetailRow label="Reference">{String(incident.ref_code ?? '')}</DetailRow>
             <DetailRow label="Type">{titleCase(incident.type)}</DetailRow>
             <DetailRow label="Urgency">{titleCase(incident.urgency)}</DetailRow>
             <DetailRow label="Location">{String(incident.location ?? '')}</DetailRow>
             <DetailRow label="Requested By">{String(incident.reported_by ?? '')}</DetailRow>
-            <DetailRow label="Description">{String(incident.description ?? '')}</DetailRow>
-            <DetailRow label="Zone Specialist Remarks">{String(incident.remarks ?? '')}</DetailRow>
           </dl>
+          <div className="complaint-narratives">
+            <section className="complaint-note-card">
+              <span>Description</span>
+              <p>{String(incident.description ?? '') || '—'}</p>
+            </section>
+            <section className="complaint-note-card is-remarks">
+              <span>Zone Specialist Remarks</span>
+              <p>{String(incident.remarks ?? '') || 'No remarks added yet.'}</p>
+            </section>
+          </div>
           <ImageGallery images={incident.images} />
         </>
       ) : row.incident_ref ? (
