@@ -191,23 +191,6 @@ function useAllTeamMembers(): {
 }
 
 /**
- * @deprecated Use useAllTeamMembers instead.
- * Kept temporarily so nothing else breaks while we transition.
- */
-function useTechTeam(): { members: UserLite[]; loading: boolean; error: string | null } {
-  const { inhouseMembers, loading, error } = useAllTeamMembers();
-  return { members: inhouseMembers, loading, error };
-}
-
-/**
- * @deprecated Use useAllTeamMembers instead.
- */
-function useContractors(): { members: UserLite[]; loading: boolean; error: string | null } {
-  const { contractorMembers, loading, error } = useAllTeamMembers();
-  return { members: contractorMembers, loading, error };
-}
-
-/**
  * A styled single-select dropdown for picking a team leader.
  * Shows an avatar initial + full name per option.
  */
@@ -373,12 +356,7 @@ function MembersMultiSelect({
   );
 }
 
-/**
- * Create-and-assign a job order.
- *   - Team Leader  → must be a registered technical-team account
- *   - Team Members → selected from registered contractor accounts
- * Data comes from /users/team-members which is open to any authenticated role.
- */
+/** Commercial Department creates the pending work order after a complaint is resolved. */
 function JobOrderForm({
   incident,
   onClose,
@@ -389,55 +367,23 @@ function JobOrderForm({
   onCreated: () => Promise<void> | void;
 }) {
   const { notify } = useToast();
-  const { inhouseMembers, contractorMembers, loading, error } = useAllTeamMembers();
-
-  // 'in-house' | 'contractor'
-  const [teamType, setTeamType] = useState<'in-house' | 'contractor'>('in-house');
-  const [teamName, setTeamName] = useState('');
-  const [leader, setLeader] = useState('');
-  const [picked, setPicked] = useState<string[]>([]);
   const [title, setTitle] = useState(
     incident ? `${titleCase(incident.type)} — ${String(incident.location ?? '')}`.trim().replace(/—\s*$/, '').trim() : '',
   );
   const [scope, setScope] = useState(incident ? String(incident.remarks || incident.description || '') : '');
-  const [scheduled, setScheduled] = useState('');
   const [saving, setSaving] = useState(false);
-
-  // The member pool shown in the pickers depends on the selected team type.
-  const memberPool = teamType === 'in-house' ? inhouseMembers : contractorMembers;
-  const poolLabel  = teamType === 'in-house' ? 'In-house Team' : 'Contractor';
-  const emptyMsg   = teamType === 'in-house'
-    ? 'No in-house team accounts registered yet. Add them in User Management first.'
-    : 'No contractor accounts registered yet. Add them in User Management first.';
-
-  // Reset pickers whenever the team type changes so stale selections are cleared.
-  const handleTeamTypeChange = (t: 'in-house' | 'contractor') => {
-    setTeamType(t);
-    setLeader('');
-    setPicked([]);
-  };
 
   const save = async () => {
     if (!title.trim()) return notify('A job title is required.', 'error');
-    if (!leader) return notify('Select a team leader.', 'error');
-    // Leader is always first; picked members are deduped so the leader isn't listed twice.
-    const otherMembers = picked.filter((m) => m !== leader);
-    const membersList = [leader, ...otherMembers];
     setSaving(true);
     try {
       await resourceService.create('job-orders', {
         title: title.trim(),
         incident_ref: incident ? String(incident.ref_code ?? '') : '',
         scope: scope.trim(),
-        team: teamType,
-        team_name: teamName.trim(),
-        team_leader: leader,
-        team_members: membersList,
-        assigned_to: membersList.join(', '),
-        scheduled_date: scheduled,
-        status: 'in_progress',
+        status: 'pending',
       });
-      notify('Job order created and assigned!');
+      notify('Pending job order created. The Technical Team can now assign the crew.');
       await onCreated();
       onClose();
     } catch (e) {
@@ -454,7 +400,7 @@ function JobOrderForm({
       wide
       onClose={onClose}
       onSubmit={save}
-      submitText="Create & Assign"
+      submitText="Create Pending Job Order"
       submitting={saving}
     >
       {incident && (
@@ -475,68 +421,98 @@ function JobOrderForm({
         <textarea value={scope} onChange={(e) => setScope(e.target.value)} placeholder="What needs to be done…" />
       </div>
 
-      <p className="detail-section-title">Team Assignment</p>
+      <p style={{ color: 'var(--muted)', fontSize: 13 }}>
+        Team type, team name, leader, and members will be assigned by the Technical Team.
+      </p>
 
-      {/* ── Team Type ── */}
+    </Modal>
+  );
+}
+
+/** Technical Team completes the assignment on a pending job order. */
+function JobOrderAssignmentForm({
+  row,
+  onClose,
+  onAssigned,
+}: {
+  row: EntityRow;
+  onClose: () => void;
+  onAssigned: () => Promise<void>;
+}) {
+  const { notify } = useToast();
+  const { inhouseMembers, contractorMembers, loading, error } = useAllTeamMembers();
+  const initialTeam = row.team === 'contractor' ? 'contractor' : 'in-house';
+  const [teamType, setTeamType] = useState<'in-house' | 'contractor'>(initialTeam);
+  const [teamName, setTeamName] = useState(String(row.team_name ?? ''));
+  const [leader, setLeader] = useState(String(row.team_leader ?? ''));
+  const [picked, setPicked] = useState<string[]>(
+    Array.isArray(row.team_members) ? (row.team_members as string[]).map(String) : [],
+  );
+  const [scheduled, setScheduled] = useState(String(row.scheduled_date ?? ''));
+  const [saving, setSaving] = useState(false);
+  const memberPool = teamType === 'in-house' ? inhouseMembers : contractorMembers;
+  const poolLabel = teamType === 'in-house' ? 'In-house Team' : 'Contractor';
+
+  const changeType = (next: 'in-house' | 'contractor') => {
+    setTeamType(next);
+    setLeader('');
+    setPicked([]);
+  };
+
+  const save = async () => {
+    if (!teamName.trim()) return notify('Enter a team name.', 'error');
+    if (!leader) return notify('Select a team leader.', 'error');
+    const membersList = [leader, ...picked.filter((name) => name !== leader)];
+    setSaving(true);
+    try {
+      await resourceService.update('job-orders', String(row.id), {
+        team: teamType,
+        team_name: teamName.trim(),
+        team_leader: leader,
+        team_members: membersList,
+        assigned_to: membersList.join(', '),
+        scheduled_date: scheduled,
+        status: 'in_progress',
+      });
+      notify('Team assigned. The job order is now ongoing.');
+      await onAssigned();
+      onClose();
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not assign the team.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title={`Assign Team — ${row.ref_code}`} open wide onClose={onClose} onSubmit={save} submitText="Assign & Start" submitting={saving}>
       <div className="form-group">
-        <label>Assign To</label>
-        <select value={teamType} onChange={(e) => handleTeamTypeChange(e.target.value as 'in-house' | 'contractor')}>
+        <label>Job Order</label>
+        <input value={String(row.title ?? '')} readOnly />
+      </div>
+      <div className="form-group">
+        <label>Team Type</label>
+        <select value={teamType} onChange={(e) => changeType(e.target.value as 'in-house' | 'contractor')}>
           <option value="in-house">In-house Team</option>
           <option value="contractor">Contractor</option>
         </select>
       </div>
-
       <div className="form-group">
         <label>Team Name</label>
         <input value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder="e.g. Alpha Crew" />
       </div>
-
-      {/* ── Team Leader ── */}
       <div className="form-group">
-        <label>
-          Team Leader{' '}
-          <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12 }}>({poolLabel})</span>
-        </label>
-        {loading ? (
-          <p style={{ color: 'var(--muted)', margin: 0 }}>Loading {poolLabel.toLowerCase()} accounts…</p>
-        ) : error ? (
-          <p style={{ color: '#e25577', margin: 0 }}>{error}</p>
-        ) : memberPool.length === 0 ? (
-          <p style={{ color: '#e25577', margin: 0 }}>{emptyMsg}</p>
-        ) : (
-          <LeaderSelect
-            key={teamType}
-            members={memberPool}
-            value={leader}
-            onChange={setLeader}
-            placeholder={`Select a ${poolLabel.toLowerCase()} leader…`}
-          />
+        <label>Team Leader <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({poolLabel})</span></label>
+        {loading ? <p>Loading accounts…</p> : error ? <p style={{ color: '#e25577' }}>{error}</p> : (
+          <LeaderSelect key={teamType} members={memberPool} value={leader} onChange={setLeader} placeholder={`Select a ${poolLabel.toLowerCase()} leader…`} />
         )}
       </div>
-
-      {/* ── Team Members (multi-select, optional) ── */}
       <div className="form-group">
-        <label>
-          Team Members{' '}
-          <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12 }}>({poolLabel} — optional)</span>
-        </label>
-        {loading ? (
-          <p style={{ color: 'var(--muted)', margin: 0 }}>Loading…</p>
-        ) : error ? (
-          <p style={{ color: '#e25577', margin: 0 }}>{error}</p>
-        ) : memberPool.length === 0 ? (
-          <p style={{ color: 'var(--muted)', margin: 0 }}>No additional members available.</p>
-        ) : (
-          <MembersMultiSelect
-            key={teamType}
-            members={memberPool}
-            value={picked}
-            onChange={setPicked}
-            leaderName={leader}
-          />
+        <label>Team Members <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({poolLabel} — optional)</span></label>
+        {loading ? <p>Loading accounts…</p> : error ? <p style={{ color: '#e25577' }}>{error}</p> : (
+          <MembersMultiSelect key={teamType} members={memberPool} value={picked} onChange={setPicked} leaderName={leader} />
         )}
       </div>
-
       <div className="form-group">
         <label>Scheduled Date</label>
         <input type="date" min={todayISO()} value={scheduled} onChange={(e) => setScheduled(e.target.value)} />
@@ -545,13 +521,12 @@ function JobOrderForm({
   );
 }
 
-/** Panel-head "Create Job Order" button that opens the team-assignment form. */
-function CreateJobOrderButton({ onCreated }: { onCreated: () => Promise<void> | void }) {
+function AssignJobOrderButton({ c }: { c: RowActionCtx }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <ActionButton label="Create Job Order" icon="plus-circle" onClick={() => setOpen(true)} />
-      {open && <JobOrderForm onClose={() => setOpen(false)} onCreated={onCreated} />}
+      <button className="btn-action" onClick={() => setOpen(true)} disabled={c.busy}>Assign Team</button>
+      {open && <JobOrderAssignmentForm row={c.row} onClose={() => setOpen(false)} onAssigned={c.reload} />}
     </>
   );
 }
@@ -581,7 +556,7 @@ function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRema
   return (
     <>
       <p className="detail-section-title">Complaint Details</p>
-      <dl className="detail-list">
+      <dl className="detail-list complaint-detail-grid">
         <DetailRow label="Reference">{String(row.ref_code ?? '')}</DetailRow>
         <DetailRow label="Type">{titleCase(row.type)}</DetailRow>
         <DetailRow label="Status">{titleCase(row.status)}</DetailRow>
@@ -589,10 +564,20 @@ function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRema
         <DetailRow label="Location">{String(row.location ?? '')}</DetailRow>
         <DetailRow label="Reported By">{String(row.reported_by ?? '')}</DetailRow>
         <DetailRow label="Filed On">{dateShort(row.created_at)}</DetailRow>
-        <DetailRow label="Description">{String(row.description ?? '')}</DetailRow>
-        {!hideRemarks && <DetailRow label="Zone Specialist Remarks">{String(row.remarks ?? '')}</DetailRow>}
         {hasEstimate && <DetailRow label="Estimated Cost">{money(row.estimated_cost)}</DetailRow>}
       </dl>
+      <div className="complaint-narratives">
+        <section className="complaint-note-card">
+          <span>Description</span>
+          <p>{String(row.description ?? '') || '—'}</p>
+        </section>
+        {!hideRemarks && (
+          <section className="complaint-note-card is-remarks">
+            <span>Zone Specialist Remarks</span>
+            <p>{String(row.remarks ?? '') || 'No remarks added yet.'}</p>
+          </section>
+        )}
+      </div>
       <ImageGallery images={row.images} />
     </>
   );
@@ -920,16 +905,26 @@ function IncidentViewButton({
           <IncidentDetail row={c.row} hideRemarks={editable} />
           {showCustomerBilling && linkedJobOrder && (
             <>
-              <p className="detail-section-title">Work Order</p>
-              <dl className="detail-list">
+              <p className="detail-section-title job-order-section-title">Job Order Details</p>
+              <dl className="detail-list complaint-detail-grid job-order-detail-grid">
                 <DetailRow label="Reference">{String(linkedJobOrder.ref_code ?? '')}</DetailRow>
-                <DetailRow label="Status">{titleCase(linkedJobOrder.status)}</DetailRow>
-                <DetailRow label="Scope of Work">{String(linkedJobOrder.scope ?? '—')}</DetailRow>
+                <DetailRow label="Job Title">{String(linkedJobOrder.title ?? '—')}</DetailRow>
+                <DetailRow label="Status">{jobStatusLabel(linkedJobOrder.status)}</DetailRow>
                 <DetailRow label="Team">{String(linkedJobOrder.team_name || titleCase(linkedJobOrder.team) || '—')}</DetailRow>
                 <DetailRow label="Team Leader">{String(linkedJobOrder.team_leader ?? '—')}</DetailRow>
+                <DetailRow label="Team Members">
+                  {Array.isArray(linkedJobOrder.team_members)
+                    ? (linkedJobOrder.team_members as string[]).join(', ') || '—'
+                    : String(linkedJobOrder.assigned_to ?? '—')}
+                </DetailRow>
                 <DetailRow label="Scheduled Date">{dateShort(linkedJobOrder.scheduled_date)}</DetailRow>
-                <DetailRow label="Estimated Cost">{money(linkedJobOrder.estimated_cost)}</DetailRow>
               </dl>
+              <div className="complaint-narratives job-order-narratives">
+                <section className="complaint-note-card is-job-scope">
+                  <span>Scope of Work</span>
+                  <p>{String(linkedJobOrder.scope ?? '') || 'No scope of work provided yet.'}</p>
+                </section>
+              </div>
             </>
           )}
           {showCustomerBilling && !linkedJobOrder && c.row.status !== 'under_verification' && c.row.status !== 'resolved' && (
@@ -1066,7 +1061,7 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
               <IncidentViewButton
                 c={c}
                 canEditRemarks={role === 'zone-specialist'}
-                canCreateJobOrder={['general-manager', 'technical-team'].includes(role)}
+                canCreateJobOrder={['general-manager', 'commercial-department'].includes(role)}
                 canEditUrgency={canManageUrgency}
                 showCustomerBilling={role === 'customer'}
                 canEstimate={role === 'technical-team'}
@@ -1110,11 +1105,14 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
 
 /* -------------------------------------------------------------- Job Orders */
 const JOB_STATUS = [
-  { value: 'pending', label: 'Ongoing' },
-  { value: 'in_progress', label: 'In Progress' },
+  { value: 'pending', label: 'Pending Assignment' },
+  { value: 'in_progress', label: 'Ongoing' },
   { value: 'completed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' },
 ];
+const ASSIGNED_TEAM_STATUS = JOB_STATUS.filter((status) => ['in_progress', 'completed', 'cancelled'].includes(status.value));
+const jobStatusLabel = (value: unknown): string =>
+  JOB_STATUS.find((status) => status.value === String(value ?? ''))?.label ?? titleCase(value);
 
 /** Full job-order detail incl. the linked complaint + zone-specialist remarks. */
 function JobOrderDetail({ row }: { row: EntityRow }) {
@@ -1126,14 +1124,13 @@ function JobOrderDetail({ row }: { row: EntityRow }) {
       <dl className="detail-list">
         <DetailRow label="Reference">{String(row.ref_code ?? '')}</DetailRow>
         <DetailRow label="Title">{String(row.title ?? '')}</DetailRow>
-        <DetailRow label="Status">{titleCase(row.status)}</DetailRow>
+        <DetailRow label="Status">{jobStatusLabel(row.status)}</DetailRow>
         <DetailRow label="Team">{titleCase(row.team)}</DetailRow>
         <DetailRow label="Team Name">{String(row.team_name ?? '')}</DetailRow>
         <DetailRow label="Team Leader">{String(row.team_leader ?? '')}</DetailRow>
         <DetailRow label="Team Members">
           {Array.isArray(row.team_members) ? (row.team_members as string[]).join(', ') : String(row.assigned_to ?? '')}
         </DetailRow>
-        <DetailRow label="Estimated Cost">{money(row.estimated_cost)}</DetailRow>
         <DetailRow label="Scheduled">{dateShort(row.scheduled_date)}</DetailRow>
         <DetailRow label="Scope of Work">{String(row.scope ?? '')}</DetailRow>
         <DetailRow label="Linked Complaint">{String(row.incident_ref ?? '')}</DetailRow>
@@ -1213,13 +1210,14 @@ function MaterialReturnModal({
         // Sum previously logged qty per SKU for this job order
         const loggedQtyBySku: Record<string, number> = {};
         auditLogs
-          .filter((l) => l.action === 'leftover_log')
+          .filter((l) => l.action === 'leftover_log' || l.entity === 'materials')
           .forEach((l) => {
             const d = (l.details ?? {}) as Record<string, unknown>;
-            if (String(d.job_order_ref ?? '').trim().toUpperCase() !== ref) return;
-            const sku = String(d.material_sku ?? '').trim();
+            const loggedJobRef = String(d.job_order_ref ?? d.returned_from_job_order ?? '').trim().toUpperCase();
+            if (loggedJobRef !== ref) return;
+            const sku = String(d.material_sku ?? d.sku ?? '').trim();
             if (!sku) return;
-            loggedQtyBySku[sku] = (loggedQtyBySku[sku] ?? 0) + Number(d.qty_leftover ?? 0);
+            loggedQtyBySku[sku] = (loggedQtyBySku[sku] ?? 0) + Number(d.qty_leftover ?? d.returned_quantity ?? 0);
           });
 
         const linked = mrfs.filter((r) => {
@@ -1307,9 +1305,10 @@ function MaterialReturnModal({
         if (item.isUsable) {
           const mat = allMaterials.find((m) => String(m.sku ?? '').trim() === item.sku);
           if (mat) {
-            await resourceService.update('materials', String(mat.id), {
-              quantity: Number(mat.quantity ?? 0) + qty,
-            });
+            const isFieldTeam = ['contractor', 'inhouse-team'].includes(user!.role);
+            await resourceService.update('materials', String(mat.id), isFieldTeam
+              ? { return_job_order_ref: jobOrderRef, return_quantity: qty }
+              : { quantity: Number(mat.quantity ?? 0) + qty });
           } else {
             notify(`${item.sku} not found — skipped restocking.`, 'error');
           }
@@ -1568,10 +1567,8 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
   const { user } = useAuth();
   const role = user!.role;
   const canWrite = !readOnly && WRITE['job-orders'].includes(role);
-  // general-manager, technical-team, and commercial-department create job orders
-  // through the full team-assignment form (JobOrderForm).
-  const canAssign = ['general-manager', 'technical-team', 'commercial-department'].includes(role);
   const isTechTeam = role === 'technical-team';
+  const isCommercial = role === 'commercial-department';
   const isContractor = role === 'contractor';
   const isInhouseTeam = role === 'inhouse-team';
   // Contractors and in-house team members only see job orders assigned to them.
@@ -1593,9 +1590,8 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
     { header: 'Title', cell: (r) => String(r.title ?? '') },
     { header: 'Team', cell: (r) => String(r.team_name || titleCase(r.team) || '—') },
     { header: 'Assigned To', cell: (r) => String(r.assigned_to ?? '—') },
-    { header: 'Est. Cost', cell: (r) => money(r.estimated_cost) },
     { header: 'Schedule', cell: (r) => dateShort(r.scheduled_date) },
-    { header: 'Status', cell: (r) => workflowStatusCell(r.status) },
+    { header: 'Status', cell: (r) => ({ text: jobStatusLabel(r.status), status: statusTone(r.status) }) },
   ];
 
   const fields: ModuleField[] = [
@@ -1604,7 +1600,6 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
     { name: 'scope', label: 'Scope of Work', kind: 'textarea' },
     { name: 'team', label: 'Team', kind: 'select', optionList: [{ value: 'in-house', label: 'In-house Team' }, { value: 'contractor', label: 'Contractor' }] },
     { name: 'assigned_to', label: 'Assigned To', placeholder: 'Crew or contractor name' },
-    { name: 'estimated_cost', label: 'Estimated Cost (₱)', kind: 'number' },
     { name: 'scheduled_date', label: 'Scheduled Date', kind: 'date' },
     { name: 'status', label: 'Status', kind: 'select', optionList: JOB_STATUS },
   ];
@@ -1612,29 +1607,13 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
   // View button: full detail + "Request Materials" for all roles.
   const viewAction = (c: RowActionCtx) => <JobOrderViewButton row={c.row} onReload={c.reload} />;
 
-  /**
-   * Tech-team: edit/archive for all rows they can see, but the status dropdown
-   * is only shown when they are the designated team leader of that job order.
-   */
+  /** Technical Team assigns pending work orders; assigned crew leaders own later status updates. */
   const techTeamActions = (c: RowActionCtx) => {
-    const isLeaderOfRow =
-      String(c.row.team_leader ?? '').toLowerCase() === me;
     return (
-      <>
-        {!c.archived && isLeaderOfRow && (
-          <StatusSelect
-            value={String(c.row.status)}
-            options={JOB_STATUS}
-            disabled={c.busy}
-            onChange={(s) => c.update({ status: s })}
-          />
-        )}
-        <div className="btn-row">
-          {viewAction(c)}
-          <EditBtn c={c} />
-          <ArchiveBtn c={c} />
-        </div>
-      </>
+      <div className="btn-row">
+        {viewAction(c)}
+        {!c.archived && String(c.row.status) === 'pending' && <AssignJobOrderButton c={c} />}
+      </div>
     );
   };
 
@@ -1650,7 +1629,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
         {!c.archived && isLeaderOfRow && (
           <StatusSelect
             value={String(c.row.status)}
-            options={JOB_STATUS}
+            options={ASSIGNED_TEAM_STATUS}
             disabled={c.busy}
             onChange={(s) => c.update({ status: s })}
           />
@@ -1675,15 +1654,11 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
       rowFilter={rowFilter}
       actionLabel="Action"
       archivable={canWrite && !isContractor && !isInhouseTeam}
-      renderCreate={
-        canAssign
-          ? ({ reload }) => <CreateJobOrderButton onCreated={reload} />
-          : undefined
-      }
+      renderCreate={() => null}
       metrics={(rows) => [
         metric('j1', 'Total Job Orders', String(rows.length), 'clipboard-list', 'customers'),
-        metric('j2', 'In Progress', count(rows, (r) => r.status === 'in_progress'), 'wrench', 'revenue'),
-        metric('j3', 'Ongoing', count(rows, (r) => r.status === 'pending'), 'clock', 'profit'),
+        metric('j2', 'Ongoing', count(rows, (r) => r.status === 'in_progress'), 'wrench', 'revenue'),
+        metric('j3', 'Pending Assignment', count(rows, (r) => r.status === 'pending'), 'clock', 'profit'),
         metric('j4', 'Completed', count(rows, (r) => r.status === 'completed'), 'check-circle', 'invoices'),
       ]}
       actions={
@@ -1694,7 +1669,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
           : canWrite
           ? (c) => (
               <>
-                {!c.archived && (
+                {!c.archived && !isCommercial && (
                   <StatusSelect
                     value={String(c.row.status)}
                     options={JOB_STATUS}
@@ -1704,7 +1679,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
                 )}
                 <div className="btn-row">
                   {viewAction(c)}
-                  <EditBtn c={c} />
+                  {!isCommercial && <EditBtn c={c} />}
                   <ArchiveBtn c={c} />
                 </div>
               </>
@@ -1728,8 +1703,10 @@ function useSupplierOptions() {
 
 function RestockBtn({ c }: { c: RowActionCtx }) {
   const { notify } = useToast();
+  const supplierOptions = useSupplierOptions();
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState('');
+  const [supplierId, setSupplierId] = useState(String(c.row.supplier_id ?? ''));
   const [saving, setSaving] = useState(false);
   const current = Number(c.row.quantity ?? 0);
   const added = Number(amount || 0);
@@ -1739,6 +1716,7 @@ function RestockBtn({ c }: { c: RowActionCtx }) {
     if (saving) return;
     setOpen(false);
     setAmount('');
+    setSupplierId(String(c.row.supplier_id ?? ''));
   };
 
   const save = async () => {
@@ -1746,9 +1724,19 @@ function RestockBtn({ c }: { c: RowActionCtx }) {
       notify('Enter a restock quantity greater than zero.', 'error');
       return;
     }
+    const supplier = supplierOptions.find((option) => option.value === supplierId);
+    if (!supplier) {
+      notify('Select the supplier this stock came from.', 'error');
+      return;
+    }
     setSaving(true);
     try {
-      await resourceService.update('materials', c.row.id, { quantity: current + added });
+      await resourceService.update('materials', c.row.id, {
+        quantity: current + added,
+        supplier_id: supplier.value,
+        supplier: supplier.label,
+        source: 'external',
+      });
       await c.reload();
       notify(`${c.row.name ?? 'Material'} restocked by ${added} ${unit}.`);
       setOpen(false);
@@ -1793,6 +1781,14 @@ function RestockBtn({ c }: { c: RowActionCtx }) {
             onKeyDown={(event) => { if (event.key === 'Enter') void save(); }}
           />
           <small>This amount will be added to the current stock and recorded in Inventory History.</small>
+        </div>
+        <div className="form-group">
+          <label htmlFor={`restock-supplier-${c.row.id}`}>Supplier</label>
+          <select id={`restock-supplier-${c.row.id}`} value={supplierId} onChange={(event) => setSupplierId(event.target.value)}>
+            <option value="">Select supplier</option>
+            {supplierOptions.map((supplier) => <option key={supplier.value} value={supplier.value}>{supplier.label}</option>)}
+          </select>
+          <small>Select where this restocked batch came from.</small>
         </div>
       </Modal>
     </>
@@ -3014,6 +3010,10 @@ export function RequestsModule({ filter, title }: ModuleProps & { title?: string
   const isGM = role === 'general-manager';
   const rowFilter = isGM
     ? undefined
+    : role === 'inventory-officer'
+    ? (row: EntityRow) =>
+        String(row.request_type ?? 'mrf') === 'mrf' &&
+        ['approved', 'released'].includes(String(row.status ?? ''))
     : (row: EntityRow) => {
         // Match by stored ID first; fall back to name for legacy rows.
         if (String(row.requested_by_id ?? '').trim() === user!.id) return true;
@@ -4736,6 +4736,197 @@ export function PaymentOptionsModule() {
         </div>
         <div className="form-group"><label>QR Code</label><ImageUpload value={profileQr} onChange={setProfileQr} maxFiles={1} /></div>
       </Modal>
+    </>
+  );
+}
+
+/* ------------------------------------------------ Customer Service Chat --- */
+interface SupportThread {
+  key: string;
+  customerId: string;
+  customerName: string;
+  customerEmail: string;
+  incidentRef: string;
+  messages: EntityRow[];
+}
+
+export function InquiriesModule({ filter = '' }: ModuleProps) {
+  const { user } = useAuth();
+  const { stats } = useStats();
+  const { notify } = useToast();
+  const isCustomer = user!.role === 'customer';
+  const [messages, setMessages] = useState<EntityRow[]>([]);
+  const [selectedKey, setSelectedKey] = useState(isCustomer ? 'general' : '');
+  const [draft, setDraft] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const endRef = useRef<HTMLDivElement>(null);
+
+  const load = async (quiet = false) => {
+    if (!quiet) setLoading(true);
+    try {
+      setMessages(await resourceService.list('support-messages'));
+      setError('');
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not load inquiries.');
+    } finally {
+      if (!quiet) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+    const timer = setInterval(() => void load(true), 3_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const threads = useMemo<SupportThread[]>(() => {
+    const grouped = new Map<string, SupportThread>();
+    for (const message of messages) {
+      const customerId = String(message.customer_id ?? '');
+      const incidentRef = String(message.incident_ref ?? '');
+      const key = `${customerId}|${incidentRef || 'general'}`;
+      const thread = grouped.get(key) ?? {
+        key,
+        customerId,
+        customerName: String(message.customer_name ?? 'Customer'),
+        customerEmail: String(message.customer_email ?? ''),
+        incidentRef,
+        messages: [],
+      };
+      thread.messages.push(message);
+      grouped.set(key, thread);
+    }
+    return [...grouped.values()]
+      .map((thread) => ({ ...thread, messages: thread.messages.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))) }))
+      .filter((thread) => {
+        const query = filter.trim().toLowerCase();
+        return !query || thread.customerName.toLowerCase().includes(query) || thread.incidentRef.toLowerCase().includes(query);
+      })
+      .sort((a, b) => String(b.messages[b.messages.length - 1]?.created_at ?? '').localeCompare(String(a.messages[a.messages.length - 1]?.created_at ?? '')));
+  }, [messages, filter]);
+
+  const ownIncidents = useMemo(
+    () => stats.incidents.filter((incident) =>
+      String(incident.reported_by ?? '').trim().toLowerCase() === user!.fullName.trim().toLowerCase(),
+    ),
+    [stats.incidents, user],
+  );
+
+  useEffect(() => {
+    if (!isCustomer && !selectedKey && threads[0]) setSelectedKey(threads[0].key);
+  }, [isCustomer, selectedKey, threads]);
+
+  const selectedThread = isCustomer
+    ? threads.find((thread) => thread.incidentRef === (selectedKey === 'general' ? '' : selectedKey))
+    : threads.find((thread) => thread.key === selectedKey);
+  const visibleMessages = selectedThread?.messages ?? [];
+
+  useEffect(() => {
+    // Scroll only the message pane. scrollIntoView() also moves the dashboard
+    // page itself, which can hide the chat title/header under the top bar.
+    const messagePane = endRef.current?.parentElement;
+    if (messagePane) messagePane.scrollTo({ top: messagePane.scrollHeight, behavior: 'smooth' });
+  }, [visibleMessages.length, selectedKey]);
+
+  const send = async () => {
+    const message = draft.trim();
+    if (!message || sending) return;
+    if (!isCustomer && !selectedThread) return notify('Select a conversation first.', 'error');
+    setSending(true);
+    try {
+      await resourceService.create('support-messages', {
+        message,
+        customer_id: isCustomer ? user!.id : selectedThread!.customerId,
+        incident_ref: isCustomer ? (selectedKey === 'general' ? '' : selectedKey) : selectedThread!.incidentRef,
+      });
+      setDraft('');
+      await load(true);
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Message could not be sent.', 'error');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const conversationTitle = isCustomer
+    ? selectedKey === 'general' ? 'General Customer Service' : `Incident ${selectedKey}`
+    : selectedThread
+      ? `${selectedThread.customerName} · ${selectedThread.incidentRef || 'General Customer Service'}`
+      : 'Select a conversation';
+
+  return (
+    <>
+      <PanelHead title="Inquiries & Customer Service" />
+      <div className="support-chat-layout">
+        <aside className="support-thread-list">
+          <h3>{isCustomer ? 'Conversations' : 'Customer Inquiries'}</h3>
+          {isCustomer ? (
+            <>
+              <button className={selectedKey === 'general' ? 'active' : ''} onClick={() => setSelectedKey('general')}>
+                <strong>General Customer Service</strong>
+                <span>Questions not tied to an incident</span>
+              </button>
+              {ownIncidents.map((incident) => (
+                <button key={String(incident.id)} className={selectedKey === incident.ref_code ? 'active' : ''} onClick={() => setSelectedKey(String(incident.ref_code))}>
+                  <strong>Incident {String(incident.ref_code)}</strong>
+                  <span>{String(incident.description ?? '')}</span>
+                </button>
+              ))}
+            </>
+          ) : loading ? <p>Loading conversations…</p> : threads.length === 0 ? (
+            <p className="support-empty">No customer inquiries yet.</p>
+          ) : threads.map((thread) => (
+            <button key={thread.key} className={selectedKey === thread.key ? 'active' : ''} onClick={() => setSelectedKey(thread.key)}>
+              <strong>{thread.customerName}</strong>
+              <span>{thread.incidentRef ? `Incident ${thread.incidentRef}` : 'General Customer Service'}</span>
+              <small>{String(thread.messages[thread.messages.length - 1]?.message ?? '')}</small>
+            </button>
+          ))}
+        </aside>
+
+        <section className="support-conversation">
+          <header>
+            <strong>{conversationTitle}</strong>
+            {!isCustomer && selectedThread?.customerEmail && <span>{selectedThread.customerEmail}</span>}
+          </header>
+          <div className="support-message-list">
+            {error ? <p className="support-error">{error}</p> : loading ? <p>Loading messages…</p> : visibleMessages.length === 0 ? (
+              <div className="support-empty-chat"><strong>No messages yet</strong><span>Send the first message to start this conversation.</span></div>
+            ) : visibleMessages.map((message) => {
+              const mine = String(message.sender_id) === user!.id;
+              return (
+                <div key={String(message.id)} className={`support-message${mine ? ' mine' : ''}`}>
+                  <div>
+                    <strong>{mine ? 'You' : String(message.sender_name ?? 'Customer Service')}</strong>
+                    <p>{String(message.message ?? '')}</p>
+                    <time>{new Date(String(message.created_at)).toLocaleString('en-PH')}</time>
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={endRef} />
+          </div>
+          {(isCustomer || selectedThread) && (
+            <div className="support-composer">
+              <textarea
+                value={draft}
+                maxLength={2000}
+                placeholder="Type your message…"
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+              />
+              <button type="button" onClick={() => void send()} disabled={!draft.trim() || sending}>{sending ? 'Sending…' : 'Send'}</button>
+            </div>
+          )}
+        </section>
+      </div>
     </>
   );
 }

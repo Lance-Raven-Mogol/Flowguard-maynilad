@@ -351,6 +351,26 @@ create table if not exists public.supply_requests (
 );
 alter table public.supply_requests add column if not exists archived boolean not null default false;
 
+-- --------------------------------------- Customer service conversations ----
+-- One stream per customer + optional incident. A NULL incident_ref is the
+-- customer's general Customer Service conversation.
+create table if not exists public.support_messages (
+  id             uuid primary key default gen_random_uuid(),
+  customer_id    uuid not null,
+  customer_name  text not null,
+  customer_email text,
+  incident_ref   text,
+  sender_id      uuid not null,
+  sender_name    text not null,
+  sender_role    text not null check (sender_role in ('customer','commercial-department')),
+  message        text not null check (char_length(trim(message)) between 1 and 2000),
+  archived       boolean not null default false,
+  created_at     timestamptz not null default now()
+);
+alter table public.support_messages add column if not exists archived boolean not null default false;
+create index if not exists support_messages_customer_idx
+  on public.support_messages (customer_id, incident_ref, created_at);
+
 -- RLS on (backend uses the service-role key, which bypasses it).
 alter table public.app_users            enable row level security;
 alter table public.incidents            enable row level security;
@@ -365,6 +385,7 @@ alter table public.purchase_requests    enable row level security;
 alter table public.payments             enable row level security;
 alter table public.payment_methods      enable row level security;
 alter table public.supply_requests      enable row level security;
+alter table public.support_messages     enable row level security;
 alter table public.pending_registrations enable row level security;
 
 -- ============================================================================

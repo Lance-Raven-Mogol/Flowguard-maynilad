@@ -300,14 +300,35 @@ export const resourceService = {
     if (entity === 'payment-methods' && !['general-manager', 'commercial-department'].includes(user.role)) {
       throw forbidden('Only the General Manager or Commercial Department can view payment profiles.');
     }
+    if (entity === 'support-messages' && !['customer', 'commercial-department'].includes(user.role)) {
+      throw forbidden('Only customers and the Commercial Department can view inquiries.');
+    }
     let rows = await repo.listRows(def.table, { archived });
     if (entity === 'payments' && user.role === 'customer') {
       const email = user.email.trim().toLowerCase();
       rows = rows.filter((row) => String(row.customer_email ?? '').trim().toLowerCase() === email);
     }
+    if (entity === 'support-messages' && user.role === 'customer') {
+      rows = rows.filter((row) => String(row.customer_id ?? '') === user.id);
+    }
+    if (entity === 'job-orders' && user.role === 'customer') {
+      const ownIncidentRefs = new Set(
+        (await repo.listRows('incidents', {}))
+          .filter((incident) => String(incident.reported_by ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase())
+          .map((incident) => String(incident.ref_code ?? '')),
+      );
+      rows = rows.filter((row) => ownIncidentRefs.has(String(row.incident_ref ?? '')));
+    }
     // Non-GM roles only see their own material/purchase requests. The GM sees all
     // so they can review, approve, and release requests from every department.
-    if (entity === 'material-requests' && user.role !== 'general-manager') {
+    if (entity === 'material-requests' && user.role === 'inventory-officer') {
+      // Inventory receives the GM-approved queue regardless of who requested it.
+      // Keep already released rows visible as release history.
+      rows = rows.filter((row) =>
+        String(row.request_type ?? 'mrf') === 'mrf' &&
+        ['approved', 'released'].includes(String(row.status ?? '')),
+      );
+    } else if (entity === 'material-requests' && user.role !== 'general-manager') {
       rows = rows.filter(
         (row) =>
           String(row.requested_by_id ?? '').trim() === user.id ||
@@ -329,9 +350,25 @@ export const resourceService = {
 
   async create(entity: string, user: PublicUser, body: Record<string, unknown>): Promise<Row> {
     const def = getDef(entity);
-    if (!canWrite(def, user.role)) throw forbidden('You do not have permission to create this record.');
+    const isTeamLeftoverLog =
+      entity === 'audit-logs' &&
+      ['contractor', 'inhouse-team'].includes(user.role) &&
+      body.action === 'leftover_log';
+    if (!canWrite(def, user.role) && !isTeamLeftoverLog) throw forbidden('You do not have permission to create this record.');
 
     const values = sanitize(def, body);
+
+    if (isTeamLeftoverLog) {
+      const details = (values.details ?? {}) as Record<string, unknown>;
+      const jobOrderRef = String(details.job_order_ref ?? '').trim();
+      const jobOrder = (await repo.findRowsBy('job_orders', 'ref_code', jobOrderRef))[0];
+      const isLeader = String(jobOrder?.team_leader ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase();
+      if (!jobOrder || String(jobOrder.status) !== 'completed' || !isLeader) {
+        throw forbidden('Only the assigned team leader can log leftovers for a completed job order.');
+      }
+      values.actor = user.fullName;
+      values.actor_role = user.role;
+    }
 
     // A customer's complaint is always attributed to them (prevents spoofing
     // and keeps it linked through display-name changes).
@@ -345,6 +382,43 @@ export const resourceService = {
       delete values.urgency;
     }
 
+    if (entity === 'support-messages') {
+      const message = String(values.message ?? '').trim();
+      if (!message) throw badRequest('Message cannot be empty.');
+      if (message.length > 2000) throw badRequest('Message must be 2,000 characters or fewer.');
+
+      values.message = message;
+      values.sender_id = user.id;
+      values.sender_name = user.fullName;
+      values.sender_role = user.role;
+
+      if (user.role === 'customer') {
+        values.customer_id = user.id;
+        values.customer_name = user.fullName;
+        values.customer_email = user.email;
+      } else if (user.role === 'commercial-department') {
+        const customerId = String(values.customer_id ?? '').trim();
+        if (!customerId) throw badRequest('Select a customer conversation first.');
+        const customer = await repo.getRowById('app_users', customerId);
+        if (!customer || customer.role !== 'customer') throw badRequest('Customer account was not found.');
+        values.customer_name = customer.full_name;
+        values.customer_email = customer.email;
+      } else {
+        throw forbidden('Only customers and the Commercial Department can send inquiry messages.');
+      }
+
+      const linkedIncidentRef = String(values.incident_ref ?? '').trim();
+      if (linkedIncidentRef) {
+        const incident = (await repo.findRowsBy('incidents', 'ref_code', linkedIncidentRef))[0];
+        if (!incident || String(incident.reported_by ?? '').trim().toLowerCase() !== String(values.customer_name).trim().toLowerCase()) {
+          throw badRequest('The selected incident does not belong to this customer.');
+        }
+        values.incident_ref = linkedIncidentRef;
+      } else {
+        values.incident_ref = '';
+      }
+    }
+
     for (const field of def.required) {
       if (values[field] === undefined || values[field] === '' || values[field] === null) {
         throw badRequest(`"${field}" is required.`);
@@ -356,6 +430,25 @@ export const resourceService = {
 
     if (entity === 'materials') {
       values.status = materialStockStatus(values.quantity, values.min_level, values.status);
+    }
+    if (entity === 'job-orders') {
+      if (user.role === 'technical-team' || user.role === 'contractor' || user.role === 'inhouse-team') {
+        throw forbidden('Only the Commercial Department can create a job order after a complaint is resolved.');
+      }
+      const linkedIncidentRef = String(values.incident_ref ?? '').trim();
+      if (!linkedIncidentRef) throw badRequest('A resolved complaint is required to create a job order.');
+      const linkedIncident = (await repo.findRowsBy('incidents', 'ref_code', linkedIncidentRef))[0];
+      if (!linkedIncident || linkedIncident.archived) throw badRequest(`Complaint "${linkedIncidentRef}" was not found.`);
+      if (String(linkedIncident.status) !== 'resolved') {
+        throw conflict('A job order can only be created after the complaint is Resolved.');
+      }
+
+      // Creation is intentionally unassigned. The Technical Team completes these
+      // fields in the dedicated assignment step and starts the work order.
+      values.status = 'pending';
+      for (const field of ['team', 'team_name', 'team_leader', 'team_members', 'assigned_to', 'scheduled_date', 'estimated_cost']) {
+        delete values[field];
+      }
     }
 
     // Mirror the update rule: creating an advisory as "published" or "approved"
@@ -409,7 +502,14 @@ export const resourceService = {
 
     try {
       const row = await writeResilient(values, (v) => repo.insertRow(def.table, v), def.critical);
-      const auditDetails = entity === 'materials'
+      const auditDetails = entity === 'support-messages'
+        ? {
+            customer_id: values.customer_id,
+            incident_ref: values.incident_ref,
+            sender_role: values.sender_role,
+            message_length: String(values.message ?? '').length,
+          }
+        : entity === 'materials'
         ? {
             ...values,
             movement_type: 'initial_stock',
@@ -421,17 +521,6 @@ export const resourceService = {
           }
         : values;
       await logAudit(entity, String(row.id ?? ''), 'create', user.fullName, user.role, auditDetails);
-      // A job order dispatched for an incident marks it as for_estimation.
-      if (incidentRef) {
-        try {
-          await repo.updateRowsBy('incidents', 'ref_code', incidentRef, {
-            status: 'for_estimation',
-            updated_at: new Date().toISOString(),
-          });
-        } catch (statusErr) {
-          console.warn('[resource] job order created but incident status update failed:', statusErr);
-        }
-      }
       return enrich(entity, row);
     } catch (err) {
       mapDbError(err);
@@ -440,10 +529,31 @@ export const resourceService = {
 
   async update(entity: string, user: PublicUser, id: string, body: Record<string, unknown>): Promise<Row> {
     const def = getDef(entity);
+    if (entity === 'support-messages') throw forbidden('Inquiry messages cannot be edited.');
     const isCustomerPayment = entity === 'payments' && user.role === 'customer';
-    if (!canWrite(def, user.role) && !isCustomerPayment) throw forbidden('You do not have permission to update this record.');
+    const isTeamMaterialReturn =
+      entity === 'materials' &&
+      ['contractor', 'inhouse-team'].includes(user.role) &&
+      String(body.return_job_order_ref ?? '').trim() !== '';
+    if (!canWrite(def, user.role) && !isCustomerPayment && !isTeamMaterialReturn) {
+      throw forbidden('You do not have permission to update this record.');
+    }
 
     const values = sanitize(def, body);
+    if (isTeamMaterialReturn) {
+      const jobOrderRef = String(body.return_job_order_ref).trim();
+      const returnQty = Number(body.return_quantity);
+      if (!Number.isFinite(returnQty) || returnQty <= 0) throw badRequest('Return quantity must be greater than zero.');
+      const jobOrder = (await repo.findRowsBy('job_orders', 'ref_code', jobOrderRef))[0];
+      if (!jobOrder || String(jobOrder.status) !== 'completed') {
+        throw conflict('Leftover materials can only be returned for a completed job order.');
+      }
+      const isLeader = String(jobOrder.team_leader ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase();
+      if (!isLeader) throw forbidden('Only the assigned team leader can return leftover materials.');
+      const material = await repo.getRowById('materials', id);
+      if (!material) throw notFound('Material not found.');
+      values.quantity = Number(material.quantity ?? 0) + returnQty;
+    }
     if (isCustomerPayment) {
       const current = await repo.getRowById(def.table, id);
       if (!current || String(current.customer_email ?? '').trim().toLowerCase() !== user.email.trim().toLowerCase()) {
@@ -480,6 +590,40 @@ export const resourceService = {
     }
     if (entity === 'payments' && user.role === 'general-manager' && values.status === 'paid') {
       values.paid_date = new Date().toISOString().slice(0, 10);
+    }
+
+    if (entity === 'job-orders' && user.role !== 'general-manager') {
+      const currentJob = await repo.getRowById(def.table, id);
+      if (!currentJob) throw notFound('Job order not found.');
+      const currentStatus = String(currentJob.status ?? 'pending');
+
+      if (user.role === 'commercial-department') {
+        const allowed = new Set(['title', 'scope', 'archived']);
+        for (const key of Object.keys(values)) if (!allowed.has(key)) delete values[key];
+      } else if (user.role === 'technical-team') {
+        if (currentStatus !== 'pending') {
+          throw forbidden('The Technical Team can assign only pending job orders.');
+        }
+        const allowed = new Set(['team', 'team_name', 'team_leader', 'team_members', 'assigned_to', 'scheduled_date', 'status']);
+        for (const key of Object.keys(values)) if (!allowed.has(key)) delete values[key];
+        if (!['in-house', 'contractor'].includes(String(values.team ?? ''))) {
+          throw badRequest('Select whether the assigned team is in-house or a contractor.');
+        }
+        if (!String(values.team_name ?? '').trim()) throw badRequest('Team name is required.');
+        if (!String(values.team_leader ?? '').trim()) throw badRequest('Team leader is required.');
+        if (!Array.isArray(values.team_members) || values.team_members.length === 0) {
+          throw badRequest('The team leader must be included in the assigned members.');
+        }
+        values.status = 'in_progress';
+      } else if (user.role === 'contractor' || user.role === 'inhouse-team') {
+        const isLeader = String(currentJob.team_leader ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase();
+        if (!isLeader) throw forbidden('Only the assigned team leader can update this job order.');
+        for (const key of Object.keys(values)) if (key !== 'status') delete values[key];
+        const nextStatus = String(values.status ?? '');
+        if (currentStatus !== 'in_progress' || !['completed', 'cancelled'].includes(nextStatus)) {
+          throw forbidden('The assigned team leader can only complete or cancel an ongoing job order.');
+        }
+      }
     }
     if (def.touch) values[def.touch] = new Date().toISOString();
     if (Object.keys(values).length === 0) throw badRequest('No valid fields to update.');
@@ -628,6 +772,10 @@ export const resourceService = {
             quantity_change: quantityChange,
             unit: row.unit,
             supplier: row.supplier,
+            ...(isTeamMaterialReturn ? {
+              returned_from_job_order: String(body.return_job_order_ref),
+              returned_quantity: Number(body.return_quantity),
+            } : {}),
           }
         : values;
       await logAudit(entity, id, 'update', user.fullName, user.role, auditDetails);
@@ -640,6 +788,7 @@ export const resourceService = {
 
   async remove(entity: string, role: Role, id: string): Promise<void> {
     const def = getDef(entity);
+    if (entity === 'support-messages') throw forbidden('Inquiry messages cannot be deleted.');
     if (!canWrite(def, role)) throw forbidden('You do not have permission to delete this record.');
     await repo.deleteRow(def.table, id);
     await logAudit(entity, id, 'delete', undefined, role, {});

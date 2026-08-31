@@ -1276,10 +1276,194 @@ td strong {
 .job-orders-table th:nth-child(2) { width: auto;  } /* Title â€” flex */
 .job-orders-table th:nth-child(3) { width: 120px; } /* Team */
 .job-orders-table th:nth-child(4) { width: 140px; } /* Assigned To */
-.job-orders-table th:nth-child(5) { width: 105px; } /* Est. Cost */
-.job-orders-table th:nth-child(6) { width: 100px; } /* Schedule */
-.job-orders-table th:nth-child(7) { width: 115px; } /* Status */
+.job-orders-table th:nth-child(5) { width: 105px; } /* Schedule */
+.job-orders-table th:nth-child(6) { width: 135px; } /* Status */
 .job-orders-table th:last-child   { width: 200px; } /* Actions */
+
+/* Customer ↔ Commercial Department modern support inbox. */
+.support-chat-layout {
+  display: grid;
+  grid-template-columns: minmax(270px, 330px) minmax(0, 1fr);
+  height: clamp(480px, calc(100vh - 230px), 680px);
+  min-height: 0;
+  border: 1px solid #dce5f4;
+  border-radius: 22px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(25, 55, 105, .09);
+}
+.support-thread-list {
+  padding: 20px 14px;
+  border-right: 1px solid #e5ebf5;
+  overflow-y: auto;
+  min-height: 0;
+  background: linear-gradient(180deg, #f8faff 0%, #f3f6fc 100%);
+}
+.support-thread-list h3 {
+  margin: 3px 10px 18px;
+  color: #25324b;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.support-thread-list button {
+  position: relative;
+  display: grid;
+  width: 100%;
+  gap: 5px;
+  margin-bottom: 8px;
+  padding: 14px 15px 14px 17px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform .18s ease, background .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.support-thread-list button:hover {
+  transform: translateY(-1px);
+  border-color: #d7e2f4;
+  background: rgba(255,255,255,.78);
+}
+.support-thread-list button.active {
+  border-color: #c7d8ff;
+  background: #fff;
+  box-shadow: 0 7px 20px rgba(47, 107, 255, .10);
+}
+.support-thread-list button.active::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 0;
+  width: 4px;
+  border-radius: 0 5px 5px 0;
+  background: linear-gradient(180deg, var(--blue), var(--indigo));
+}
+.support-thread-list button strong { color: #1d2a44; font-size: 13px; line-height: 1.35; }
+.support-thread-list button span,
+.support-thread-list button small {
+  overflow: hidden;
+  color: #76839b;
+  font-size: 11.5px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.support-thread-list button small { color: #9aa5b8; }
+.support-conversation {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #fff;
+}
+.support-conversation > header {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  min-height: 76px;
+  padding: 18px 24px 18px 66px;
+  border-bottom: 1px solid #e8edf5;
+  align-content: center;
+  background: rgba(255,255,255,.94);
+}
+.support-conversation > header::before {
+  content: "CS";
+  position: absolute;
+  left: 22px;
+  top: 18px;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--blue), var(--indigo));
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 7px 15px rgba(47, 107, 255, .25);
+}
+.support-conversation > header strong { color: #17233b; font-size: 15px; }
+.support-conversation > header span { color: #8792a6; font-size: 11.5px; }
+.support-message-list {
+  height: auto;
+  min-height: 0;
+  padding: 28px 26px;
+  overflow-y: auto;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(47,107,255,.055), transparent 28%),
+    linear-gradient(180deg, #fafcff 0%, #f6f9fd 100%);
+}
+.support-message { display: flex; margin-bottom: 11px; justify-content: flex-start; }
+.support-message.mine { justify-content: flex-end; }
+.support-message > div {
+  max-width: min(58%, 480px);
+  padding: 9px 12px 8px;
+  border: 1px solid #e0e7f2;
+  border-radius: 5px 14px 14px 14px;
+  background: #fff;
+  box-shadow: 0 5px 15px rgba(31, 54, 91, .055);
+}
+.support-message.mine > div {
+  border-color: transparent;
+  border-radius: 14px 14px 5px 14px;
+  background: linear-gradient(135deg, #3478ff, #5368ed);
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(47, 107, 255, .20);
+}
+.support-message strong { font-size: 9.5px; letter-spacing: .02em; }
+.support-message p { margin: 3px 0 5px; font-size: 12.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.support-message time { display: block; color: #9aa5b7; font-size: 8.5px; text-align: right; }
+.support-message.mine time { color: rgba(255,255,255,.72); }
+.support-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 16px 18px;
+  border-top: 1px solid #e8edf5;
+  background: #fff;
+}
+.support-composer textarea {
+  min-height: 48px;
+  max-height: 130px;
+  padding: 13px 15px;
+  border: 1px solid #dce4f0;
+  border-radius: 14px;
+  resize: none;
+  background: #f8faff;
+  line-height: 1.45;
+}
+.support-composer textarea:focus { border-color: var(--blue); background: #fff; box-shadow: var(--ring); outline: 0; }
+.support-composer button {
+  align-self: end;
+  min-width: 88px;
+  height: 48px;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--blue), var(--indigo));
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 7px 16px rgba(47,107,255,.22);
+}
+.support-composer button:disabled { cursor: not-allowed; box-shadow: none; opacity: .45; }
+.support-empty-chat { display: grid; height: 100%; place-content: center; gap: 7px; color: #8792a6; text-align: center; }
+.support-empty-chat strong { color: #44516a; font-size: 15px; }
+.support-empty-chat span { font-size: 12px; }
+.support-empty, .support-error { padding: 14px 10px; color: #8792a6; font-size: 12px; text-align: center; }
+.support-error { color: #d94a6a; }
+@media (max-width: 760px) {
+  .support-chat-layout { grid-template-columns: 1fr; height: calc(100vh - 190px); min-height: 520px; border-radius: 16px; }
+  .support-thread-list { max-height: 230px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .support-message-list { height: 400px; }
+  .support-message > div { max-width: 82%; }
+  .support-composer { grid-template-columns: 1fr; }
+  .support-composer button { width: 100%; }
+}
 
 /* Incidents use the same stable, single-line table rhythm as Inventory and JOs. */
 .incidents-table table {
@@ -2343,6 +2527,96 @@ td strong {
 
 .detail-section-title:first-child {
   margin-top: 0;
+}
+
+/* Complaint view: compact facts above, readable long-form content below. */
+.complaint-detail-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 4px 0 2px;
+}
+
+.complaint-detail-grid .detail-row {
+  display: block;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-soft);
+}
+
+.complaint-detail-grid .detail-row dt {
+  margin-bottom: 5px;
+  font-size: 10px;
+  letter-spacing: .075em;
+}
+
+.complaint-detail-grid .detail-row dd {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.complaint-narratives {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.complaint-note-card {
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.complaint-note-card > span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .075em;
+  text-transform: uppercase;
+}
+
+.complaint-note-card > p {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.complaint-note-card.is-remarks {
+  border-color: #cddcff;
+  background: linear-gradient(135deg, #f5f8ff 0%, #eef4ff 100%);
+  box-shadow: inset 3px 0 0 var(--blue);
+}
+
+.complaint-note-card.is-remarks > span { color: var(--blue); }
+
+.job-order-section-title {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.job-order-detail-grid .detail-row {
+  background: linear-gradient(145deg, #fbfcff, #f5f8fd);
+}
+
+.job-order-narratives { margin-top: 12px; }
+
+.complaint-note-card.is-job-scope {
+  border-color: #d9e2f2;
+  background: linear-gradient(135deg, #fafcff 0%, #f4f7fc 100%);
+  box-shadow: inset 3px 0 0 #6377a8;
+}
+
+.complaint-note-card.is-job-scope > span { color: #53658d; }
+
+@media (max-width: 580px) {
+  .complaint-detail-grid { grid-template-columns: 1fr; }
 }
 
 /* Checkbox list â€” team-member picker in the job-order assignment form. */

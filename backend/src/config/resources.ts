@@ -164,6 +164,16 @@ export const RESOURCES: Record<string, ResourceDef> = {
     required: ['name', 'payment_method', 'account_name'],
   },
 
+  'support-messages': {
+    table: 'support_messages',
+    writeRoles: ['customer', 'commercial-department'],
+    allowed: [
+      'customer_id', 'customer_name', 'customer_email', 'incident_ref',
+      'sender_id', 'sender_name', 'sender_role', 'message',
+    ],
+    required: ['customer_id', 'customer_name', 'sender_id', 'sender_name', 'sender_role', 'message'],
+  },
+
 };
 
 export type ResourceSlug = keyof typeof RESOURCES;

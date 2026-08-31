@@ -324,6 +324,22 @@ export function LiveModule({
     load();
   }, [load]);
 
+  // Keep workflow statuses current even when another role updates them from a
+  // different browser/device. This refresh is silent, so tables and open view
+  // modals do not flash a loading state every few seconds.
+  useEffect(() => {
+    const refreshSilently = async () => {
+      try {
+        setRows(await resourceService.list(entity, showArchived ? 'only' : undefined));
+        setError(null);
+      } catch {
+        // Preserve the last good snapshot during a temporary network failure.
+      }
+    };
+    const timer = setInterval(() => void refreshSilently(), 3_000);
+    return () => clearInterval(timer);
+  }, [entity, showArchived]);
+
   const visibleRows = useMemo(() => {
     let out = rows;
     const selectedQuickFilter = quickFilters?.(rows).find((item) => item.id === quickFilter);

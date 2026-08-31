@@ -15,6 +15,7 @@ import {
   AuditLogsModule,
   BillingModule,
   IncidentsModule,
+  InquiriesModule,
   JobOrdersModule,
   MaterialsModule,
   PaymentOptionsModule,
@@ -104,6 +105,10 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       {
         id: 'requests', label: 'Requests', icon: 'package', group: 'main',
         render: ({ filter }) => <RequestsModule filter={filter} title="My Requests" />,
+      },
+      {
+        id: 'inquiries', label: 'Inquiries / Chat', icon: 'messages-square', group: 'main',
+        render: ({ filter }) => <InquiriesModule filter={filter} />,
       },
       {
         id: 'advisories', label: 'Service Advisories', icon: 'megaphone', group: 'main',
@@ -333,6 +338,10 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       {
         id: 'joborders', label: 'Job Orders', icon: 'clipboard-list', group: 'main',
         render: ({ filter }) => <JobOrdersModule filter={filter} title="Job Order Management" />,
+      },
+      {
+        id: 'inquiries', label: 'Customer Inquiries', icon: 'messages-square', group: 'main',
+        render: ({ filter }) => <InquiriesModule filter={filter} />,
       },
       {
         id: 'billing', label: 'Billing', icon: 'credit-card', group: 'main',
