@@ -429,6 +429,23 @@ function JobOrderForm({
   );
 }
 
+/** Commercial Department may also raise a standalone pending work order. */
+function CreateJobOrderButton({ onCreated }: { onCreated: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <ActionButton label="Create Job Order" icon="plus-circle" onClick={() => setOpen(true)} />
+      {open && (
+        <JobOrderForm
+          onClose={() => setOpen(false)}
+          onCreated={onCreated}
+        />
+      )}
+    </>
+  );
+}
+
 /** Technical Team completes the assignment on a pending job order. */
 function JobOrderAssignmentForm({
   row,
@@ -1017,7 +1034,8 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
   const role = user!.role;
   const canWrite = WRITE.incidents.includes(role);
   const manage = !mine && role !== 'customer';
-  const canManageUrgency = ['general-manager', 'commercial-department'].includes(role);
+  // Urgency assessment belongs exclusively to the Commercial Department.
+  const canManageUrgency = role === 'commercial-department';
 
   const columns: ModuleColumn[] = [
     { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
@@ -1668,7 +1686,9 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
       rowFilter={rowFilter}
       actionLabel="Action"
       archivable={canWrite && !isContractor && !isInhouseTeam}
-      renderCreate={() => null}
+      renderCreate={({ reload }) => (
+        isCommercial ? <CreateJobOrderButton onCreated={reload} /> : null
+      )}
       metrics={(rows) => [
         metric('j1', 'Total Job Orders', String(rows.length), 'clipboard-list', 'customers'),
         metric('j2', 'Ongoing', count(rows, (r) => r.status === 'in_progress'), 'wrench', 'revenue'),

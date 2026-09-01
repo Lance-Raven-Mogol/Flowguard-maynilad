@@ -376,9 +376,9 @@ export const resourceService = {
       values.reported_by = user.fullName;
     }
 
-    // Urgency is assessed by the Commercial Department or General Manager only.
-    // Strip it entirely from customer submissions so it stays NULL until assessed.
-    if (entity === 'incidents' && user.role === 'customer') {
+    // Urgency is assessed exclusively by the Commercial Department. Never trust
+    // this field from another role even if a client manually includes it.
+    if (entity === 'incidents' && user.role !== 'commercial-department') {
       delete values.urgency;
     }
 
@@ -433,14 +433,19 @@ export const resourceService = {
     }
     if (entity === 'job-orders') {
       if (user.role === 'technical-team' || user.role === 'contractor' || user.role === 'inhouse-team') {
-        throw forbidden('Only the Commercial Department can create a job order after a complaint is resolved.');
+        throw forbidden('Only the Commercial Department can create a job order.');
       }
       const linkedIncidentRef = String(values.incident_ref ?? '').trim();
-      if (!linkedIncidentRef) throw badRequest('A resolved complaint is required to create a job order.');
-      const linkedIncident = (await repo.findRowsBy('incidents', 'ref_code', linkedIncidentRef))[0];
-      if (!linkedIncident || linkedIncident.archived) throw badRequest(`Complaint "${linkedIncidentRef}" was not found.`);
-      if (String(linkedIncident.status) !== 'resolved') {
-        throw conflict('A job order can only be created after the complaint is Resolved.');
+      if (linkedIncidentRef) {
+        const linkedIncident = (await repo.findRowsBy('incidents', 'ref_code', linkedIncidentRef))[0];
+        if (!linkedIncident || linkedIncident.archived) throw badRequest(`Complaint "${linkedIncidentRef}" was not found.`);
+        if (String(linkedIncident.status) !== 'resolved') {
+          throw conflict('A job order linked to a complaint can only be created after the complaint is Resolved.');
+        }
+      } else {
+        // Standalone JOs cover internal work such as asset maintenance. They use
+        // the same pending -> Technical Team assignment workflow.
+        values.incident_ref = '';
       }
 
       // Creation is intentionally unassigned. The Technical Team completes these
@@ -698,9 +703,9 @@ export const resourceService = {
       }
     }
 
-    // Urgency can only be set by Commercial Department or General Manager.
+    // Urgency can only be set by the Commercial Department.
     // Strip it from all other roles on update.
-    if (entity === 'incidents' && !['commercial-department', 'general-manager'].includes(user.role) && 'urgency' in values) {
+    if (entity === 'incidents' && user.role !== 'commercial-department' && 'urgency' in values) {
       delete values.urgency;
     }
 
