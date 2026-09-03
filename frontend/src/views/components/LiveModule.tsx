@@ -7,7 +7,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ImagePlus } from 'lucide-react';
 import type { Metric, ResourceTable, TableCell, TableRow } from '../../models/types';
-import { resourceService, type EntityRow } from '../../services/resourceService';
+import {
+  RESOURCE_CHANGE_EVENT,
+  RESOURCE_CHANGE_KEY,
+  resourceService,
+  type EntityRow,
+} from '../../services/resourceService';
 import { ApiError } from '../../services/apiClient';
 import { useToast } from '../../controllers/ToastContext';
 import { useStats } from '../../controllers/StatsContext';
@@ -336,8 +341,35 @@ export function LiveModule({
         // Preserve the last good snapshot during a temporary network failure.
       }
     };
+    const onResourceChange = (event: Event) => {
+      const changedEntity = (event as CustomEvent<{ entity?: string }>).detail?.entity;
+      if (!changedEntity || changedEntity === entity) void refreshSilently();
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== RESOURCE_CHANGE_KEY) return;
+      try {
+        const changedEntity = JSON.parse(event.newValue ?? '{}')?.entity;
+        if (!changedEntity || changedEntity === entity) void refreshSilently();
+      } catch {
+        void refreshSilently();
+      }
+    };
+    const onFocus = () => void refreshSilently();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void refreshSilently();
+    };
     const timer = setInterval(() => void refreshSilently(), 3_000);
-    return () => clearInterval(timer);
+    window.addEventListener(RESOURCE_CHANGE_EVENT, onResourceChange);
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener(RESOURCE_CHANGE_EVENT, onResourceChange);
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [entity, showArchived]);
 
   const visibleRows = useMemo(() => {

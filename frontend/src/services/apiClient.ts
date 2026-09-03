@@ -60,7 +60,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
+  // Operational records are polled for live updates; never reuse a stale GET.
+  get: <T>(path: string) => request<T>(path, { cache: 'no-store' }),
   post: <T>(path: string, data: unknown) =>
     request<T>(path, { method: 'POST', body: JSON.stringify(data) }),
   patch: <T>(path: string, data: unknown) =>

@@ -8,10 +8,16 @@ import { api } from './apiClient';
 
 export type EntityRow = Record<string, unknown> & { id: string };
 
-/** Notify other open FlowGuard tabs that dashboard data has changed. */
+/** Shared signals used by live tables and the dashboard-wide stats snapshot. */
+export const RESOURCE_CHANGE_KEY = 'flowguard:resource-change';
+export const RESOURCE_CHANGE_EVENT = 'flowguard:resource-change';
+
+/** Notify this window and other open FlowGuard tabs that data has changed. */
 const broadcastResourceChange = (entity: string): void => {
+  const detail = { entity, at: Date.now() };
+  window.dispatchEvent(new CustomEvent(RESOURCE_CHANGE_EVENT, { detail }));
   try {
-    localStorage.setItem('flowguard:resource-change', JSON.stringify({ entity, at: Date.now() }));
+    localStorage.setItem(RESOURCE_CHANGE_KEY, JSON.stringify(detail));
   } catch {
     /* Storage can be unavailable; background polling remains as fallback. */
   }

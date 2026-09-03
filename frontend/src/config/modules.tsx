@@ -877,6 +877,11 @@ function IncidentViewButton({
           patch.status = 'in_progress';
         }
       } else if (urgencyEditable) {
+        if (!URGENCY.includes(urgency)) {
+          notify('Please select an urgency.', 'error');
+          setSaving(false);
+          return;
+        }
         patch.urgency = urgency;
       }
 
@@ -952,7 +957,12 @@ function IncidentViewButton({
           {urgencyEditable && (
             <div className="form-group" style={{ marginTop: 18, marginBottom: 0 }}>
               <label>Urgency</label>
-              <select value={urgency} onChange={(e) => setUrgency(e.target.value)}>
+              <select
+                value={urgency}
+                onChange={(e) => setUrgency(e.target.value)}
+                required
+              >
+                <option value="" disabled>Select an urgency</option>
                 {URGENCY.map((u) => (
                   <option key={u} value={u}>{titleCase(u)}</option>
                 ))}

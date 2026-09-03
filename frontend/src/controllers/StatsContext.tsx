@@ -4,7 +4,12 @@
  * topbar notification bell. A single source of truth keeps those three in sync.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { resourceService, type EntityRow } from '../services/resourceService';
+import {
+  RESOURCE_CHANGE_EVENT,
+  RESOURCE_CHANGE_KEY,
+  resourceService,
+  type EntityRow,
+} from '../services/resourceService';
 import { api } from '../services/apiClient';
 
 /** Minimal user shape needed for job-level promotion alerts. */
@@ -59,7 +64,6 @@ const StatsContext = createContext<StatsValue | null>(null);
 
 /** How often to silently re-fetch in the background (ms). */
 const POLL_INTERVAL = 3_000;
-const RESOURCE_CHANGE_KEY = 'flowguard:resource-change';
 
 export function StatsProvider({ children }: { children: ReactNode }) {
   const [stats, setStats] = useState<DashboardStats>(EMPTY);
@@ -137,15 +141,18 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     const onStorage = (event: StorageEvent) => {
       if (event.key === RESOURCE_CHANGE_KEY) void silentReload();
     };
+    const onResourceChange = () => void silentReload();
     const onFocus = () => void silentReload();
     const onVisibility = () => {
       if (document.visibilityState === 'visible') void silentReload();
     };
     window.addEventListener('storage', onStorage);
+    window.addEventListener(RESOURCE_CHANGE_EVENT, onResourceChange);
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.removeEventListener('storage', onStorage);
+      window.removeEventListener(RESOURCE_CHANGE_EVENT, onResourceChange);
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
     };
