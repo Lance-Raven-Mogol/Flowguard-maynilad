@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, Search } from 'lucide-react';
+import { Bell, Search, LogOut, UserRound, ChevronDown } from 'lucide-react';
 import type { RoleConfig } from '../../config/roleViews';
 import { ROLES } from '../../models/types';
 import { useAuth } from '../../controllers/AuthContext';
@@ -7,6 +7,9 @@ import { useNotifications } from '../../controllers/NotificationsContext';
 import { Icon } from '../components/Icon';
 
 interface TopbarProps {
+  menuOpen: boolean;
+  onToggleMenu: () => void;
+  onLogout: () => void;
   config: RoleConfig;
   filter: string;
   onFilter: (value: string) => void;
@@ -23,10 +26,12 @@ export function avatarFor(user: { fullName: string; avatarUrl?: string | null },
   );
 }
 
-export function Topbar({ config, filter, onFilter, onNavigate }: TopbarProps) {
+export function Topbar({ menuOpen, onToggleMenu, onLogout, config, filter, onFilter, onNavigate }: TopbarProps) {
   const { user } = useAuth();
   const { items, unreadCount, markAlertSeen, markAllSeen } = useNotifications();
   const [open, setOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const now = new Date();
@@ -72,8 +77,34 @@ export function Topbar({ config, filter, onFilter, onNavigate }: TopbarProps) {
     return () => document.removeEventListener('mousedown', onClick);
   }, [open]);
 
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => {
+      if (!profileRef.current?.contains(event.target as Node)) setProfileOpen(false);
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (profileOpen) profileRef.current?.querySelector('button')?.focus();
+        setProfileOpen(false); setOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', escape); };
+  }, [profileOpen]);
+
   return (
     <header className="topbar">
+      <button
+        type="button"
+        className="mobile-menu-toggle"
+        aria-label="Open profile and navigation menu"
+        aria-expanded={menuOpen}
+        aria-controls="dashboard-navigation"
+        onClick={() => { setOpen(false); setProfileOpen(false); onToggleMenu(); }}
+      >
+        <img src={avatarUrl} alt="" className="avatar" />
+      </button>
       <div className="topbar-greet">
         <h1 className="greeting">
           <span className="greeting-pre">{prefix},</span> {user!.fullName}
@@ -96,7 +127,8 @@ export function Topbar({ config, filter, onFilter, onNavigate }: TopbarProps) {
             className="icon-btn bell"
             type="button"
             aria-label="Notifications"
-            onClick={() => setOpen((current) => !current)}
+            aria-expanded={open}
+            onClick={() => { setProfileOpen(false); setOpen((current) => !current); }}
           >
             <Bell size={20} />
             {unreadCount > 0 && <span className="notif-count">{unreadCount}</span>}
@@ -137,12 +169,19 @@ export function Topbar({ config, filter, onFilter, onNavigate }: TopbarProps) {
           </div>
         </div>
 
-        <div className="profile">
+        <div className="popover-wrapper profile-wrapper" ref={profileRef}>
+        <button type="button" className="profile" aria-label="Account menu" aria-expanded={profileOpen} aria-controls="account-menu" onClick={() => { setOpen(false); setProfileOpen(!profileOpen); }}>
           <img src={avatarUrl} alt={user!.fullName} className="avatar" />
           <div style={{ lineHeight: 1.3 }}>
             <strong>{user!.fullName}</strong>
             <div style={{ fontSize: 11, color: 'var(--muted)' }}>{roleLabel}</div>
           </div>
+          <ChevronDown size={16} />
+        </button>
+        {profileOpen && <div id="account-menu" className="static-popover is-active account-menu">
+          <button type="button" onClick={() => { setProfileOpen(false); onNavigate('settings'); }}><UserRound size={18} /> Edit profile / Settings</button>
+          <button type="button" onClick={() => { setProfileOpen(false); onLogout(); }}><LogOut size={18} /> Log Out</button>
+        </div>}
         </div>
       </div>
     </header>

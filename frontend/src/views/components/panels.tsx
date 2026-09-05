@@ -43,7 +43,7 @@ export interface InfoCard {
 
 export function InfoCardGrid({ cards }: { cards: InfoCard[] }) {
   return (
-    <section style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24, marginTop: 24 }}>
+    <section className="info-card-grid">
       {cards.map((c) => (
         <article className="panel" key={c.label}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>

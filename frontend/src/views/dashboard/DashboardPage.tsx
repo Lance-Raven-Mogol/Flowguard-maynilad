@@ -4,7 +4,7 @@
  * declarative config. All operational data is loaded live by the views
  * themselves (see StatsContext + LiveModule).
  */
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../controllers/AuthContext';
 import { StatsProvider } from '../../controllers/StatsContext';
@@ -32,11 +32,14 @@ function DashboardShell() {
   const config = ROLE_CONFIG[user!.role];
   const [activeId, setActiveId] = useState('overview');
   const [filter, setFilter] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
   const [confirmLogout, setConfirmLogout] = useState(false);
 
   const activeView = useMemo(() => config.views.find((v) => v.id === activeId), [config, activeId]);
 
   const selectView = (id: string) => {
+    setMenuOpen(false);
     markViewSeen(id);
     setActiveId(id);
     setFilter('');
@@ -45,15 +48,17 @@ function DashboardShell() {
   return (
     <div className="dashboard">
       <Sidebar
+        open={menuOpen}
+        onClose={closeMenu}
         config={config}
         activeId={activeId}
         onSelect={selectView}
-        onLogout={() => setConfirmLogout(true)}
+        onLogout={() => { setMenuOpen(false); setConfirmLogout(true); }}
         badges={badges}
       />
 
       <main className="main-panel">
-        <Topbar config={config} filter={filter} onFilter={setFilter} onNavigate={selectView} />
+        <Topbar menuOpen={menuOpen} onToggleMenu={() => setMenuOpen(!menuOpen)} onLogout={() => setConfirmLogout(true)} config={config} filter={filter} onFilter={setFilter} onNavigate={selectView} />
         <section className="view-section active-view">{activeView?.render({ filter, navigate: selectView })}</section>
       </main>
 

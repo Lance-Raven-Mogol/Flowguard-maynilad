@@ -11,6 +11,7 @@ import {
   type EntityRow,
 } from '../services/resourceService';
 import { api } from '../services/apiClient';
+import { useAuth } from './AuthContext';
 
 /** Minimal user shape needed for job-level promotion alerts. */
 export interface StatsUser {
@@ -66,11 +67,14 @@ const StatsContext = createContext<StatsValue | null>(null);
 const POLL_INTERVAL = 3_000;
 
 export function StatsProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const canFetchUsers = user?.role === 'general-manager';
   const [stats, setStats] = useState<DashboardStats>(EMPTY);
   const [loading, setLoading] = useState(true);
 
-  /** Fetch the user list — silently returns [] for non-GM roles (403 is caught). */
+  /** Only GM dashboard alerts need the staff list; skip requests for other roles. */
   const fetchUsers = useCallback(async (): Promise<StatsUser[]> => {
+    if (!canFetchUsers) return [];
     try {
       const res = await api.get<{ data: Array<{ id: string; fullName: string; role: string; jobLevel: string | null; isArchived: boolean }> }>('/users');
       return res.data.map((u) => ({
@@ -83,7 +87,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     } catch {
       return [];
     }
-  }, []);
+  }, [canFetchUsers]);
 
   /** Full fetch — shows the loading state (used on first mount). */
   const reload = useCallback(async () => {

@@ -23,33 +23,33 @@ export function DataTable({ table, className = '', filter = '', renderActions, a
   return (
     <section className={`panel invoice-table${className ? ` ${className}` : ''}`}>
       <div className="table-scroll" tabIndex={0} aria-label={`Scrollable ${table.id} table`}>
-        <table>
-          <thead>
-            <tr>
+        <table role="table">
+          <thead role="rowgroup">
+            <tr role="row">
               {table.columns.map((col) => (
-                <th key={col}>{col}</th>
+                <th role="columnheader" scope="col" key={col}>{col}</th>
               ))}
-              {renderActions && <th>{actionLabel}</th>}
+              {renderActions && <th role="columnheader" scope="col">{actionLabel}</th>}
             </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             {rows.map((row) => (
-              <tr key={row.id}>
+              <tr role="row" key={row.id}>
                 {row.cells.map((cell, i) => (
-                  <td key={i}>
-                    <Cell cell={cell} />
+                  <td role="cell" key={i} data-label={table.columns[i]}>
+                    <div className="table-cell-value"><Cell cell={cell} /></div>
                   </td>
                 ))}
                 {renderActions && (
-                  <td>
+                  <td role="cell" className="table-row-actions" data-label={actionLabel}>
                     <div className="action-group">{renderActions(row.id)}</div>
                   </td>
                 )}
               </tr>
             ))}
             {rows.length === 0 && (
-              <tr>
-                <td className="table-empty" colSpan={table.columns.length + (renderActions ? 1 : 0)}>
+              <tr role="row">
+                <td role="cell" className="table-empty" colSpan={table.columns.length + (renderActions ? 1 : 0)}>
                   <span className="table-empty-icon">
                     <Icon name="inbox" />
                   </span>
