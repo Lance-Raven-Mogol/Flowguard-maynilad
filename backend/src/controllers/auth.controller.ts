@@ -4,6 +4,11 @@ import { authService } from '../services/auth.service.js';
 import { unauthorized } from '../utils/httpError.js';
 
 export const authController = {
+  async resetPassword(req: Request, res: Response): Promise<void> {
+    await authService.resetPassword(req.body ?? {});
+    res.json({ message: 'Password reset successfully. Sign in with your new password.' });
+  },
+
   /** Step 1: Validate form, generate TOTP secret + QR code. Returns { email, qrCodeDataUrl, manualKey }. */
   async initiateRegistration(req: Request, res: Response): Promise<void> {
     const result = await authService.initiateRegistration(req.body ?? {});

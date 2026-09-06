@@ -84,6 +84,7 @@ export function LoginPage() {
           </div>
 
           <PasswordInput id="password" value={password} onChange={setPassword} placeholder="Enter your password" autoComplete="current-password" />
+          <Link className="otp-link-btn" to="/forgot-password">Forgot password?</Link>
 
           <label className="remember-option">
             <input className="remember-input" type="checkbox" name="remember" checked={remember} onChange={(e) => setRemember(e.target.checked)} />

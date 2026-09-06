@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth.middleware.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 export const authRoutes = Router();
+authRoutes.post('/reset-password', asyncHandler(authController.resetPassword));
 
 // Email verification registration flow
 authRoutes.post('/register/initiate', asyncHandler(authController.initiateRegistration));

@@ -3,6 +3,7 @@ import { AuthProvider } from './controllers/AuthContext';
 import { ToastProvider } from './controllers/ToastContext';
 import { ProtectedRoute } from './views/components/ProtectedRoute';
 import { LoginPage } from './views/auth/LoginPage';
+import { ForgotPasswordPage } from './views/auth/ForgotPasswordPage';
 import { SignupPage } from './views/auth/SignupPage';
 import { DashboardPage } from './views/dashboard/DashboardPage';
 import { MaterialPage } from './views/public/MaterialPage';
@@ -14,6 +15,7 @@ export function App() {
         <AuthProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/material/:sku" element={<MaterialPage />} />
             <Route

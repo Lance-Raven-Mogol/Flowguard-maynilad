@@ -29,6 +29,9 @@ export interface LoginResult {
 }
 
 export const authService = {
+  async resetPassword(input: { email: string; otpCode: string; newPassword: string }): Promise<{ message: string }> {
+    return api.post<{ message: string }>('/auth/reset-password', input);
+  },
   /** Step 1: Validate form, generate TOTP secret + QR code. Returns { email, qrCodeDataUrl, manualKey }. */
   async initiateRegistration(input: InitiateRegistrationInput): Promise<{ message: string; email: string; qrCodeDataUrl: string; manualKey: string }> {
     return api.post<{ message: string; email: string; qrCodeDataUrl: string; manualKey: string }>('/auth/register/initiate', input);

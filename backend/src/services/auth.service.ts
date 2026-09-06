@@ -70,7 +70,44 @@ const pendingLogins = new Map<string, {
   userId: string; email: string; expiresAt: number; attempts: number;
 }>();
 
+// Keep failed reset attempts across requests, including after a successful reset.
+const passwordResetAttempts = new Map<string, { attempts: number; expiresAt: number; usedCodes: Set<string> }>();
+
 export const authService = {
+  async resetPassword(input: { email?: string; otpCode?: string; newPassword?: string }): Promise<void> {
+    const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
+    const code = typeof input.otpCode === 'string' ? input.otpCode.trim() : '';
+    const password = typeof input.newPassword === 'string' ? input.newPassword : '';
+    if (!EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
+    if (!/^\d{6}$/.test(code)) throw badRequest('Enter the 6-digit code from your authenticator app.');
+    if (password.length < 6) throw badRequest('New password must be at least 6 characters.');
+    if (Buffer.byteLength(password, 'utf8') > 72) throw badRequest('New password must be at most 72 bytes.');
+
+    const now = Date.now();
+    for (const [key, value] of passwordResetAttempts) {
+      if (value.expiresAt <= now) passwordResetAttempts.delete(key);
+    }
+    let attempt = passwordResetAttempts.get(email);
+    if (!attempt) {
+      attempt = { attempts: 0, expiresAt: now + 15 * 60 * 1000, usedCodes: new Set() };
+      passwordResetAttempts.set(email, attempt);
+    }
+    if (attempt.attempts >= 5) throw badRequest('Too many reset attempts. Please try again in 15 minutes.');
+    attempt.attempts++;
+    const user = await userRepo.findByEmail(email);
+    if (!user || user.isArchived || !user.otpEnabled || !user.otpSecret ||
+        user.otpSecret.startsWith('pending:') || attempt.usedCodes.has(code) ||
+        !verifyTotpToken(user.otpSecret, code)) {
+      throw badRequest('Unable to reset password. Check your email and current authenticator code. You need the authenticator linked to your enabled two-factor authentication.');
+    }
+    // Consume before awaiting the write so concurrent requests cannot reuse this code.
+    attempt.usedCodes.add(code);
+    const updated = await userRepo.update(user.id, { passwordHash: bcrypt.hashSync(password, 10) });
+    if (!updated) throw badRequest('Unable to reset password. Please try again.');
+    pendingLogins.delete(email);
+    await audit('password_change', user.fullName, user.role, user.id, user.email, { method: 'authenticator_reset' });
+  },
+
   /**
    * Step 1 of signup: validate form data, generate TOTP secret + QR code.
    * Returns the QR code data-URL and the manual key to show in the UI.
