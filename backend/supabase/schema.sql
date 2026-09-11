@@ -166,6 +166,28 @@ alter table public.app_users         add column if not exists barangay text defa
 alter table public.app_users         add column if not exists otp_secret text;
 alter table public.app_users         add column if not exists otp_enabled boolean not null default false;
 alter table public.app_users         alter column otp_enabled set default false;
+-- Serial number for customer accounts (CUST-#####). Populated on customer creation.
+alter table public.app_users         add column if not exists serial_number text unique;
+-- Back-fill serial numbers for existing customers that don't have one yet.
+do $$ declare rec record; seq integer := 1; begin
+  for rec in
+    select id from public.app_users
+    where role = 'customer' and serial_number is null
+    order by created_at
+  loop
+    loop
+      begin
+        update public.app_users
+           set serial_number = 'CUST-' || lpad(seq::text, 5, '0')
+         where id = rec.id;
+        seq := seq + 1;
+        exit;
+      exception when unique_violation then
+        seq := seq + 1;
+      end;
+    end loop;
+  end loop;
+end $$;
 -- Make incidents.urgency nullable (Commercial Dept/GM sets it; null = not yet assessed).
 alter table public.incidents         alter column urgency drop not null;
 alter table public.incidents         alter column urgency drop default;

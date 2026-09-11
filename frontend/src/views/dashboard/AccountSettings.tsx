@@ -245,7 +245,12 @@ export function AccountSettings() {
         <div className="account-id">
           <h2>{user!.fullName}</h2>
           <p>{user!.email}</p>
-          <span className="account-role">{roleLabel}</span>
+          <div className="account-id-tags">
+            <span className="account-role">{roleLabel}</span>
+            {user!.role === 'customer' && user!.serialNumber && (
+              <span className="account-serial">{user!.serialNumber}</span>
+            )}
+          </div>
         </div>
         <button className="account-photo-btn" onClick={() => fileRef.current?.click()} disabled={uploading}>
           {uploading ? 'Uploading…' : 'Change Photo'}
@@ -271,6 +276,20 @@ export function AccountSettings() {
               <label>Role</label>
               <input value={roleLabel} readOnly style={{ background: 'var(--panel-soft)' }} />
             </div>
+            {user!.role === 'customer' && (
+              <div className="form-group">
+                <label>Customer Serial No.</label>
+                <div className="serial-field">
+                  <span className="serial-field-dot" />
+                  <input
+                    value={user!.serialNumber ?? '—'}
+                    readOnly
+                    tabIndex={-1}
+                    style={{ fontFamily: 'monospace', letterSpacing: '0.06em', fontWeight: 700, cursor: 'default' }}
+                  />
+                </div>
+              </div>
+            )}
             <div className="form-group">
               <label>Member Since</label>
               <input value={user!.startDate ? new Date(user!.startDate).toLocaleDateString('en-GB') : new Date(user!.createdAt).toLocaleDateString('en-GB')} readOnly style={{ background: 'var(--panel-soft)' }} />

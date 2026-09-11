@@ -10,6 +10,7 @@ import { MetricsGrid } from '../components/MetricsGrid';
 import { DataTable } from '../components/DataTable';
 import { DonutPanel } from '../components/charts';
 import { InfoCardGrid, PanelHead, StatList } from '../components/panels';
+import { JobOrderCalendar } from '../components/JobOrderCalendar';
 import type { EntityRow } from '../../services/resourceService';
 
 /* helpers */
@@ -32,11 +33,21 @@ function recent(columns: string[], rows: TableCell[][]): ResourceTable {
   return { id: 'recent', columns, rows: rows.map((cells, i) => ({ id: String(i), cells })) };
 }
 
+/* Shared calendar wrapper — no double .panel nesting */
+function CalendarSection() {
+  return (
+    <div style={{ marginTop: 22 }}>
+      <article className="panel">
+        <JobOrderCalendar />
+      </article>
+    </div>
+  );
+}
+
 export function DashboardOverview() {
   const { user } = useAuth();
   const { stats, loading, reload } = useStats();
 
-  // Refresh the snapshot whenever the overview is opened.
   useEffect(() => {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -48,7 +59,7 @@ export function DashboardOverview() {
 
   switch (user!.role) {
     case 'customer':
-      return <CustomerOverview stats={stats} fullName={user!.fullName} />;
+      return <CustomerOverview stats={stats} fullName={user!.fullName} serialNumber={user!.serialNumber ?? null} />;
     case 'general-manager':
       return <ManagerOverview stats={stats} />;
     case 'inventory-officer':
@@ -68,11 +79,17 @@ export function DashboardOverview() {
 }
 
 /* ----------------------------------------------------------------- Customer */
-function CustomerOverview({ stats, fullName }: { stats: DashboardStats; fullName: string }) {
+function CustomerOverview({ stats, fullName, serialNumber }: { stats: DashboardStats; fullName: string; serialNumber: string | null }) {
   const mine = stats.incidents.filter((i) => String(i.reported_by).toLowerCase() === fullName.toLowerCase());
   const published = stats.advisories.filter((a) => a.status === 'published');
   return (
     <>
+      {serialNumber && (
+        <div className="customer-serial-banner">
+          <span className="customer-serial-label">Customer Serial No.</span>
+          <strong className="customer-serial-value">{serialNumber}</strong>
+        </div>
+      )}
       <MetricsGrid
         metrics={[
           metric('c1', 'Open Complaints', n(mine, (i) => i.status !== 'resolved'), 'message-square', 'customers'),
@@ -158,6 +175,10 @@ function ManagerOverview({ stats }: { stats: DashboardStats }) {
           ]}
         />
       </section>
+
+      {/* Calendar before the recent table */}
+      <CalendarSection />
+
       <div style={{ marginTop: 22 }}>
         <PanelHead title="Pending & Ongoing" />
         <DataTable
@@ -219,6 +240,10 @@ function InventoryOverview({ stats }: { stats: DashboardStats }) {
           ]}
         />
       </section>
+
+      {/* Calendar before the recent table */}
+      <CalendarSection />
+
       <div style={{ marginTop: 22 }}>
         <PanelHead title="Low Stock & Defective Items" />
         <DataTable
@@ -267,6 +292,10 @@ function TechnicalOverview({ stats }: { stats: DashboardStats }) {
           ]}
         />
       </section>
+
+      {/* Calendar before the active-jobs table */}
+      <CalendarSection />
+
       <div style={{ marginTop: 22 }}>
         <PanelHead title="Active Job Orders" />
         <DataTable
@@ -316,6 +345,10 @@ function ZoneOverview({ stats }: { stats: DashboardStats }) {
           ]}
         />
       </section>
+
+      {/* Calendar before the priority-cases table */}
+      <CalendarSection />
+
       <div style={{ marginTop: 22 }}>
         <PanelHead title="High Priority Cases" />
         <DataTable
@@ -370,6 +403,10 @@ function CommercialOverview({ stats }: { stats: DashboardStats }) {
           ]}
         />
       </section>
+
+      {/* Calendar before the recent complaints */}
+      <CalendarSection />
+
       <div style={{ marginTop: 22 }}>
         <PanelHead title="Recent Complaints" />
         <DataTable
@@ -442,6 +479,10 @@ function FieldTeamOverview({ stats }: { stats: DashboardStats }) {
           ]}
         />
       </section>
+
+      {/* Calendar before the active-jobs table */}
+      <CalendarSection />
+
       <div style={{ marginTop: 22 }}>
         <PanelHead title="Active Job Orders" />
         <DataTable

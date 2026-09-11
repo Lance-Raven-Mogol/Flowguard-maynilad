@@ -28,6 +28,7 @@ interface UserRow {
   otp_secret: string | null;
   otp_enabled: boolean;
   job_level: string | null;
+  serial_number: string | null;
 }
 
 function fromRow(row: UserRow): User {
@@ -45,6 +46,7 @@ function fromRow(row: UserRow): User {
     otpSecret: row.otp_secret ?? undefined,
     otpEnabled: row.otp_enabled ?? false,
     jobLevel: row.job_level ?? null,
+    serialNumber: row.serial_number ?? null,
   };
 }
 
@@ -58,6 +60,7 @@ export interface NewUser {
   otpSecret?: string;
   otpEnabled?: boolean;
   jobLevel?: string | null;
+  serialNumber?: string | null;
 }
 
 export const userRepo = {
@@ -100,6 +103,7 @@ export const userRepo = {
         otp_enabled: input.otpEnabled ?? false,
         ...(input.otpSecret ? { otp_secret: input.otpSecret } : {}),
         ...(input.jobLevel != null ? { job_level: input.jobLevel } : {}),
+        ...(input.serialNumber != null ? { serial_number: input.serialNumber } : {}),
       })
       .select('*')
       .single<UserRow>();
@@ -109,7 +113,7 @@ export const userRepo = {
 
   async update(
     id: string,
-    fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string; startDate?: string; isArchived?: boolean; barangay?: string; otpSecret?: string; otpEnabled?: boolean; jobLevel?: string | null },
+    fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string; startDate?: string; isArchived?: boolean; barangay?: string; otpSecret?: string; otpEnabled?: boolean; jobLevel?: string | null; serialNumber?: string | null },
   ): Promise<User | undefined> {
     if (!supabase) return store.updateUser(id, fields);
 
@@ -125,6 +129,7 @@ export const userRepo = {
     if (fields.otpSecret !== undefined) row.otp_secret = fields.otpSecret;
     if (fields.otpEnabled !== undefined) row.otp_enabled = fields.otpEnabled;
     if (fields.jobLevel !== undefined) row.job_level = fields.jobLevel;
+    if (fields.serialNumber !== undefined) row.serial_number = fields.serialNumber;
 
     const { data, error } = await supabase
       .from(TABLE)
@@ -141,7 +146,7 @@ export const userRepo = {
     if (!supabase) return [];
     const { data, error } = await supabase
       .from(TABLE)
-      .select('id, full_name, email, role, created_at, avatar_url, start_date, is_archived, barangay, job_level')
+      .select('id, full_name, email, role, created_at, avatar_url, start_date, is_archived, barangay, job_level, serial_number')
       .order('created_at', { ascending: true });
     if (error) throw new Error(`Supabase listPublic failed: ${error.message}`);
     return (data ?? []).map((r: Record<string, unknown>) => ({
@@ -155,6 +160,7 @@ export const userRepo = {
       isArchived: (r.is_archived as boolean) ?? false,
       barangay: (r.barangay as string) ?? 'Boac',
       jobLevel: (r.job_level as string | null) ?? null,
+      serialNumber: (r.serial_number as string | null) ?? null,
     }));
   },
 

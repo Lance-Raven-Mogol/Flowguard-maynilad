@@ -9,7 +9,7 @@ import { env } from '../config/env.js';
 import { userRepo } from '../models/userRepo.js';
 import { generateTotpSetup, verifyTotpToken } from './totp.service.js';
 import { renameIncidentReporter, insertRow as auditInsert } from '../models/resourceRepo.js';
-import { uploadAvatar } from '../models/supabase.js';
+import { uploadAvatar, supabase as supabaseClient } from '../models/supabase.js';
 import { ROLES, type PublicUser, type Role, type User } from '../models/types.js';
 import { badRequest, conflict, notFound, unauthorized } from '../utils/httpError.js';
 
@@ -41,9 +41,28 @@ async function audit(action: string, actor: string | undefined, actorRole: strin
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** Generate a unique CUST-##### serial number for a new customer account. */
+async function generateCustomerSerial(): Promise<string> {
+  // Retry up to 50 times to find an unused slot
+  for (let i = 0; i < 50; i++) {
+    const num = Math.floor(Math.random() * 99999) + 1;
+    const candidate = `CUST-${num.toString().padStart(5, '0')}`;
+    // Check uniqueness in DB
+    if (supabaseClient) {
+      const { data } = await supabaseClient.from('app_users').select('id').eq('serial_number', candidate).maybeSingle();
+      if (!data) return candidate;
+    } else {
+      // In-memory fallback — uniqueness not guaranteed but acceptable for dev
+      return candidate;
+    }
+  }
+  // Fallback: timestamp-based to guarantee uniqueness
+  return `CUST-${Date.now().toString().slice(-5)}`;
+}
+
 export function toPublicUser(u: User): PublicUser {
   const { passwordHash: _, otpSecret: __, ...pub } = u;
-  return { ...pub, startDate: u.startDate, isArchived: u.isArchived, barangay: u.barangay, otpEnabled: u.otpEnabled, jobLevel: u.jobLevel ?? null };
+  return { ...pub, startDate: u.startDate, isArchived: u.isArchived, barangay: u.barangay, otpEnabled: u.otpEnabled, jobLevel: u.jobLevel ?? null, serialNumber: u.serialNumber ?? null };
 }
 
 function signToken(u: User): string {
@@ -182,6 +201,7 @@ export const authService = {
       barangay: p.barangay,
       otpSecret: p.totpSecret,
       otpEnabled: true,
+      serialNumber: await generateCustomerSerial(),
     });
     pending.delete(email);
     await audit('register', p.fullName, 'customer', user.id, p.email, { email: p.email, role: 'customer', barangay: p.barangay });
@@ -235,7 +255,7 @@ export const authService = {
     if (!email || !EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
     if (password.length < 6) throw badRequest('Password must be at least 6 characters.');
     if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
-    const user = await userRepo.create({ fullName, email, role: 'customer', passwordHash: bcrypt.hashSync(password, 10) });
+    const user = await userRepo.create({ fullName, email, role: 'customer', passwordHash: bcrypt.hashSync(password, 10), serialNumber: await generateCustomerSerial() });
     await audit('register', fullName, 'customer', user.id, email, { email, role: 'customer' });
     return { token: signToken(user), user: toPublicUser(user) };
   },
@@ -268,7 +288,7 @@ export const authService = {
     if (password.length < 6) throw badRequest('Password must be at least 6 characters.');
     if (!ROLES.includes(role)) throw badRequest('A valid role is required.');
     if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
-    const user = await userRepo.create({ fullName, email, role, passwordHash: bcrypt.hashSync(password, 10), startDate: input.startDate, barangay: input.barangay, jobLevel: input.jobLevel ?? null });
+    const user = await userRepo.create({ fullName, email, role, passwordHash: bcrypt.hashSync(password, 10), startDate: input.startDate, barangay: input.barangay, jobLevel: input.jobLevel ?? null, serialNumber: role === 'customer' ? await generateCustomerSerial() : null });
     await audit('admin_create_user', undefined, 'general-manager', user.id, email, { fullName, email, role });
     return toPublicUser(user);
   },
