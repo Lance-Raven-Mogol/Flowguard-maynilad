@@ -567,6 +567,119 @@ const INCIDENT_TYPE_OPTIONS = [
 ];
 const URGENCY = ['low', 'medium', 'high'];
 
+interface BillingCustomerOption {
+  id: string;
+  fullName: string;
+  email: string;
+  serialNumber?: string | null;
+}
+
+/** Searchable customer/account-owner picker matching the app's modern comboboxes. */
+function BillToCustomerSelect({
+  customers,
+  value,
+  loading,
+  onChange,
+}: {
+  customers: BillingCustomerOption[];
+  value: string;
+  loading: boolean;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const selected = customers.find((customer) => customer.id === value);
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return customers;
+    return customers.filter((customer) =>
+      `${customer.fullName} ${customer.serialNumber ?? ''}`.toLowerCase().includes(normalized),
+    );
+  }, [customers, query]);
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) {
+        setOpen(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, []);
+
+  const showOptions = () => {
+    if (loading) return;
+    setQuery('');
+    setOpen(true);
+  };
+
+  return (
+    <div className="combobox bill-to-combobox" ref={wrapRef}>
+      <div className={`combobox-control${selected ? ' is-linked' : ''}`}>
+        <input
+          role="combobox"
+          aria-expanded={open}
+          aria-controls="bill-to-customer-options"
+          value={open ? query : selected?.fullName ?? ''}
+          placeholder={loading ? 'Loading customers…' : 'Search customer or serial number'}
+          disabled={loading}
+          onFocus={showOptions}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            onChange('');
+            setOpen(true);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              setOpen(false);
+              setQuery('');
+            }
+          }}
+        />
+        {selected?.serialNumber && <span className="combobox-chip">{selected.serialNumber}</span>}
+        <button
+          type="button"
+          className="combobox-caret"
+          aria-label="Toggle customer accounts"
+          disabled={loading}
+          onClick={() => open ? (setOpen(false), setQuery('')) : showOptions()}
+        >
+          ▾
+        </button>
+      </div>
+      {open && (
+        <ul id="bill-to-customer-options" className="combobox-list" role="listbox">
+          {filtered.length === 0 ? (
+            <li className="combobox-empty">No matching customer.</li>
+          ) : filtered.map((customer) => {
+            const isSelected = customer.id === value;
+            return (
+              <li
+                key={customer.id}
+                role="option"
+                aria-selected={isSelected}
+                className={`combobox-option${isSelected ? ' is-selected' : ''}`}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onChange(customer.id);
+                  setOpen(false);
+                  setQuery('');
+                }}
+              >
+                <span className="combobox-sku">{customer.serialNumber || 'NO SERIAL'}</span>
+                <span className="combobox-name">{customer.fullName}</span>
+                {isSelected && <span className="combobox-selected-mark">✓</span>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /** Read-only detail body for a complaint/incident, incl. customer photos + remarks. */
 function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRemarks?: boolean }) {
   const hasEstimate = row.estimated_cost !== null && row.estimated_cost !== undefined && Number(row.estimated_cost) > 0;
@@ -579,7 +692,13 @@ function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRema
         <DetailRow label="Status">{titleCase(row.status)}</DetailRow>
         <DetailRow label="Urgency">{row.urgency ? titleCase(row.urgency) : '— Not yet assessed'}</DetailRow>
         <DetailRow label="Location">{String(row.location ?? '')}</DetailRow>
-        <DetailRow label="Reported By">{String(row.reported_by ?? '')}</DetailRow>
+        <DetailRow label="Complainant">{String(row.reported_by ?? '')}</DetailRow>
+        {!hideRemarks && (
+          <DetailRow label="Billing Owner">
+            {String(row.bill_to_customer_name ?? row.reported_by ?? '')}
+            {row.bill_to_serial_number ? ` (${String(row.bill_to_serial_number)})` : ''}
+          </DetailRow>
+        )}
         <DetailRow label="Filed On">{dateShort(row.created_at)}</DetailRow>
         {hasEstimate && <DetailRow label="Estimated Cost">{money(row.estimated_cost)}</DetailRow>}
       </dl>
@@ -589,10 +708,16 @@ function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRema
           <p>{String(row.description ?? '') || '—'}</p>
         </section>
         {!hideRemarks && (
-          <section className="complaint-note-card is-remarks">
-            <span>Zone Specialist Remarks</span>
-            <p>{String(row.remarks ?? '') || 'No remarks added yet.'}</p>
-          </section>
+          <>
+            <section className="complaint-note-card is-site-action">
+              <span>Site Visit Action / Work Plan</span>
+              <p>{String(row.site_action ?? '') || 'No site action added yet.'}</p>
+            </section>
+            <section className="complaint-note-card is-remarks">
+              <span>Zone Specialist Remarks</span>
+              <p>{String(row.remarks ?? '') || 'No remarks added yet.'}</p>
+            </section>
+          </>
         )}
       </div>
       <ImageGallery images={row.images} />
@@ -621,7 +746,7 @@ function IssueBillInline({
   const [description, setDescription] = useState(String(incident.description ?? ''));
   const [profiles, setProfiles] = useState<EntityRow[]>([]);
   const [profileIds, setProfileIds] = useState<string[]>([]);
-  const [users, setUsers] = useState<Array<{ fullName: string; email: string }>>([]);
+  const [users, setUsers] = useState<Array<{ id: string; fullName: string; email: string; serialNumber?: string | null }>>([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -635,7 +760,7 @@ function IssueBillInline({
     try {
       const [pms, userResp] = await Promise.all([
         resourceService.list('payment-methods'),
-        api.get<{ data: Array<{ fullName: string; email: string }> }>('/users'),
+        api.get<{ data: Array<{ id: string; fullName: string; email: string; serialNumber?: string | null }> }>('/users'),
       ]);
       setProfiles(pms.filter((p) => !p.archived));
       setUsers(userResp.data);
@@ -650,9 +775,10 @@ function IssueBillInline({
   const toggleProfile = (id: string) =>
     setProfileIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
 
-  const customerName = String(incident.reported_by ?? '');
-  const customer = users.find(
-    (u) => u.fullName.trim().toLowerCase() === customerName.trim().toLowerCase(),
+  const customerName = String(incident.bill_to_customer_name ?? incident.reported_by ?? '');
+  const customer = users.find((u) =>
+    String(u.id) === String(incident.bill_to_customer_id ?? '') ||
+    u.fullName.trim().toLowerCase() === customerName.trim().toLowerCase(),
   );
   const selectedProfiles = profiles.filter((p) => profileIds.includes(String(p.id)));
 
@@ -665,8 +791,10 @@ function IssueBillInline({
     setSaving(true);
     try {
       await resourceService.create('payments', {
+        customer_id: customer.id,
         customer_name: customerName,
         customer_email: customer.email,
+        customer_serial_number: customer.serialNumber ?? '',
         incident_ref: String(incident.ref_code ?? ''),
         job_order_ref: '',
         service_description: description,
@@ -719,8 +847,9 @@ function IssueBillInline({
                 <input value={`${incident.ref_code} — ${String(incident.description ?? '').slice(0, 60)}`} readOnly />
               </div>
               <div className="form-group">
-                <label>Customer</label>
+                <label>Billing Owner</label>
                 <input value={customerName} readOnly />
+                {customer?.serialNumber && <small style={{ color: 'var(--muted)', display: 'block', marginTop: 4 }}>Serial: {customer.serialNumber}</small>}
                 {customer?.email
                   ? <small style={{ color: 'var(--muted)', display: 'block', marginTop: 4 }}>{customer.email}</small>
                   : <small style={{ color: '#e25577', display: 'block', marginTop: 4 }}>No registered account email found.</small>}
@@ -824,9 +953,14 @@ function IncidentViewButton({
   canIssueBill?: boolean;
 }) {
   const { stats } = useStats();
+  const { notify } = useToast();
   const [open, setOpen] = useState(false);
   const [showJobForm, setShowJobForm] = useState(false);
   const [remarks, setRemarks] = useState('');
+  const [siteAction, setSiteAction] = useState('');
+  const [billToCustomerId, setBillToCustomerId] = useState('');
+  const [customers, setCustomers] = useState<BillingCustomerOption[]>([]);
+  const [customersLoading, setCustomersLoading] = useState(false);
   const [urgency, setUrgency] = useState('');
   const [estimatedCost, setEstimatedCost] = useState('');
   const [saving, setSaving] = useState(false);
@@ -836,6 +970,7 @@ function IncidentViewButton({
   const estimateEditable = canEstimate && !c.archived && c.row.status === 'in_progress';
 
   const hasRemarks = String(c.row.remarks ?? '').trim() !== '';
+  const hasSavedSitePlan = String(c.row.site_action ?? '').trim() !== '';
   // A job order already exists for this incident — no second one may be created.
   const linkedJobOrder = stats.jobOrders.find(
     (j) => String(j.incident_ref ?? '') === String(c.row.ref_code ?? ''),
@@ -855,14 +990,29 @@ function IncidentViewButton({
 
   const openModal = () => {
     setRemarks(String(c.row.remarks ?? ''));
+    setSiteAction(String(c.row.site_action ?? ''));
+    setBillToCustomerId(String(c.row.bill_to_customer_id ?? ''));
     setUrgency(String(c.row.urgency ?? ''));
     setEstimatedCost(
       Number(c.row.estimated_cost ?? 0) > 0 ? String(c.row.estimated_cost) : '',
     );
     setOpen(true);
+    if (editable && hasSavedSitePlan) {
+      setCustomersLoading(true);
+      void api.get<{ data: BillingCustomerOption[] }>('/users/customers')
+        .then(({ data }) => {
+          setCustomers(data);
+          if (!c.row.bill_to_customer_id) {
+            const complainant = data.find((customer) =>
+              customer.fullName.trim().toLowerCase() === String(c.row.reported_by ?? '').trim().toLowerCase(),
+            );
+            if (complainant) setBillToCustomerId(complainant.id);
+          }
+        })
+        .catch((cause) => notify(cause instanceof ApiError ? cause.message : 'Could not load customer accounts.', 'error'))
+        .finally(() => setCustomersLoading(false));
+    }
   };
-
-  const { notify } = useToast();
 
   const save = async () => {
     setSaving(true);
@@ -870,11 +1020,28 @@ function IncidentViewButton({
       const patch: Record<string, unknown> = {};
 
       if (editable) {
-        patch.remarks = remarks.trim();
-        // Zone specialist: advancing from under_verification to in_progress.
-        // Urgency is set separately by Commercial Department — no check needed here.
-        if (c.row.status === 'under_verification') {
-          patch.status = 'in_progress';
+        if (!hasSavedSitePlan) {
+          if (!siteAction.trim()) {
+            notify('Enter the Site Visit Plan first.', 'error');
+            setSaving(false);
+            return;
+          }
+          // First step: persist and permanently lock the site plan. Remarks,
+          // billing owner and status are handled only after this save.
+          patch.site_action = siteAction.trim();
+        } else {
+          if (!billToCustomerId) {
+            notify('Select the customer account that should receive the bill.', 'error');
+            setSaving(false);
+            return;
+          }
+          patch.remarks = remarks.trim();
+          patch.bill_to_customer_id = billToCustomerId;
+          // Zone specialist: a newly saved non-empty remark advances status.
+          const remarksChanged = remarks.trim() !== String(c.row.remarks ?? '').trim();
+          if (c.row.status === 'under_verification' && remarks.trim() && remarksChanged) {
+            patch.status = 'in_progress';
+          }
         }
       } else if (urgencyEditable) {
         if (!URGENCY.includes(urgency)) {
@@ -921,7 +1088,7 @@ function IncidentViewButton({
           wide
           onClose={() => setOpen(false)}
           onSubmit={hasEdits ? save : undefined}
-          submitText={estimateEditable ? 'Submit Estimate' : 'Save Changes'}
+          submitText={estimateEditable ? 'Submit Estimate' : editable && !hasSavedSitePlan ? 'Save Site Visit Plan' : 'Save Changes'}
           submitting={saving}
         >
           <IncidentDetail row={c.row} hideRemarks={editable} />
@@ -970,14 +1137,41 @@ function IncidentViewButton({
             </div>
           )}
           {editable && (
-            <div className="form-group" style={{ marginTop: 18, marginBottom: 0 }}>
-              <label>Zone Specialist Remarks</label>
-              <textarea
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-                placeholder="Findings, recommended action, parts likely needed…"
-              />
-            </div>
+            <>
+              <div className="form-group" style={{ marginTop: 18, marginBottom: 0 }}>
+                <label>Site Visit Plan</label>
+                {hasSavedSitePlan ? (
+                  <div className="locked-site-plan">{siteAction}</div>
+                ) : (
+                  <textarea
+                    value={siteAction}
+                    onChange={(e) => setSiteAction(e.target.value)}
+                    placeholder="Planned work during the site visit…"
+                  />
+                )}
+              </div>
+              {hasSavedSitePlan && (
+                <>
+                  <div className="form-group bill-to-reveal" style={{ marginTop: 18, marginBottom: 0 }}>
+                    <label>Zone Specialist Remarks</label>
+                    <textarea
+                      value={remarks}
+                      onChange={(e) => setRemarks(e.target.value)}
+                      placeholder="Assessment and findings…"
+                    />
+                  </div>
+                  <div className="form-group bill-to-reveal" style={{ marginTop: 18, marginBottom: 0 }}>
+                    <label>Bill To</label>
+                    <BillToCustomerSelect
+                      customers={customers}
+                      value={billToCustomerId}
+                      loading={customersLoading}
+                      onChange={setBillToCustomerId}
+                    />
+                  </div>
+                </>
+              )}
+            </>
           )}
           {/* Technical Team: estimation input — only visible when in_progress */}
           {estimateEditable && (
@@ -1079,9 +1273,13 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
   ];
 
   const actions = canWrite
-    ? (c: RowActionCtx) => (
-        <>
-          {manage && !c.archived && (
+    ? (c: RowActionCtx) => {
+        const customerIsReporter =
+          role !== 'customer' ||
+          String(c.row.reported_by_id ?? '') === user!.id ||
+          (!c.row.reported_by_id && String(c.row.reported_by ?? '').trim().toLowerCase() === user!.fullName.trim().toLowerCase());
+        return <>
+          {manage && !c.archived && !['zone-specialist', 'technical-team'].includes(role) && (
             <StatusSelect value={String(c.row.status)} options={INCIDENT_STATUS} disabled={c.busy} onChange={(s) => c.update({ status: s })} />
           )}
           <div className="btn-row">
@@ -1096,11 +1294,11 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
                 canIssueBill={role === 'commercial-department'}
               />
             )}
-            <EditBtn c={c} />
-            <ArchiveBtn c={c} />
+            {customerIsReporter && <EditBtn c={c} />}
+            {customerIsReporter && <ArchiveBtn c={c} />}
           </div>
         </>
-      )
+      }
     : undefined;
 
   return (
@@ -1113,8 +1311,17 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
       fields={fields}
       canWrite={canWrite}
       filter={filter}
-      rowFilter={role === 'zone-specialist' ? (r) => r.urgency != null && String(r.urgency).trim() !== '' : undefined}
-      mineField={mine ? 'reported_by' : undefined}
+      rowFilter={
+        role === 'zone-specialist'
+          ? (r) => r.urgency != null && String(r.urgency).trim() !== ''
+          : role === 'customer' && mine
+            ? (r) =>
+                String(r.reported_by_id ?? '') === user!.id ||
+                String(r.reported_by ?? '').trim().toLowerCase() === user!.fullName.trim().toLowerCase() ||
+                String(r.bill_to_customer_id ?? '') === user!.id
+            : undefined
+      }
+      mineField={mine && role !== 'customer' ? 'reported_by' : undefined}
       mineValue={mine ? user!.fullName : undefined}
       actions={actions}
       metrics={
@@ -1177,12 +1384,20 @@ function JobOrderDetail({ row }: { row: EntityRow }) {
             <DetailRow label="Type">{titleCase(incident.type)}</DetailRow>
             <DetailRow label="Urgency">{titleCase(incident.urgency)}</DetailRow>
             <DetailRow label="Location">{String(incident.location ?? '')}</DetailRow>
-            <DetailRow label="Requested By">{String(incident.reported_by ?? '')}</DetailRow>
+            <DetailRow label="Complainant">{String(incident.reported_by ?? '')}</DetailRow>
+            <DetailRow label="Billing Owner">
+              {String(incident.bill_to_customer_name ?? incident.reported_by ?? '')}
+              {incident.bill_to_serial_number ? ` (${String(incident.bill_to_serial_number)})` : ''}
+            </DetailRow>
           </dl>
           <div className="complaint-narratives">
             <section className="complaint-note-card">
               <span>Description</span>
               <p>{String(incident.description ?? '') || '—'}</p>
+            </section>
+            <section className="complaint-note-card is-site-action">
+              <span>Site Visit Action / Work Plan</span>
+              <p>{String(incident.site_action ?? '') || 'No site action added yet.'}</p>
             </section>
             <section className="complaint-note-card is-remarks">
               <span>Zone Specialist Remarks</span>
@@ -4299,7 +4514,13 @@ function PaymentProfileCard({ profile, onDeleted }: { profile: EntityRow; onDele
   );
 }
 
-interface BillingUser { fullName: string; email: string; role: string }
+interface BillingUser {
+  id: string;
+  fullName: string;
+  email: string;
+  role: string;
+  serialNumber?: string | null;
+}
 interface BillableWork {
   key: string;
   label: string;
@@ -4355,7 +4576,8 @@ function BillingControls({
           const alreadyBilled = bills.some((b) => String(b.incident_ref ?? '') === String(i.ref_code));
           return {
             key: `inc:${i.id}`,
-            label: `[Incident] ${i.ref_code} — ${String(i.description ?? '').slice(0, 60)} (${i.reported_by})${alreadyBilled ? ' ✓ Billed' : ''}`,
+            label: `[Incident] ${i.ref_code} — ${String(i.description ?? '').slice(0, 45)} ` +
+              `(Complainant: ${i.reported_by}; Bill to: ${i.bill_to_customer_name ?? i.reported_by})${alreadyBilled ? ' ✓ Billed' : ''}`,
             incident: i,
             alreadyBilled,
           };
@@ -4399,10 +4621,11 @@ function BillingControls({
   // Derive customer name from whichever work type is selected.
   const customerName = selectedWork?.request
     ? String(selectedWork.request.requested_by ?? '')
-    : String(selectedWork?.incident?.reported_by ?? '');
+    : String(selectedWork?.incident?.bill_to_customer_name ?? selectedWork?.incident?.reported_by ?? '');
 
-  const customer = users.find(
-    (u) => u.fullName.trim().toLowerCase() === customerName.trim().toLowerCase(),
+  const customer = users.find((u) =>
+    (!selectedWork?.request && String(u.id) === String(selectedWork?.incident?.bill_to_customer_id ?? '')) ||
+    u.fullName.trim().toLowerCase() === customerName.trim().toLowerCase(),
   );
 
   const selectedRequest = selectedWork?.request ?? null;
@@ -4465,8 +4688,10 @@ function BillingControls({
 
       const isReq = Boolean(selectedRequest);
       await resourceService.create('payments', {
+        customer_id: customer.id,
         customer_name: customerName,
         customer_email: customer.email,
+        customer_serial_number: customer.serialNumber ?? '',
         incident_ref: isReq ? '' : String(selectedWork.incident?.ref_code ?? ''),
         job_order_ref: '',
         service_description: description,
@@ -4543,9 +4768,12 @@ function BillingControls({
 
         {selectedWork && (
           <div className="billing-customer-preview">
-            <span>Customer</span>
+            <span>{selectedWork.request ? 'Customer' : 'Billing Owner'}</span>
             <strong>{customerName || 'Unknown customer'}</strong>
-            <small>{customer?.email ?? 'No matching registered email'}</small>
+            <small>
+              {customer?.email ?? 'No matching registered email'}
+              {customer?.serialNumber ? ` · ${customer.serialNumber}` : ''}
+            </small>
           </div>
         )}
 

@@ -8,7 +8,7 @@ import { useStats, type DashboardStats } from '../../controllers/StatsContext';
 import type { BadgeTone, Metric, ResourceTable, StatusTone, TableCell } from '../../models/types';
 import { MetricsGrid } from '../components/MetricsGrid';
 import { DataTable } from '../components/DataTable';
-import { DonutPanel } from '../components/charts';
+import { DonutPanel, type LegendItem } from '../components/charts';
 import { InfoCardGrid, PanelHead, StatList } from '../components/panels';
 import { JobOrderCalendar } from '../components/JobOrderCalendar';
 import type { EntityRow } from '../../services/resourceService';
@@ -21,17 +21,39 @@ const tone = (v: unknown): StatusTone => {
   return GREEN.has(k) ? 'paid' : RED.has(k) ? 'overdue' : 'pending';
 };
 const title = (v: unknown) => String(v ?? '').replace(/[_-]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+const STATUS_WORD: Record<string, string> = {
+  under_verification: 'Pending',
+  in_progress: 'Ongoing',
+  for_estimation: 'Estimating',
+  for_billing: 'Billing',
+  for_verification: 'Verifying',
+  in_stock: 'Available',
+  low_stock: 'Low',
+  out_of_stock: 'Empty',
+  needs_replacement: 'Replace',
+};
+const statusWord = (value: unknown): string => STATUS_WORD[String(value ?? '').toLowerCase()] ?? title(value);
 const n = (rows: EntityRow[], p: (r: EntityRow) => boolean) => rows.filter(p).length;
 const money = (v: number) => '₱ ' + v.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const metric = (id: string, label: string, value: string | number, icon: string, accent: Metric['accent'], hint?: string): Metric => ({
   id, label, value: String(value), icon, accent, hint,
 });
-const sCell = (v: unknown): TableCell => ({ text: title(v), status: tone(v) });
+const sCell = (v: unknown): TableCell => ({ text: statusWord(v), status: tone(v) });
 const bCell = (text: string, t: BadgeTone): TableCell => ({ text, badge: t });
 
 function recent(columns: string[], rows: TableCell[][]): ResourceTable {
   return { id: 'recent', columns, rows: rows.map((cells, i) => ({ id: String(i), cells })) };
 }
+
+const incidentLegend = (rows: EntityRow[]): LegendItem[] => [
+  { label: 'Pending', value: String(n(rows, (i) => i.status === 'under_verification')), dot: 'dark' },
+  { label: 'Ongoing', value: String(n(rows, (i) => i.status === 'in_progress')), dot: 'blue' },
+  { label: 'Estimating', value: String(n(rows, (i) => i.status === 'for_estimation')), dot: 'cyan' },
+  { label: 'Billing', value: String(n(rows, (i) => i.status === 'for_billing')), dot: 'amber' },
+  { label: 'Resolved', value: String(n(rows, (i) => i.status === 'resolved')), dot: 'green' },
+  { label: 'Declined', value: String(n(rows, (i) => i.status === 'declined')), dot: 'red' },
+  { label: 'Cancelled', value: String(n(rows, (i) => i.status === 'cancelled')), dot: 'pale' },
+];
 
 /* Shared calendar wrapper — no double .panel nesting */
 function CalendarSection() {
@@ -59,7 +81,7 @@ export function DashboardOverview() {
 
   switch (user!.role) {
     case 'customer':
-      return <CustomerOverview stats={stats} fullName={user!.fullName} serialNumber={user!.serialNumber ?? null} />;
+      return <CustomerOverview stats={stats} customerId={user!.id} fullName={user!.fullName} serialNumber={user!.serialNumber ?? null} />;
     case 'general-manager':
       return <ManagerOverview stats={stats} />;
     case 'inventory-officer':
@@ -79,8 +101,12 @@ export function DashboardOverview() {
 }
 
 /* ----------------------------------------------------------------- Customer */
-function CustomerOverview({ stats, fullName, serialNumber }: { stats: DashboardStats; fullName: string; serialNumber: string | null }) {
-  const mine = stats.incidents.filter((i) => String(i.reported_by).toLowerCase() === fullName.toLowerCase());
+function CustomerOverview({ stats, customerId, fullName, serialNumber }: { stats: DashboardStats; customerId: string; fullName: string; serialNumber: string | null }) {
+  const mine = stats.incidents.filter((i) =>
+    String(i.reported_by_id ?? '') === customerId ||
+    String(i.reported_by ?? '').toLowerCase() === fullName.toLowerCase() ||
+    String(i.bill_to_customer_id ?? '') === customerId,
+  );
   const published = stats.advisories.filter((a) => a.status === 'published');
   return (
     <>
@@ -104,11 +130,7 @@ function CustomerOverview({ stats, fullName, serialNumber }: { stats: DashboardS
           <DonutPanel
             value={String(mine.length)}
             label="Total"
-            legend={[
-              { label: 'Awaiting Verification', value: String(n(mine, (i) => i.status === 'under_verification')), dot: 'dark' },
-              { label: 'In Progress / For Estimation', value: String(n(mine, (i) => i.status === 'in_progress' || i.status === 'for_estimation')), dot: 'blue' },
-              { label: 'Resolved', value: String(n(mine, (i) => i.status === 'resolved')), dot: 'pale' },
-            ]}
+            legend={incidentLegend(mine)}
           />
         </article>
         <article className="panel">
@@ -158,11 +180,7 @@ function ManagerOverview({ stats }: { stats: DashboardStats }) {
           <DonutPanel
             value={String(stats.incidents.length)}
             label="Incidents"
-            legend={[
-              { label: 'Pending Verification', value: String(pendingIncidents.length), dot: 'dark' },
-              { label: 'Ongoing', value: String(ongoingIncidents.length), dot: 'blue' },
-              { label: 'Resolved', value: String(n(stats.incidents, (i) => i.status === 'resolved')), dot: 'pale' },
-            ]}
+            legend={incidentLegend(stats.incidents)}
           />
         </article>
         <StatList
@@ -224,8 +242,8 @@ function InventoryOverview({ stats }: { stats: DashboardStats }) {
             value={String(stats.materials.length)}
             label="Items"
             legend={[
-              { label: 'In Stock', value: String(n(stats.materials, (m) => m.status === 'in_stock')), dot: 'dark' },
-              { label: 'Low Stock', value: String(n(stats.materials, (m) => m.status === 'low_stock')), dot: 'blue' },
+              { label: 'Available', value: String(n(stats.materials, (m) => m.status === 'in_stock')), dot: 'dark' },
+              { label: 'Low', value: String(n(stats.materials, (m) => m.status === 'low_stock')), dot: 'blue' },
               { label: 'Defective', value: String(n(stats.materials, (m) => m.status === 'defective')), dot: 'pale' },
             ]}
           />
@@ -264,7 +282,7 @@ function TechnicalOverview({ stats }: { stats: DashboardStats }) {
       <MetricsGrid
         metrics={[
           metric('t1', 'Total Job Orders', stats.jobOrders.length, 'clipboard-list', 'customers'),
-          metric('t2', 'In Progress', n(stats.jobOrders, (j) => j.status === 'in_progress'), 'wrench', 'revenue'),
+          metric('t2', 'Ongoing', n(stats.jobOrders, (j) => j.status === 'in_progress'), 'wrench', 'revenue'),
           metric('t3', 'Pending', n(stats.jobOrders, (j) => j.status === 'pending'), 'clock', 'profit'),
           metric('t4', 'Completed', n(stats.jobOrders, (j) => j.status === 'completed'), 'check-circle', 'invoices'),
         ]}
@@ -277,7 +295,7 @@ function TechnicalOverview({ stats }: { stats: DashboardStats }) {
             label="Job Orders"
             legend={[
               { label: 'Pending', value: String(n(stats.jobOrders, (j) => j.status === 'pending')), dot: 'dark' },
-              { label: 'In Progress', value: String(n(stats.jobOrders, (j) => j.status === 'in_progress')), dot: 'blue' },
+              { label: 'Ongoing', value: String(n(stats.jobOrders, (j) => j.status === 'in_progress')), dot: 'blue' },
               { label: 'Completed', value: String(n(stats.jobOrders, (j) => j.status === 'completed')), dot: 'pale' },
             ]}
           />
@@ -374,8 +392,8 @@ function CommercialOverview({ stats }: { stats: DashboardStats }) {
     <>
       <MetricsGrid
         metrics={[
-          metric('cd1', 'Pending Verification', pendingVerification.length, 'clock', 'customers'),
-          metric('cd2', 'In Progress', inProgress.length, 'wrench', 'revenue'),
+          metric('cd1', 'Pending', pendingVerification.length, 'clock', 'customers'),
+          metric('cd2', 'Ongoing', inProgress.length, 'wrench', 'revenue'),
           metric('cd3', 'High Urgency', n(open, (i) => i.urgency === 'high'), 'alert-triangle', 'profit'),
           metric('cd4', 'Pending Payments', n(stats.payments, (p) => p.status === 'unpaid' || p.status === 'overdue' || p.status === 'for_verification'), 'credit-card', 'invoices'),
         ]}
@@ -386,18 +404,14 @@ function CommercialOverview({ stats }: { stats: DashboardStats }) {
           <DonutPanel
             value={String(stats.incidents.length)}
             label="Incidents"
-            legend={[
-              { label: 'Pending Verification', value: String(pendingVerification.length), dot: 'dark' },
-              { label: 'In Progress / For Estimation', value: String(n(open, (i) => i.status === 'in_progress' || i.status === 'for_estimation')), dot: 'blue' },
-              { label: 'Resolved', value: String(n(stats.incidents, (i) => i.status === 'resolved')), dot: 'pale' },
-            ]}
+            legend={incidentLegend(stats.incidents)}
           />
         </article>
         <StatList
           title="Job Orders Snapshot"
           items={[
             { icon: 'clock', color: '#f59e0b', label: 'Pending Job Orders', value: String(pendingJobs.length) },
-            { icon: 'wrench', color: 'var(--blue)', label: 'In Progress', value: String(n(stats.jobOrders, (j) => j.status === 'in_progress')) },
+            { icon: 'wrench', color: 'var(--blue)', label: 'Ongoing', value: String(n(stats.jobOrders, (j) => j.status === 'in_progress')) },
             { icon: 'check-circle', color: '#16a34a', label: 'Completed', value: String(n(stats.jobOrders, (j) => j.status === 'completed')) },
             { icon: 'alert-triangle', color: 'var(--pink)', label: 'High Urgency Incidents', value: String(n(open, (i) => i.urgency === 'high')) },
           ]}
@@ -451,7 +465,7 @@ function FieldTeamOverview({ stats }: { stats: DashboardStats }) {
       <MetricsGrid
         metrics={[
           metric('ft1', 'Total Job Orders', stats.jobOrders.length, 'clipboard-list', 'customers'),
-          metric('ft2', 'In Progress', n(stats.jobOrders, (j) => j.status === 'in_progress'), 'wrench', 'revenue'),
+          metric('ft2', 'Ongoing', n(stats.jobOrders, (j) => j.status === 'in_progress'), 'wrench', 'revenue'),
           metric('ft3', 'Pending', n(stats.jobOrders, (j) => j.status === 'pending'), 'clock', 'profit'),
           metric('ft4', 'Completed', n(stats.jobOrders, (j) => j.status === 'completed'), 'check-circle', 'invoices'),
         ]}
@@ -464,7 +478,7 @@ function FieldTeamOverview({ stats }: { stats: DashboardStats }) {
             label="Job Orders"
             legend={[
               { label: 'Pending', value: String(n(stats.jobOrders, (j) => j.status === 'pending')), dot: 'dark' },
-              { label: 'In Progress', value: String(n(stats.jobOrders, (j) => j.status === 'in_progress')), dot: 'blue' },
+              { label: 'Ongoing', value: String(n(stats.jobOrders, (j) => j.status === 'in_progress')), dot: 'blue' },
               { label: 'Completed', value: String(n(stats.jobOrders, (j) => j.status === 'completed')), dot: 'pale' },
             ]}
           />

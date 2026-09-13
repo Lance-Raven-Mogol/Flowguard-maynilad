@@ -210,6 +210,15 @@ end $$;
 alter table public.incidents         add column if not exists archived boolean not null default false;
 -- Zone-specialist remarks forwarded to the technical team + customer photo evidence.
 alter table public.incidents         add column if not exists remarks text;
+-- Separate on-site plan and the customer account designated to own/pay the bill.
+alter table public.incidents         add column if not exists site_action text;
+alter table public.incidents         add column if not exists site_action_updated_at timestamptz;
+alter table public.incidents         add column if not exists reported_by_id uuid;
+alter table public.incidents         add column if not exists bill_to_customer_id uuid;
+alter table public.incidents         add column if not exists bill_to_customer_name text;
+alter table public.incidents         add column if not exists bill_to_serial_number text;
+create index if not exists incidents_reported_by_id_idx on public.incidents (reported_by_id);
+create index if not exists incidents_bill_to_customer_id_idx on public.incidents (bill_to_customer_id);
 alter table public.incidents         add column if not exists images  jsonb not null default '[]'::jsonb;
 -- Estimated cost added by the Technical Team (triggers for_estimation status).
 alter table public.incidents         add column if not exists estimated_cost numeric(12,2);
@@ -330,6 +339,9 @@ create table if not exists public.payments (
   created_at      timestamptz not null default now()
 );
 alter table public.payments add column if not exists archived boolean not null default false;
+alter table public.payments add column if not exists customer_id uuid;
+alter table public.payments add column if not exists customer_serial_number text;
+create index if not exists payments_customer_id_idx on public.payments (customer_id);
 alter table public.payments add column if not exists incident_ref text;
 alter table public.payments add column if not exists job_order_ref text;
 alter table public.payments add column if not exists service_description text;

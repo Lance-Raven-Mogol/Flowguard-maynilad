@@ -304,9 +304,20 @@ export const resourceService = {
       throw forbidden('Only customers and the Commercial Department can view inquiries.');
     }
     let rows = await repo.listRows(def.table, { archived });
+    if (entity === 'incidents' && user.role === 'customer') {
+      const ownName = user.fullName.trim().toLowerCase();
+      rows = rows.filter((row) =>
+        String(row.reported_by_id ?? '') === user.id ||
+        String(row.reported_by ?? '').trim().toLowerCase() === ownName ||
+        String(row.bill_to_customer_id ?? '') === user.id,
+      );
+    }
     if (entity === 'payments' && user.role === 'customer') {
       const email = user.email.trim().toLowerCase();
-      rows = rows.filter((row) => String(row.customer_email ?? '').trim().toLowerCase() === email);
+      rows = rows.filter((row) =>
+        String(row.customer_id ?? '') === user.id ||
+        (!row.customer_id && String(row.customer_email ?? '').trim().toLowerCase() === email),
+      );
     }
     if (entity === 'support-messages' && user.role === 'customer') {
       rows = rows.filter((row) => String(row.customer_id ?? '') === user.id);
@@ -314,7 +325,11 @@ export const resourceService = {
     if (entity === 'job-orders' && user.role === 'customer') {
       const ownIncidentRefs = new Set(
         (await repo.listRows('incidents', {}))
-          .filter((incident) => String(incident.reported_by ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase())
+          .filter((incident) =>
+            String(incident.reported_by_id ?? '') === user.id ||
+            String(incident.reported_by ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase() ||
+            String(incident.bill_to_customer_id ?? '') === user.id,
+          )
           .map((incident) => String(incident.ref_code ?? '')),
       );
       rows = rows.filter((row) => ownIncidentRefs.has(String(row.incident_ref ?? '')));
@@ -374,6 +389,7 @@ export const resourceService = {
     // and keeps it linked through display-name changes).
     if (entity === 'incidents' && user.role === 'customer') {
       values.reported_by = user.fullName;
+      values.reported_by_id = user.id;
     }
 
     // Urgency is assessed exclusively by the Commercial Department. Never trust
@@ -471,7 +487,7 @@ export const resourceService = {
     }
 
     if (entity === 'payments') {
-      const incidentRef = String(values.incident_ref ?? '').trim();
+      let incidentRef = String(values.incident_ref ?? '').trim();
       const jobOrderRef = String(values.job_order_ref ?? '').trim();
 
       if (jobOrderRef) {
@@ -485,8 +501,27 @@ export const resourceService = {
         const incident = (await repo.findRowsBy('incidents', 'ref_code', linkedIncidentRef))[0];
         if (!incident) throw badRequest(`The Job Order's linked incident "${linkedIncidentRef}" was not found.`);
         values.incident_ref = linkedIncidentRef;
+        incidentRef = linkedIncidentRef;
         const existingBills = await repo.findRowsBy('payments', 'job_order_ref', jobOrderRef);
         if (existingBills.length > 0) throw conflict('A bill has already been issued for this Job Order.');
+      }
+      // Incident bills always belong to the customer selected by the Zone
+      // Specialist. The commercial client cannot accidentally bill the
+      // complainant when the property/account owner is someone else.
+      if (incidentRef) {
+        const incident = (await repo.findRowsBy('incidents', 'ref_code', incidentRef))[0];
+        if (!incident) throw badRequest(`Incident "${incidentRef}" was not found.`);
+        const billToId = String(incident.bill_to_customer_id ?? '').trim();
+        if (billToId) {
+          const owner = await repo.getRowById('app_users', billToId);
+          if (!owner || owner.role !== 'customer' || owner.is_archived) {
+            throw badRequest('The billing owner selected for this incident is no longer an active customer.');
+          }
+          values.customer_id = owner.id;
+          values.customer_name = owner.full_name;
+          values.customer_email = owner.email;
+          values.customer_serial_number = owner.serial_number ?? incident.bill_to_serial_number ?? '';
+        }
       }
       // Item-request-backed or manual bills (no job_order_ref) skip the above chain.
 
@@ -545,6 +580,14 @@ export const resourceService = {
     }
 
     const values = sanitize(def, body);
+    if (entity === 'incidents' && user.role === 'customer') {
+      const incident = await repo.getRowById(def.table, id);
+      const isReporter = incident && (
+        String(incident.reported_by_id ?? '') === user.id ||
+        (!incident.reported_by_id && String(incident.reported_by ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase())
+      );
+      if (!isReporter) throw forbidden('Only the complainant can edit this complaint.');
+    }
     if (isTeamMaterialReturn) {
       const jobOrderRef = String(body.return_job_order_ref).trim();
       const returnQty = Number(body.return_quantity);
@@ -561,7 +604,11 @@ export const resourceService = {
     }
     if (isCustomerPayment) {
       const current = await repo.getRowById(def.table, id);
-      if (!current || String(current.customer_email ?? '').trim().toLowerCase() !== user.email.trim().toLowerCase()) {
+      const ownsBill = current && (
+        String(current.customer_id ?? '') === user.id ||
+        (!current.customer_id && String(current.customer_email ?? '').trim().toLowerCase() === user.email.trim().toLowerCase())
+      );
+      if (!ownsBill) {
         throw notFound('Bill not found.');
       }
       if (!['pending', 'unpaid', 'overdue', 'rejected'].includes(String(current.status))) {
@@ -630,6 +677,45 @@ export const resourceService = {
         }
       }
     }
+
+    if (entity === 'incidents' && 'bill_to_customer_id' in values) {
+      if (user.role !== 'zone-specialist' && user.role !== 'general-manager') {
+        throw forbidden('Only the Zone Specialist can select the billing owner.');
+      }
+      if (user.role === 'zone-specialist') {
+        const currentIncident = await repo.getRowById(def.table, id);
+        if (!currentIncident || !String(currentIncident.site_action ?? '').trim()) {
+          throw badRequest('Save the Site Visit Plan before selecting the billing owner.');
+        }
+      }
+      const ownerId = String(values.bill_to_customer_id ?? '').trim();
+      if (!ownerId) throw badRequest('Select the customer account that should receive the bill.');
+      const owner = await repo.getRowById('app_users', ownerId);
+      if (!owner || owner.role !== 'customer' || owner.is_archived) {
+        throw badRequest('Select an active customer account as the billing owner.');
+      }
+      values.bill_to_customer_id = owner.id;
+      values.bill_to_customer_name = owner.full_name;
+      values.bill_to_serial_number = owner.serial_number ?? '';
+    }
+    if (
+      entity === 'incidents' &&
+      ('remarks' in values || 'site_action' in values) &&
+      user.role !== 'zone-specialist' &&
+      user.role !== 'general-manager'
+    ) {
+      throw forbidden('Only the Zone Specialist can update the assessment and site visit plan.');
+    }
+    if (entity === 'incidents' && 'site_action' in values) {
+      const currentIncident = await repo.getRowById(def.table, id);
+      if (!currentIncident) throw notFound('Record not found.');
+      const previousPlan = String(currentIncident.site_action ?? '').trim();
+      const nextPlan = String(values.site_action ?? '').trim();
+      if (previousPlan && nextPlan !== previousPlan) {
+        throw conflict('The Site Visit Plan is locked after it has been saved.');
+      }
+      if (nextPlan !== previousPlan) values.site_action_updated_at = new Date().toISOString();
+    }
     if (def.touch) values[def.touch] = new Date().toISOString();
     if (Object.keys(values).length === 0) throw badRequest('No valid fields to update.');
 
@@ -668,6 +754,17 @@ export const resourceService = {
           // Zone specialist: only allowed to move under_verification → in_progress.
           if (!(from === 'under_verification' && to === 'in_progress')) {
             throw forbidden('Zone Specialists can only move complaints from Under Verification to In Progress.');
+          }
+          const remarks = String(values.remarks ?? currentIncident.remarks ?? '').trim();
+          if (!remarks) {
+            throw badRequest('Add Zone Specialist remarks before moving the complaint to In Progress.');
+          }
+          if (!String(currentIncident.site_action ?? '').trim()) {
+            throw badRequest('Save the Site Visit Plan before adding remarks.');
+          }
+          const billToId = String(values.bill_to_customer_id ?? currentIncident.bill_to_customer_id ?? '').trim();
+          if (!billToId) {
+            throw badRequest('Select the customer account that should receive the bill before moving the complaint to In Progress.');
           }
           // Urgency is set by Commercial Department, not Zone Specialist — no check needed here.
         } else if (user.role === 'technical-team') {
@@ -791,11 +888,19 @@ export const resourceService = {
     }
   },
 
-  async remove(entity: string, role: Role, id: string): Promise<void> {
+  async remove(entity: string, user: PublicUser, id: string): Promise<void> {
     const def = getDef(entity);
     if (entity === 'support-messages') throw forbidden('Inquiry messages cannot be deleted.');
-    if (!canWrite(def, role)) throw forbidden('You do not have permission to delete this record.');
+    if (!canWrite(def, user.role)) throw forbidden('You do not have permission to delete this record.');
+    if (entity === 'incidents' && user.role === 'customer') {
+      const incident = await repo.getRowById(def.table, id);
+      const isReporter = incident && (
+        String(incident.reported_by_id ?? '') === user.id ||
+        (!incident.reported_by_id && String(incident.reported_by ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase())
+      );
+      if (!isReporter) throw forbidden('Only the complainant can delete this complaint.');
+    }
     await repo.deleteRow(def.table, id);
-    await logAudit(entity, id, 'delete', undefined, role, {});
+    await logAudit(entity, id, 'delete', user.fullName, user.role, {});
   },
 };

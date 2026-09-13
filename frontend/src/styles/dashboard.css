@@ -660,7 +660,7 @@ input {
 /* --------------------------------------------------------------- Analytics */
 .analytics-grid {
   display: grid;
-  grid-template-columns: 0.92fr 1.55fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 22px;
   margin-bottom: 22px;
 }
@@ -792,6 +792,15 @@ input {
   gap: 16px;
 }
 
+.legend.legend-dense {
+  grid-template-columns: repeat(2, minmax(88px, 1fr));
+  gap: 12px 18px;
+}
+
+.legend.legend-dense div { gap: 4px; }
+.legend.legend-dense dt { font-size: 12px; font-weight: 600; }
+.legend.legend-dense dd { gap: 8px; font-size: 17px; }
+
 .legend div {
   display: grid;
   gap: 7px;
@@ -826,6 +835,11 @@ input {
 .dot.blue {
   background: var(--indigo);
 }
+
+.dot.cyan { background: #0ea5c6; }
+.dot.amber { background: #e0982f; }
+.dot.green { background: #16a37b; }
+.dot.red { background: #e25577; }
 
 .dot.pale {
   background: #cfe0ff;
@@ -2602,6 +2616,28 @@ td strong {
 }
 
 .complaint-note-card.is-remarks > span { color: var(--blue); }
+.complaint-note-card.is-site-action { background: #f6fbff; border-color: #cde5f7; }
+.complaint-note-card.is-site-action > span { color: #087ca7; }
+
+.bill-to-reveal {
+  animation: bill-to-reveal 180ms ease-out;
+}
+
+.locked-site-plan {
+  min-height: 74px;
+  padding: 12px 14px;
+  border: 1px solid #cde5f7;
+  border-radius: 12px;
+  color: var(--text);
+  background: #f6fbff;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+@keyframes bill-to-reveal {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 .job-order-section-title {
   margin-top: 26px;

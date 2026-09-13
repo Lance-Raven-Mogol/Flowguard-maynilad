@@ -200,8 +200,32 @@ const urgencyTone = (urgency: unknown): Alert['tone'] => {
 const incidentStatusLabel = (status: unknown): string =>
   String(status ?? '').replace(/_/g, ' ');
 
+const customerCanTrackIncident = (incident: EntityRow, customerId: string, fullName: string): boolean =>
+  String(incident.reported_by_id ?? '') === customerId ||
+  String(incident.reported_by ?? '').trim().toLowerCase() === fullName.trim().toLowerCase() ||
+  String(incident.bill_to_customer_id ?? '') === customerId ||
+  String(incident.bill_to_customer_name ?? '').trim().toLowerCase() === fullName.trim().toLowerCase();
+
+const planVersion = (incident: EntityRow): string => {
+  if (incident.site_action_updated_at) return String(incident.site_action_updated_at);
+  const text = String(incident.site_action ?? '');
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
+  return Math.abs(hash).toString(36);
+};
+
+const sitePlanBadgeId = (incident: EntityRow): string => `site-plan:${incident.id}:${planVersion(incident)}`;
+const billingBadgeId = (bill: EntityRow): string => `billing:${bill.id}:${String(bill.status ?? 'unpaid')}`;
+const paymentStatusLabel = (status: unknown): string =>
+  String(status ?? 'unpaid').replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+const paymentTone = (status: unknown): Alert['tone'] => {
+  if (['rejected', 'overdue', 'late'].includes(String(status))) return 'danger';
+  if (['unpaid', 'pending', 'for_verification'].includes(String(status))) return 'warn';
+  return 'info';
+};
+
 /** Role-aware notification feed derived from the live snapshot. */
-export function buildAlerts(stats: DashboardStats, role: string, fullName: string): Alert[] {
+export function buildAlerts(stats: DashboardStats, role: string, fullName: string, userId = ''): Alert[] {
   const alerts: Alert[] = [];
   const outOfStock = stats.materials.filter((m) => m.status === 'out_of_stock' || Number(m.quantity) === 0);
   const lowStock = stats.materials.filter((m) => m.status === 'low_stock');
@@ -213,6 +237,7 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
   const pendingPurchases = stats.materialRequests.filter((r) => r.request_type === 'purchase' && r.status === 'pending');
   const overduePayments = stats.payments.filter((p) => p.status === 'overdue' || p.status === 'late');
   const pendingSupplies = stats.materialRequests.filter((r) => r.request_type === 'general' && r.status === 'pending');
+  const incidentsWithSitePlan = stats.incidents.filter((i) => String(i.site_action ?? '').trim() !== '');
 
   // Which sidebar view each alert kind opens, per role.
   const incView = role === 'general-manager' ? 'incidents' : role === 'zone-specialist' ? 'investigations' : 'joborders';
@@ -220,7 +245,8 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
   const mrfView = role === 'general-manager' ? 'requests' : 'mrf';
 
   if (role === 'customer') {
-    const mine = stats.incidents.filter((i) => String(i.reported_by).toLowerCase() === fullName.toLowerCase() && isOpen(i));
+    const trackable = stats.incidents.filter((i) => customerCanTrackIncident(i, userId, fullName));
+    const mine = trackable.filter(isOpen);
     mine.forEach((i) =>
       alerts.push({
         key: `inc:${i.id}:${i.status}`,
@@ -231,6 +257,34 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
         tone: 'info',
       }),
     );
+    trackable
+      .filter((i) => String(i.site_action ?? '').trim() !== '')
+      .forEach((i) => alerts.push({
+        key: sitePlanBadgeId(i),
+        view: 'complaints',
+        icon: 'clipboard-list',
+        title: `Site visit plan added for ${i.ref_code}`,
+        detail: String(i.site_action).slice(0, 100),
+        tone: 'info',
+      }));
+    stats.payments.forEach((bill) => {
+      const status = String(bill.status ?? 'unpaid');
+      const title = status === 'unpaid' || status === 'pending'
+        ? `New bill ${bill.ref_code ?? ''}`
+        : status === 'for_verification'
+          ? `Payment for ${bill.ref_code ?? ''} is under verification`
+          : status === 'paid'
+            ? `Payment confirmed for ${bill.ref_code ?? ''}`
+            : `Bill ${bill.ref_code ?? ''} — ${paymentStatusLabel(status)}`;
+      alerts.push({
+        key: billingBadgeId(bill),
+        view: 'billing',
+        icon: 'credit-card',
+        title,
+        detail: `PHP ${Number(bill.amount ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} · ${String(bill.service_description ?? bill.incident_ref ?? '')}`.slice(0, 110),
+        tone: paymentTone(status),
+      });
+    });
     const mySupplies = stats.materialRequests.filter((r) => r.request_type === 'general' && String(r.requested_by ?? '').toLowerCase() === fullName.toLowerCase() && r.status !== 'released');
     mySupplies.forEach((s) =>
       alerts.push({ key: `supply:${s.id}:${s.status}`, view: 'requests', icon: 'package', title: `Request ${s.ref_code} is ${s.status}`, detail: String(s.material_name ?? ''), tone: s.status === 'rejected' ? 'danger' : 'info' }),
@@ -240,6 +294,29 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
       .slice(0, 3)
       .forEach((a) => alerts.push({ key: `adv:${a.id}`, view: 'advisories', icon: 'megaphone', title: String(a.title), detail: String(a.area ?? ''), tone: a.type === 'emergency' ? 'danger' : 'info' }));
     return alerts;
+  }
+
+  if (role === 'commercial-department') {
+    incidentsWithSitePlan.forEach((i) => alerts.push({
+      key: sitePlanBadgeId(i),
+      view: 'incidents',
+      icon: 'clipboard-list',
+      title: `Site visit plan added for ${i.ref_code}`,
+      detail: `${String(i.reported_by ?? 'Customer')} · ${String(i.site_action).slice(0, 80)}`,
+      tone: 'info',
+    }));
+    stats.payments
+      .filter((bill) => ['for_verification', 'overdue', 'late'].includes(String(bill.status ?? '')))
+      .forEach((bill) => alerts.push({
+        key: billingBadgeId(bill),
+        view: 'billing',
+        icon: 'credit-card',
+        title: String(bill.status) === 'for_verification'
+          ? `Payment awaiting verification — ${bill.ref_code ?? ''}`
+          : `Overdue bill — ${bill.ref_code ?? ''}`,
+        detail: `${String(bill.customer_name ?? 'Customer')} · PHP ${Number(bill.amount ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+        tone: paymentTone(bill.status),
+      }));
   }
 
   if (['inventory-officer', 'general-manager'].includes(role)) {
@@ -295,7 +372,7 @@ const ids = (rows: EntityRow[]) => rows.map((r) => String(r.id));
  * ids (not just counts) lets the notification layer mark a tab's items as seen
  * when it's opened, so the badge clears until genuinely new items arrive.
  */
-export function buildBadgeItems(stats: DashboardStats, role: string, fullName: string): Record<string, string[]> {
+export function buildBadgeItems(stats: DashboardStats, role: string, fullName: string, userId = ''): Record<string, string[]> {
   const open = ids(stats.incidents.filter(isOpen));
   const pendingMrf = ids(stats.materialRequests.filter((r) => r.status === 'pending'));
   const outOfStock = ids(stats.materials.filter((m) => m.status === 'out_of_stock' || Number(m.quantity) === 0));
@@ -305,6 +382,13 @@ export function buildBadgeItems(stats: DashboardStats, role: string, fullName: s
   const pendingPurchases = ids(stats.materialRequests.filter((r) => r.request_type === 'purchase' && r.status === 'pending'));
   const overduePayments = ids(stats.payments.filter((p) => p.status === 'overdue' || p.status === 'late'));
   const pendingSupplies = ids(stats.materialRequests.filter((r) => r.request_type === 'general' && r.status === 'pending'));
+  const sitePlanItems = stats.incidents
+    .filter((i) => String(i.site_action ?? '').trim() !== '')
+    .map(sitePlanBadgeId);
+  const billingItems = stats.payments.map(billingBadgeId);
+  const billingReviewItems = stats.payments
+    .filter((bill) => ['for_verification', 'overdue', 'late'].includes(String(bill.status ?? '')))
+    .map(billingBadgeId);
 
   const JOB_LEVEL_ROLES = new Set(['zone-specialist', 'technical-team', 'inventory-officer', 'contractor']);
   const unlevedUsers = stats.users
@@ -313,10 +397,17 @@ export function buildBadgeItems(stats: DashboardStats, role: string, fullName: s
 
   switch (role) {
     case 'customer':
+      {
+        const trackable = stats.incidents.filter((i) => customerCanTrackIncident(i, userId, fullName));
       return {
-        complaints: ids(stats.incidents.filter((i) => String(i.reported_by).toLowerCase() === fullName.toLowerCase() && isOpen(i))),
+        complaints: [
+          ...ids(trackable.filter(isOpen)),
+          ...trackable.filter((i) => String(i.site_action ?? '').trim() !== '').map(sitePlanBadgeId),
+        ],
+        billing: billingItems,
         requests: ids(stats.materialRequests.filter((r) => r.request_type === 'general' && String(r.requested_by ?? '').toLowerCase() === fullName.toLowerCase() && r.status !== 'released')),
       };
+      }
     case 'zone-specialist':
       return { investigations: open };
     case 'technical-team':
@@ -325,6 +416,8 @@ export function buildBadgeItems(stats: DashboardStats, role: string, fullName: s
       return { materials: [...outOfStock, ...lowStock], mrf: [...pendingMrf, ...pendingPurchases] };
     case 'general-manager':
       return { incidents: open, requests: [...pendingMrf, ...pendingSupplies, ...pendingPurchases], advisories: draftAdv, payments: overduePayments, inventory: [...outOfStock, ...lowStock], users: unlevedUsers };
+    case 'commercial-department':
+      return { incidents: sitePlanItems, billing: billingReviewItems };
     default:
       return {};
   }

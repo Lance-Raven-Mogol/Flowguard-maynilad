@@ -42,13 +42,18 @@ export const RESOURCES: Record<string, ResourceDef> = {
   incidents: {
     table: 'incidents',
     writeRoles: ['customer', 'zone-specialist', 'technical-team', 'commercial-department'],
-    allowed: ['type', 'description', 'location', 'urgency', 'status', 'reported_by', 'remarks', 'images', 'archived', 'estimated_cost'],
+    allowed: [
+      'type', 'description', 'location', 'urgency', 'status',
+      'reported_by', 'reported_by_id', 'remarks', 'site_action',
+      'bill_to_customer_id', 'bill_to_customer_name', 'bill_to_serial_number',
+      'images', 'archived', 'estimated_cost',
+    ],
     required: ['description'],
     numeric: ['estimated_cost'],
     nullable: ['estimated_cost'],
     // Zone-specialist remarks have no fallback column — they must be stored, or
     // the save is a lie. Fail loudly (prompt a migration) rather than silently.
-    critical: ['remarks', 'estimated_cost'],
+    critical: ['remarks', 'site_action', 'bill_to_customer_id', 'estimated_cost'],
     autoKeys: [{ column: 'ref_code', prefix: 'INC', digits: 4 }],
     touch: 'updated_at',
     // Valid incident statuses (informational — enforced in DB check constraint):
@@ -146,7 +151,8 @@ export const RESOURCES: Record<string, ResourceDef> = {
     table: 'payments',
     writeRoles: ['general-manager', 'inventory-officer', 'commercial-department'],
     allowed: [
-      'customer_name', 'customer_email', 'incident_ref', 'job_order_ref', 'service_description',
+      'customer_id', 'customer_name', 'customer_email', 'customer_serial_number',
+      'incident_ref', 'job_order_ref', 'service_description',
       'amount', 'due_date', 'paid_date', 'status', 'notes', 'archived',
       'payment_method', 'account_name', 'account_number', 'payment_qr',
       'amount_paid', 'payment_date', 'payment_reference', 'payment_proof', 'verification_notes',

@@ -26,7 +26,7 @@ export const resourceController = {
 
   async remove(req: Request, res: Response): Promise<void> {
     if (!req.user) throw unauthorized();
-    await resourceService.remove(req.params.entity, req.user.role, req.params.id);
+    await resourceService.remove(req.params.entity, req.user, req.params.id);
     res.status(204).end();
   },
 };

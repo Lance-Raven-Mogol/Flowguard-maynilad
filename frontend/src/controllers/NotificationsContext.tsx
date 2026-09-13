@@ -76,8 +76,8 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     setSeen(loadSeen(userId));
   }, [userId]);
 
-  const alerts = useMemo(() => buildAlerts(stats, role, fullName), [stats, role, fullName]);
-  const badgeItems = useMemo(() => buildBadgeItems(stats, role, fullName), [stats, role, fullName]);
+  const alerts = useMemo(() => buildAlerts(stats, role, fullName, userId), [stats, role, fullName, userId]);
+  const badgeItems = useMemo(() => buildBadgeItems(stats, role, fullName, userId), [stats, role, fullName, userId]);
 
   // Live set of alert keys — used for pruning stale entries.
   const liveAlertKeys = useMemo(() => new Set(alerts.map((a) => a.key)), [alerts]);

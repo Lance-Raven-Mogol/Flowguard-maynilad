@@ -14,6 +14,19 @@ function assertAdmin(req: Request): void {
 
 // Directory (User Management module).
 userRoutes.get(
+  '/customers',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const allowed = new Set(['general-manager', 'commercial-department', 'zone-specialist']);
+    if (!req.user || !allowed.has(req.user.role)) {
+      throw forbidden('You do not have permission to view the customer directory.');
+    }
+    const all = await userRepo.listPublic();
+    res.json({ data: all.filter((u) => u.role === 'customer' && !u.isArchived) });
+  }),
+);
+
+userRoutes.get(
   '/',
   requireAuth,
   asyncHandler(async (req, res) => {

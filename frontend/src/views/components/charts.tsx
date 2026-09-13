@@ -3,12 +3,16 @@
 export interface LegendItem {
   label: string;
   value: string;
-  dot: 'dark' | 'blue' | 'pale';
+  dot: 'dark' | 'blue' | 'cyan' | 'amber' | 'green' | 'red' | 'pale';
 }
 
 const DOT_COLOR: Record<LegendItem['dot'], string> = {
   dark: '#2f6bff',
   blue: '#5965f0',
+  cyan: '#0ea5c6',
+  amber: '#e0982f',
+  green: '#16a37b',
+  red: '#e25577',
   pale: '#c3d6f7',
 };
 
@@ -53,7 +57,7 @@ export function DonutPanel({ value, label, legend }: { value: string; label: str
           <small>{label}</small>
         </div>
       </div>
-      <dl className="legend">
+      <dl className={`legend${legend.length > 3 ? ' legend-dense' : ''}`}>
         {legend.map((l) => (
           <div key={l.label}>
             <dt>{l.label}</dt>
