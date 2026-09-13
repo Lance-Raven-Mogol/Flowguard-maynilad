@@ -79,6 +79,9 @@ create table if not exists public.job_orders (
   assigned_to    text,
   estimated_cost numeric(12,2) default 0,
   scheduled_date date,
+  schedule_period text check (schedule_period in ('AM','PM')),
+  scheduled_start_time time,
+  scheduled_end_time time,
   status         text not null default 'pending'
                  check (status in ('pending','in_progress','completed','cancelled')),
   created_at     timestamptz not null default now()
@@ -227,6 +230,35 @@ alter table public.job_orders        add column if not exists archived boolean n
 alter table public.job_orders        add column if not exists team_name    text;
 alter table public.job_orders        add column if not exists team_leader  text;
 alter table public.job_orders        add column if not exists team_members jsonb not null default '[]'::jsonb;
+alter table public.job_orders        add column if not exists schedule_period text;
+alter table public.job_orders        add column if not exists scheduled_start_time time;
+alter table public.job_orders        add column if not exists scheduled_end_time time;
+
+-- Technical Department roster calendar. Manual entries are maintained from
+-- the Team Schedule tab; job_order entries are rebuilt from JO assignments.
+create table if not exists public.team_schedules (
+  id              uuid primary key default gen_random_uuid(),
+  member_id       uuid not null,
+  member_name     text not null,
+  member_role     text not null check (member_role in ('inhouse-team','contractor')),
+  schedule_date   date not null,
+  schedule_period text not null check (schedule_period in ('AM','PM','NO_WORK')),
+  activity        text not null,
+  source          text not null default 'manual' check (source in ('manual','job_order')),
+  job_order_ref   text,
+  archived        boolean not null default false,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index if not exists team_schedules_date_idx on public.team_schedules (schedule_date);
+create index if not exists team_schedules_member_idx on public.team_schedules (member_id, schedule_date);
+create unique index if not exists team_schedules_job_member_idx
+  on public.team_schedules (job_order_ref, member_id)
+  where job_order_ref is not null;
+alter table public.team_schedules drop constraint if exists team_schedules_schedule_period_check;
+alter table public.team_schedules add constraint team_schedules_schedule_period_check
+  check (schedule_period in ('AM','PM','NO_WORK'));
+
 alter table public.materials         add column if not exists archived boolean not null default false;
 alter table public.materials         add column if not exists weight_kg numeric(10,2) default 0;
 alter table public.materials         add column if not exists size text;
@@ -409,6 +441,7 @@ create index if not exists support_messages_customer_idx
 alter table public.app_users            enable row level security;
 alter table public.incidents            enable row level security;
 alter table public.job_orders           enable row level security;
+alter table public.team_schedules       enable row level security;
 alter table public.materials            enable row level security;
 alter table public.material_requests    enable row level security;
 alter table public.assets               enable row level security;

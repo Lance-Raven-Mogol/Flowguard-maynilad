@@ -71,12 +71,27 @@ export const RESOURCES: Record<string, ResourceDef> = {
     allowed: [
       'incident_ref', 'title', 'scope', 'team', 'assigned_to',
       'team_name', 'team_leader', 'team_members',
-      'estimated_cost', 'scheduled_date', 'status', 'archived',
+      'estimated_cost', 'scheduled_date', 'schedule_period',
+      'scheduled_start_time', 'scheduled_end_time', 'status', 'archived',
     ],
     required: ['title'],
     numeric: ['estimated_cost'],
-    nullable: ['scheduled_date'],
+    nullable: ['scheduled_date', 'scheduled_start_time', 'scheduled_end_time'],
+    critical: ['schedule_period', 'scheduled_start_time', 'scheduled_end_time'],
     autoKeys: [{ column: 'ref_code', prefix: 'JO-2026', digits: 3 }],
+  },
+
+  'team-schedules': {
+    table: 'team_schedules',
+    writeRoles: ['technical-team'],
+    allowed: [
+      'member_id', 'member_name', 'member_role', 'schedule_date',
+      'schedule_period', 'activity', 'source', 'job_order_ref', 'archived',
+    ],
+    required: ['member_id', 'schedule_date', 'schedule_period', 'activity'],
+    nullable: ['job_order_ref'],
+    critical: ['member_id', 'schedule_date', 'schedule_period', 'activity'],
+    touch: 'updated_at',
   },
 
   materials: {

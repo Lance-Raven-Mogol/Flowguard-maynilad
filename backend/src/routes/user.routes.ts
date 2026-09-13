@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { userRepo } from '../models/userRepo.js';
+import * as resourceRepo from '../models/resourceRepo.js';
 import { authService } from '../services/auth.service.js';
 import { forbidden, badRequest } from '../utils/httpError.js';
 import type { Request } from 'express';
@@ -49,7 +50,63 @@ userRoutes.get(
   asyncHandler(async (req, res) => {
     const all = await userRepo.listPublic();
     const teamRoles = new Set(['technical-team', 'contractor', 'inhouse-team']);
-    res.json({ data: all.filter((u) => teamRoles.has(u.role) && !u.isArchived) });
+    const assignedJobs = (await resourceRepo.listRows('job_orders', {})).filter(
+      (job) => ['in_progress', 'completed'].includes(String(job.status)) && job.scheduled_date,
+    );
+    const weeklyRosterRows = (await resourceRepo.listRows('team_schedules', {})).filter(
+      (schedule) => String(schedule.activity ?? '').startsWith('WEEKLY_ROSTER:'),
+    );
+    const data = all.filter((u) => teamRoles.has(u.role) && !u.isArchived).map((user) => {
+      const normalizedName = user.fullName.trim().toLowerCase();
+      const userJobs = assignedJobs.filter((job) => {
+        const members = Array.isArray(job.team_members)
+          ? job.team_members.map((member) => String(member).trim().toLowerCase())
+          : [];
+        const assignedNames = String(job.assigned_to ?? '').split(',').map((name) => name.trim().toLowerCase());
+        return members.includes(normalizedName) || assignedNames.includes(normalizedName);
+      });
+      const today = new Date().toISOString().slice(0, 10);
+      const activeJob = userJobs.find((job) => String(job.scheduled_date).slice(0, 10) === today && job.status === 'in_progress');
+      const weeklyRoster = weeklyRosterRows
+        .filter((schedule) => String(schedule.member_id) === user.id)
+        .map((schedule) => {
+          const sentinelDates = ['1970-01-05', '1970-01-06', '1970-01-07', '1970-01-08', '1970-01-09', '1970-01-10', '1970-01-11'];
+          const weekday = sentinelDates.indexOf(String(schedule.schedule_date).slice(0, 10)) + 1;
+          try {
+            const settings = JSON.parse(String(schedule.activity).slice('WEEKLY_ROSTER:'.length)) as Record<string, unknown>;
+            const legacyNoWork = Boolean(settings.noWork);
+            return {
+              weekday,
+              amNoWork: settings.amNoWork === undefined ? legacyNoWork : Boolean(settings.amNoWork),
+              pmNoWork: settings.pmNoWork === undefined ? legacyNoWork : Boolean(settings.pmNoWork),
+              amStart: String(settings.amStart ?? '08:00').slice(0, 5),
+              amEnd: String(settings.amEnd ?? '12:00').slice(0, 5),
+              pmStart: String(settings.pmStart ?? '13:00').slice(0, 5),
+              pmEnd: String(settings.pmEnd ?? '17:00').slice(0, 5),
+            };
+          } catch {
+            return null;
+          }
+        })
+        .filter((entry) => entry && entry.weekday > 0);
+      return {
+        ...user,
+        availability: activeJob ? 'busy' : 'available',
+        activeJobOrderRef: activeJob ? String(activeJob.ref_code ?? '') : null,
+        activeJobOrderTitle: activeJob ? String(activeJob.title ?? '') : null,
+        jobAssignments: userJobs.map((job) => ({
+          ref: String(job.ref_code ?? ''),
+          title: String(job.title ?? ''),
+          date: String(job.scheduled_date).slice(0, 10),
+          period: String(job.schedule_period ?? 'AM'),
+          startTime: String(job.scheduled_start_time ?? '').slice(0, 5),
+          endTime: String(job.scheduled_end_time ?? '').slice(0, 5),
+          status: String(job.status ?? ''),
+        })),
+        weeklyRoster,
+      };
+    });
+    res.json({ data });
   }),
 );
 

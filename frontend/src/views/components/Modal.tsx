@@ -10,6 +10,8 @@ interface ModalProps {
   submitting?: boolean;
   /** Wider card for detail / view modals. */
   wide?: boolean;
+  /** Optional scoped class for a module-specific modal layout. */
+  className?: string;
   /** Label for the dismiss button (defaults to "Cancel", or "Close" when there's no submit action). */
   closeText?: string;
   children: React.ReactNode;
@@ -26,7 +28,7 @@ function unlockScroll() {
   if (lockCount === 0) document.body.style.overflow = '';
 }
 
-export function Modal({ title, open, onClose, onSubmit, submitText = 'Submit', submitting, wide, closeText, children }: ModalProps) {
+export function Modal({ title, open, onClose, onSubmit, submitText = 'Submit', submitting, wide, className, closeText, children }: ModalProps) {
   // Only dismiss on a backdrop click that BOTH starts and ends on the overlay.
   // This prevents the modal from closing when you select text inside a field
   // and release the mouse outside the card (which would discard your input).
@@ -56,7 +58,7 @@ export function Modal({ title, open, onClose, onSubmit, submitText = 'Submit', s
         pressedOnBackdrop.current = false;
       }}
     >
-      <div className={`modal-card${wide ? ' is-wide' : ''}`}>
+      <div className={`modal-card${wide ? ' is-wide' : ''}${className ? ` ${className}` : ''}`}>
         <div className="modal-header">
           <h3>{title}</h3>
           <button className="modal-close" onClick={onClose} aria-label="Close">

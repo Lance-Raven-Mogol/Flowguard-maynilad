@@ -46,6 +46,13 @@ export async function deleteRow(table: string, id: string): Promise<void> {
   if (error) throw error as DbError;
 }
 
+/** Delete every row where `column` equals `value`. Used when rebuilding derived rows. */
+export async function deleteRowsBy(table: string, column: string, value: unknown): Promise<void> {
+  const sb = requireSupabase();
+  const { error } = await sb.from(table).delete().eq(column, value);
+  if (error) throw error as DbError;
+}
+
 /** Fetch a single row by id, or null when it doesn't exist. */
 export async function getRowById(table: string, id: string): Promise<Row | null> {
   const sb = requireSupabase();

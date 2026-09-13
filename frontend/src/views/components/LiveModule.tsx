@@ -24,7 +24,7 @@ import { Modal } from './Modal';
 export interface ModuleField {
   name: string;
   label: string;
-  kind?: 'text' | 'textarea' | 'number' | 'date' | 'select' | 'images';
+  kind?: 'text' | 'textarea' | 'number' | 'date' | 'time' | 'select' | 'images';
   options?: string[];
   optionList?: { value: string; label: string }[];
   placeholder?: string;
@@ -581,7 +581,7 @@ export function LiveModule({
                 />
               ) : (
                 <input
-                  type={f.kind === 'number' ? 'number' : f.kind === 'date' ? 'date' : 'text'}
+                  type={f.kind === 'number' ? 'number' : f.kind === 'date' ? 'date' : f.kind === 'time' ? 'time' : 'text'}
                   placeholder={f.placeholder}
                   readOnly={f.readOnly}
                   min={f.kind === 'date' && !f.allowPast ? todayISO() : undefined}

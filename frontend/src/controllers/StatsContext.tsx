@@ -69,6 +69,11 @@ const POLL_INTERVAL = 3_000;
 export function StatsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const canFetchUsers = user?.role === 'general-manager';
+  const canFetchPayments = ['general-manager', 'commercial-department', 'customer'].includes(user?.role ?? '');
+  const accessibleEntities = useMemo(
+    () => ENTITIES.filter(([key]) => key !== 'payments' || canFetchPayments),
+    [canFetchPayments],
+  );
   const [stats, setStats] = useState<DashboardStats>(EMPTY);
   const [loading, setLoading] = useState(true);
 
@@ -94,11 +99,11 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       const [results, users] = await Promise.all([
-        Promise.all(ENTITIES.map(([, slug]) => resourceService.list(slug).catch(() => [] as EntityRow[]))),
+        Promise.all(accessibleEntities.map(([, slug]) => resourceService.list(slug).catch(() => [] as EntityRow[]))),
         fetchUsers(),
       ]);
       const next = { ...EMPTY };
-      ENTITIES.forEach(([key], i) => {
+      accessibleEntities.forEach(([key], i) => {
         next[key] = results[i];
       });
       next.users = users;
@@ -106,17 +111,17 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [fetchUsers]);
+  }, [accessibleEntities, fetchUsers]);
 
   /** Silent background fetch — no loading flash, just updates the data. */
   const silentReload = useCallback(async () => {
     try {
       const [results, users] = await Promise.all([
-        Promise.all(ENTITIES.map(([, slug]) => resourceService.list(slug).catch(() => [] as EntityRow[]))),
+        Promise.all(accessibleEntities.map(([, slug]) => resourceService.list(slug).catch(() => [] as EntityRow[]))),
         fetchUsers(),
       ]);
       const next = { ...EMPTY };
-      ENTITIES.forEach(([key], i) => {
+      accessibleEntities.forEach(([key], i) => {
         next[key] = results[i];
       });
       next.users = users;
@@ -124,7 +129,7 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     } catch {
       /* network blip — keep the last good snapshot */
     }
-  }, [fetchUsers]);
+  }, [accessibleEntities, fetchUsers]);
 
   // Initial load.
   useEffect(() => {

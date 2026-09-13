@@ -9,6 +9,7 @@ import type { Role } from '../models/types';
 import { FaqAccordion, PanelHead } from '../views/components/panels';
 import { DashboardOverview } from '../views/dashboard/DashboardOverview';
 import { AccountSettings } from '../views/dashboard/AccountSettings';
+import { TeamScheduleModule } from '../views/technical/TeamScheduleModule';
 import {
   AdvisoriesModule,
   AssetsModule,
@@ -220,6 +221,10 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       {
         id: 'joborders', label: 'Job Orders', icon: 'clipboard-list', group: 'main',
         render: ({ filter }) => <JobOrdersModule filter={filter} title="Job Orders" />,
+      },
+      {
+        id: 'team-schedule', label: 'Team Schedule', icon: 'calendar-days', group: 'main',
+        render: ({ filter }) => <TeamScheduleModule filter={filter} />,
       },
       {
         id: 'materials', label: 'Requests', icon: 'hammer', group: 'main',

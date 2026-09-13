@@ -303,6 +303,9 @@ export const resourceService = {
     if (entity === 'support-messages' && !['customer', 'commercial-department'].includes(user.role)) {
       throw forbidden('Only customers and the Commercial Department can view inquiries.');
     }
+    if (entity === 'team-schedules' && !['technical-team', 'general-manager'].includes(user.role)) {
+      throw forbidden('Only the Technical Department can view the team schedule.');
+    }
     let rows = await repo.listRows(def.table, { archived });
     if (entity === 'incidents' && user.role === 'customer') {
       const ownName = user.fullName.trim().toLowerCase();
@@ -447,6 +450,28 @@ export const resourceService = {
     if (entity === 'materials') {
       values.status = materialStockStatus(values.quantity, values.min_level, values.status);
     }
+    if (entity === 'team-schedules') {
+      const member = await repo.getRowById('app_users', String(values.member_id ?? ''));
+      if (!member || member.is_archived || !['inhouse-team', 'contractor'].includes(String(member.role))) {
+        throw badRequest('Select an active in-house or contractor account.');
+      }
+      if (!['AM', 'PM', 'NO_WORK'].includes(String(values.schedule_period ?? ''))) {
+        throw badRequest('Select AM, PM, or No Work for the schedule.');
+      }
+      values.member_name = member.full_name;
+      values.member_role = member.role;
+      values.source = 'manual';
+      values.job_order_ref = null;
+      const sameDay = (await repo.findRowsBy('team_schedules', 'member_id', member.id)).filter(
+        (schedule) => !schedule.archived && String(schedule.schedule_date) === String(values.schedule_date),
+      );
+      if (values.schedule_period === 'NO_WORK' && sameDay.some((schedule) => schedule.source === 'job_order')) {
+        throw conflict('This team member already has a Job Order on that date and cannot be marked No Work.');
+      }
+      if (values.schedule_period !== 'NO_WORK' && sameDay.some((schedule) => schedule.schedule_period === 'NO_WORK')) {
+        throw conflict('Remove the existing No Work schedule before adding a work shift.');
+      }
+    }
     if (entity === 'job-orders') {
       if (user.role === 'technical-team' || user.role === 'contractor' || user.role === 'inhouse-team') {
         throw forbidden('Only the Commercial Department can create a job order.');
@@ -467,7 +492,7 @@ export const resourceService = {
       // Creation is intentionally unassigned. The Technical Team completes these
       // fields in the dedicated assignment step and starts the work order.
       values.status = 'pending';
-      for (const field of ['team', 'team_name', 'team_leader', 'team_members', 'assigned_to', 'scheduled_date', 'estimated_cost']) {
+      for (const field of ['team', 'team_name', 'team_leader', 'team_members', 'assigned_to', 'scheduled_date', 'schedule_period', 'scheduled_start_time', 'scheduled_end_time', 'estimated_cost']) {
         delete values[field];
       }
     }
@@ -656,7 +681,7 @@ export const resourceService = {
         if (currentStatus !== 'pending') {
           throw forbidden('The Technical Team can assign only pending job orders.');
         }
-        const allowed = new Set(['team', 'team_name', 'team_leader', 'team_members', 'assigned_to', 'scheduled_date', 'status']);
+        const allowed = new Set(['team', 'team_name', 'team_leader', 'team_members', 'assigned_to', 'scheduled_date', 'schedule_period', 'scheduled_start_time', 'scheduled_end_time', 'status']);
         for (const key of Object.keys(values)) if (!allowed.has(key)) delete values[key];
         if (!['in-house', 'contractor'].includes(String(values.team ?? ''))) {
           throw badRequest('Select whether the assigned team is in-house or a contractor.');
@@ -665,6 +690,66 @@ export const resourceService = {
         if (!String(values.team_leader ?? '').trim()) throw badRequest('Team leader is required.');
         if (!Array.isArray(values.team_members) || values.team_members.length === 0) {
           throw badRequest('The team leader must be included in the assigned members.');
+        }
+        const scheduledDate = String(values.scheduled_date ?? '').trim();
+        if (!scheduledDate) throw badRequest('Scheduled date is required.');
+        if (!['AM', 'PM'].includes(String(values.schedule_period ?? ''))) {
+          throw badRequest('Select an AM or PM schedule.');
+        }
+        const startTime = String(values.scheduled_start_time ?? '').trim();
+        const endTime = String(values.scheduled_end_time ?? '').trim();
+        if (!startTime || !endTime) throw badRequest('Job Order start and end times are required.');
+        if (startTime >= endTime) throw badRequest('Job Order start time must be earlier than its end time.');
+        const dateJobs = (await repo.listRows('job_orders', {})).filter(
+          (job) => job.id !== id &&
+            ['in_progress', 'completed'].includes(String(job.status)) &&
+            String(job.scheduled_date).slice(0, 10) === scheduledDate,
+        );
+        const scheduledDay = (() => {
+          const day = new Date(`${scheduledDate}T00:00:00Z`).getUTCDay();
+          return day === 0 ? 7 : day;
+        })();
+        const rosterDate = `1970-01-${String(scheduledDay + 4).padStart(2, '0')}`;
+        const weeklyRosterRows = (await repo.listRows('team_schedules', {})).filter(
+          (schedule) =>
+            String(schedule.schedule_date).slice(0, 10) === rosterDate &&
+            String(schedule.activity ?? '').startsWith('WEEKLY_ROSTER:'),
+        );
+        for (const memberName of values.team_members.map(String)) {
+          const normalizedName = memberName.trim().toLowerCase();
+          const conflictingJob = dateJobs.find((job) => {
+            const members = Array.isArray(job.team_members)
+              ? job.team_members.map((member) => String(member).trim().toLowerCase())
+              : [];
+            const assignedNames = String(job.assigned_to ?? '').split(',').map((name) => name.trim().toLowerCase());
+            return members.includes(normalizedName) || assignedNames.includes(normalizedName);
+          });
+          if (conflictingJob) {
+            throw conflict(`${memberName} is already assigned to ${String(conflictingJob.ref_code ?? 'another Job Order')} on ${scheduledDate}.`);
+          }
+          const rosterRow = weeklyRosterRows.find(
+            (schedule) => String(schedule.member_name ?? '').trim().toLowerCase() === normalizedName,
+          );
+          if (rosterRow) {
+            try {
+              const roster = JSON.parse(String(rosterRow.activity).slice('WEEKLY_ROSTER:'.length)) as Record<string, unknown>;
+              const legacyNoWork = Boolean(roster.noWork);
+              const isAM = values.schedule_period === 'AM';
+              const noWorkValue = isAM ? roster.amNoWork : roster.pmNoWork;
+              const noWork = noWorkValue === undefined ? legacyNoWork : Boolean(noWorkValue);
+              if (noWork) {
+                throw conflict(`${memberName} is marked No Work for ${String(values.schedule_period)} on this weekday.`);
+              }
+              const rosterStart = String(isAM ? roster.amStart ?? '08:00' : roster.pmStart ?? '13:00').slice(0, 5);
+              const rosterEnd = String(isAM ? roster.amEnd ?? '12:00' : roster.pmEnd ?? '17:00').slice(0, 5);
+              if (startTime < rosterStart || endTime > rosterEnd) {
+                throw conflict(`${memberName} is only available from ${rosterStart} to ${rosterEnd} for this shift.`);
+              }
+            } catch (error) {
+              if (error instanceof Error && error.name === 'HttpError') throw error;
+              console.warn(`[resource] ignored an invalid weekly roster entry for ${memberName}.`);
+            }
+          }
         }
         values.status = 'in_progress';
       } else if (user.role === 'contractor' || user.role === 'inhouse-team') {
@@ -678,6 +763,35 @@ export const resourceService = {
       }
     }
 
+    if (entity === 'team-schedules') {
+      const currentSchedule = await repo.getRowById(def.table, id);
+      if (!currentSchedule) throw notFound('Schedule not found.');
+      if (currentSchedule.source === 'job_order') {
+        throw forbidden('Job Order schedules update automatically from their Job Order.');
+      }
+      const memberId = String(values.member_id ?? currentSchedule.member_id ?? '');
+      const member = await repo.getRowById('app_users', memberId);
+      if (!member || member.is_archived || !['inhouse-team', 'contractor'].includes(String(member.role))) {
+        throw badRequest('Select an active in-house or contractor account.');
+      }
+      const period = String(values.schedule_period ?? currentSchedule.schedule_period ?? '');
+      if (!['AM', 'PM', 'NO_WORK'].includes(period)) throw badRequest('Select AM, PM, or No Work for the schedule.');
+      values.member_id = member.id;
+      values.member_name = member.full_name;
+      values.member_role = member.role;
+      values.source = 'manual';
+      values.job_order_ref = null;
+      const scheduleDate = String(values.schedule_date ?? currentSchedule.schedule_date ?? '');
+      const sameDay = (await repo.findRowsBy('team_schedules', 'member_id', member.id)).filter(
+        (schedule) => schedule.id !== id && !schedule.archived && String(schedule.schedule_date) === scheduleDate,
+      );
+      if (period === 'NO_WORK' && sameDay.some((schedule) => schedule.source === 'job_order')) {
+        throw conflict('This team member already has a Job Order on that date and cannot be marked No Work.');
+      }
+      if (period !== 'NO_WORK' && sameDay.some((schedule) => schedule.schedule_period === 'NO_WORK')) {
+        throw conflict('Remove the existing No Work schedule before adding a work shift.');
+      }
+    }
     if (entity === 'incidents' && 'bill_to_customer_id' in values) {
       if (user.role !== 'zone-specialist' && user.role !== 'general-manager') {
         throw forbidden('Only the Zone Specialist can select the billing owner.');
@@ -855,9 +969,47 @@ export const resourceService = {
       }
     }
 
+    // Confirm the derived schedule table is available before assigning the JO,
+    // so a missing migration cannot leave the order assigned without a roster entry.
+    if (entity === 'job-orders' && values.status === 'in_progress') {
+      await repo.listRows('team_schedules', { archived: 'all' });
+    }
+
     try {
       const row = await writeResilient(values, (v) => repo.updateRow(def.table, id, v), def.critical);
       if (!row) throw notFound('Record not found.');
+      if (entity === 'job-orders' && row.status === 'in_progress' && row.scheduled_date) {
+        const jobRef = String(row.ref_code ?? '');
+        const names = Array.isArray(row.team_members) ? row.team_members.map(String) : [];
+        await repo.deleteRowsBy('team_schedules', 'job_order_ref', jobRef);
+        for (const name of names) {
+          const matches = await repo.findRowsBy('app_users', 'full_name', name);
+          const member = matches.find((candidate) =>
+            !candidate.is_archived && ['inhouse-team', 'contractor'].includes(String(candidate.role)),
+          );
+          if (!member) continue;
+          const memberSchedules = await repo.findRowsBy('team_schedules', 'member_id', member.id);
+          for (const schedule of memberSchedules) {
+            if (
+              schedule.source !== 'job_order' &&
+              schedule.schedule_period === 'NO_WORK' &&
+              String(schedule.schedule_date) === String(row.scheduled_date)
+            ) {
+              await repo.deleteRow('team_schedules', String(schedule.id));
+            }
+          }
+          await repo.insertRow('team_schedules', {
+            member_id: member.id,
+            member_name: member.full_name,
+            member_role: member.role,
+            schedule_date: row.scheduled_date,
+            schedule_period: ['AM', 'PM'].includes(String(row.schedule_period)) ? row.schedule_period : 'AM',
+            activity: `${jobRef}: ${String(row.title ?? 'Job Order')} (${String(row.scheduled_start_time ?? '').slice(0, 5)}–${String(row.scheduled_end_time ?? '').slice(0, 5)})`,
+            source: 'job_order',
+            job_order_ref: jobRef,
+          });
+        }
+      }
       const previousQuantity = Number(currentMaterial?.quantity ?? 0);
       const newQuantity = Number(row.quantity ?? previousQuantity);
       const quantityChange = newQuantity - previousQuantity;
@@ -892,6 +1044,13 @@ export const resourceService = {
     const def = getDef(entity);
     if (entity === 'support-messages') throw forbidden('Inquiry messages cannot be deleted.');
     if (!canWrite(def, user.role)) throw forbidden('You do not have permission to delete this record.');
+    if (entity === 'team-schedules') {
+      const schedule = await repo.getRowById(def.table, id);
+      if (!schedule) throw notFound('Schedule not found.');
+      if (schedule.source === 'job_order') {
+        throw forbidden('Job Order schedules can only be changed from their Job Order.');
+      }
+    }
     if (entity === 'incidents' && user.role === 'customer') {
       const incident = await repo.getRowById(def.table, id);
       const isReporter = incident && (

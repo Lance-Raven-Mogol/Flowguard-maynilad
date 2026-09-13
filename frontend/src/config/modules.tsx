@@ -51,6 +51,13 @@ const dateShort = (v: unknown): string => {
   const d = new Date(String(v));
   return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('en-GB');
 };
+const jobScheduleText = (row: EntityRow): string => {
+  if (!row.scheduled_date) return '—';
+  const period = String(row.schedule_period ?? 'AM');
+  const start = String(row.scheduled_start_time ?? '').slice(0, 5);
+  const end = String(row.scheduled_end_time ?? '').slice(0, 5);
+  return `${dateShort(row.scheduled_date)} · ${period}${start && end ? ` · ${start}–${end}` : ''}`;
+};
 const count = (rows: EntityRow[], pred: (r: EntityRow) => boolean) => String(rows.filter(pred).length);
 /** Today's date as YYYY-MM-DD — used as the min for scheduling date pickers. */
 const todayISO = (): string => new Date().toISOString().slice(0, 10);
@@ -160,6 +167,41 @@ interface UserLite {
   id: string;
   fullName: string;
   role: string;
+  availability?: 'available' | 'busy';
+  activeJobOrderRef?: string | null;
+  activeJobOrderTitle?: string | null;
+  jobAssignments?: Array<{
+    ref: string;
+    title: string;
+    date: string;
+    period: string;
+    startTime: string;
+    endTime: string;
+    status: string;
+  }>;
+  weeklyRoster?: Array<{
+    weekday: number;
+    amNoWork: boolean;
+    pmNoWork: boolean;
+    amStart: string;
+    amEnd: string;
+    pmStart: string;
+    pmEnd: string;
+  }>;
+}
+
+function isAvailableForJob(member: UserLite, date: string, period: 'AM' | 'PM', start: string, end: string): boolean {
+  if (!date) return false;
+  if ((member.jobAssignments ?? []).some((assignment) => assignment.date === date)) return false;
+  const day = new Date(`${date}T00:00:00`).getDay();
+  const weekday = day === 0 ? 7 : day;
+  const roster = (member.weeklyRoster ?? []).find((entry) => entry.weekday === weekday);
+  if (!roster) return true;
+  if (period === 'AM' && roster.amNoWork) return false;
+  if (period === 'PM' && roster.pmNoWork) return false;
+  const rosterStart = period === 'AM' ? roster.amStart : roster.pmStart;
+  const rosterEnd = period === 'AM' ? roster.amEnd : roster.pmEnd;
+  return !start || !end || (start >= rosterStart && end <= rosterEnd);
 }
 
 /**
@@ -241,16 +283,27 @@ function LeaderSelect({
       </button>
       {open && (
         <ul className="ls-list" role="listbox">
+          {members.length === 0 && <li className="team-option-empty">No available team members for this date.</li>}
           {members.map((m) => (
             <li
               key={m.id}
               role="option"
               aria-selected={m.fullName === value}
-              className={`ls-option${m.fullName === value ? ' is-selected' : ''}`}
-              onMouseDown={(e) => { e.preventDefault(); onChange(m.fullName); setOpen(false); }}
+              aria-disabled={m.availability === 'busy'}
+              className={`ls-option${m.fullName === value ? ' is-selected' : ''}${m.availability === 'busy' ? ' is-disabled' : ''}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                if (m.availability === 'busy') return;
+                onChange(m.fullName);
+                setOpen(false);
+              }}
             >
               <span className="ls-avatar">{m.fullName[0].toUpperCase()}</span>
-              <span className="ls-name">{m.fullName}</span>
+              <span className="team-option-copy">
+                <span className="ls-name">{m.fullName}</span>
+                {m.availability === 'busy' && m.activeJobOrderRef && <small>{m.activeJobOrderRef}</small>}
+              </span>
+              <span className={`availability-pill ${m.availability === 'busy' ? 'is-busy' : ''}`}>{m.availability === 'busy' ? 'Busy' : 'Available'}</span>
               {m.fullName === value && (
                 <svg className="ls-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="20 6 9 17 4 12" />
@@ -292,8 +345,10 @@ function MembersMultiSelect({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const toggle = (name: string) =>
-    onChange(value.includes(name) ? value.filter((x) => x !== name) : [...value, name]);
+  const toggle = (member: UserLite) => {
+    if (member.availability === 'busy' && !value.includes(member.fullName)) return;
+    onChange(value.includes(member.fullName) ? value.filter((x) => x !== member.fullName) : [...value, member.fullName]);
+  };
 
   return (
     <div className="ms-wrap" ref={ref}>
@@ -321,17 +376,20 @@ function MembersMultiSelect({
       {open && (
         <div className="ms-dropdown" role="listbox" aria-multiselectable="true">
           <p className="ms-hint">Click to select/deselect — {value.length} selected</p>
+          {members.length === 0 && <p className="team-option-empty">No available team members for this date.</p>}
           {members.map((m) => {
             const selected = value.includes(m.fullName);
             const isLeader = leaderName && m.fullName === leaderName;
+            const busy = m.availability === 'busy';
             return (
               <button
                 key={m.id}
                 type="button"
                 role="option"
                 aria-selected={selected}
-                className={`ms-option${selected ? ' is-selected' : ''}`}
-                onMouseDown={(e) => { e.preventDefault(); toggle(m.fullName); }}
+                aria-disabled={busy && !selected}
+                className={`ms-option${selected ? ' is-selected' : ''}${busy && !selected ? ' is-disabled' : ''}`}
+                onMouseDown={(e) => { e.preventDefault(); toggle(m); }}
               >
                 <span className="ls-avatar">{m.fullName[0].toUpperCase()}</span>
                 <span className="ms-option-name">
@@ -339,7 +397,9 @@ function MembersMultiSelect({
                   {isLeader && (
                     <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--blue)', fontWeight: 600 }}>Leader</span>
                   )}
+                  {busy && <small className="team-option-job">{m.activeJobOrderRef ?? 'Ongoing Job Order'}</small>}
                 </span>
+                <span className={`availability-pill ${busy ? 'is-busy' : ''}`}>{busy ? 'Busy' : 'Available'}</span>
                 <span className={`ms-tick${selected ? ' is-selected' : ''}`}>
                   {selected ? (
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -466,8 +526,16 @@ function JobOrderAssignmentForm({
     Array.isArray(row.team_members) ? (row.team_members as string[]).map(String) : [],
   );
   const [scheduled, setScheduled] = useState(String(row.scheduled_date ?? ''));
+  const [schedulePeriod, setSchedulePeriod] = useState<'AM' | 'PM'>(String(row.schedule_period) === 'PM' ? 'PM' : 'AM');
+  const [startTime, setStartTime] = useState(String(row.scheduled_start_time ?? '08:00').slice(0, 5));
+  const [endTime, setEndTime] = useState(String(row.scheduled_end_time ?? '12:00').slice(0, 5));
   const [saving, setSaving] = useState(false);
   const memberPool = teamType === 'in-house' ? inhouseMembers : contractorMembers;
+  const availableMemberPool = scheduled
+    ? memberPool
+        .filter((member) => isAvailableForJob(member, scheduled, schedulePeriod, startTime, endTime))
+        .map((member) => ({ ...member, availability: 'available' as const }))
+    : [];
   const poolLabel = teamType === 'in-house' ? 'In-house Team' : 'Contractor';
 
   const changeType = (next: 'in-house' | 'contractor') => {
@@ -476,9 +544,48 @@ function JobOrderAssignmentForm({
     setPicked([]);
   };
 
+  const removeUnavailableSelections = (date: string, selectedPeriod: 'AM' | 'PM', start: string, end: string) => {
+    const stillAvailable = (name: string) => {
+      const member = memberPool.find((candidate) => candidate.fullName === name);
+      return Boolean(member && isAvailableForJob(member, date, selectedPeriod, start, end));
+    };
+    if (leader && !stillAvailable(leader)) setLeader('');
+    setPicked((current) => current.filter(stillAvailable));
+  };
+
+  const changeScheduledDate = (next: string) => {
+    setScheduled(next);
+    removeUnavailableSelections(next, schedulePeriod, startTime, endTime);
+  };
+
+  const changePeriod = (next: 'AM' | 'PM') => {
+    setSchedulePeriod(next);
+    if (next === 'AM') {
+      setStartTime('08:00');
+      setEndTime('12:00');
+      removeUnavailableSelections(scheduled, next, '08:00', '12:00');
+    } else {
+      setStartTime('13:00');
+      setEndTime('17:00');
+      removeUnavailableSelections(scheduled, next, '13:00', '17:00');
+    }
+  };
+
+  const changeStartTime = (next: string) => {
+    setStartTime(next);
+    removeUnavailableSelections(scheduled, schedulePeriod, next, endTime);
+  };
+
+  const changeEndTime = (next: string) => {
+    setEndTime(next);
+    removeUnavailableSelections(scheduled, schedulePeriod, startTime, next);
+  };
+
   const save = async () => {
     if (!teamName.trim()) return notify('Enter a team name.', 'error');
     if (!leader) return notify('Select a team leader.', 'error');
+    if (!scheduled) return notify('Select a scheduled date.', 'error');
+    if (!startTime || !endTime || startTime >= endTime) return notify('Enter a valid Job Order start and end time.', 'error');
     const membersList = [leader, ...picked.filter((name) => name !== leader)];
     setSaving(true);
     try {
@@ -489,6 +596,9 @@ function JobOrderAssignmentForm({
         team_members: membersList,
         assigned_to: membersList.join(', '),
         scheduled_date: scheduled,
+        schedule_period: schedulePeriod,
+        scheduled_start_time: startTime,
+        scheduled_end_time: endTime,
         status: 'in_progress',
       });
       notify('Team assigned. The job order is now ongoing.');
@@ -518,21 +628,40 @@ function JobOrderAssignmentForm({
         <label>Team Name</label>
         <input value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder="e.g. Alpha Crew" />
       </div>
+      <div className="job-schedule-fields">
+        <div className="form-group">
+          <label>Scheduled Date</label>
+          <input type="date" min={todayISO()} value={scheduled} onChange={(e) => changeScheduledDate(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label>Time Slot</label>
+          <select value={schedulePeriod} onChange={(e) => changePeriod(e.target.value as 'AM' | 'PM')}>
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Start Time</label>
+          <input type="time" value={startTime} onChange={(e) => changeStartTime(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label>End Time</label>
+          <input type="time" value={endTime} onChange={(e) => changeEndTime(e.target.value)} />
+        </div>
+      </div>
+      {!scheduled && <p className="team-availability-hint">Select the Job Order date first to load available personnel.</p>}
+      {scheduled && availableMemberPool.length === 0 && <p className="team-availability-hint is-warning">No {poolLabel.toLowerCase()} members are available on this date.</p>}
       <div className="form-group">
         <label>Team Leader <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({poolLabel})</span></label>
         {loading ? <p>Loading accounts…</p> : error ? <p style={{ color: '#e25577' }}>{error}</p> : (
-          <LeaderSelect key={teamType} members={memberPool} value={leader} onChange={setLeader} placeholder={`Select a ${poolLabel.toLowerCase()} leader…`} />
+          <LeaderSelect key={`${teamType}-${scheduled}`} members={availableMemberPool} value={leader} onChange={setLeader} placeholder={scheduled ? `Select an available ${poolLabel.toLowerCase()} leader…` : 'Select a date first'} />
         )}
       </div>
       <div className="form-group">
         <label>Team Members <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({poolLabel} — optional)</span></label>
         {loading ? <p>Loading accounts…</p> : error ? <p style={{ color: '#e25577' }}>{error}</p> : (
-          <MembersMultiSelect key={teamType} members={memberPool} value={picked} onChange={setPicked} leaderName={leader} />
+          <MembersMultiSelect key={`${teamType}-${scheduled}`} members={availableMemberPool} value={picked} onChange={setPicked} leaderName={leader} />
         )}
-      </div>
-      <div className="form-group">
-        <label>Scheduled Date</label>
-        <input type="date" min={todayISO()} value={scheduled} onChange={(e) => setScheduled(e.target.value)} />
       </div>
     </Modal>
   );
@@ -1106,7 +1235,7 @@ function IncidentViewButton({
                     ? (linkedJobOrder.team_members as string[]).join(', ') || '—'
                     : String(linkedJobOrder.assigned_to ?? '—')}
                 </DetailRow>
-                <DetailRow label="Scheduled Date">{dateShort(linkedJobOrder.scheduled_date)}</DetailRow>
+                <DetailRow label="Scheduled Date">{jobScheduleText(linkedJobOrder)}</DetailRow>
               </dl>
               <div className="complaint-narratives job-order-narratives">
                 <section className="complaint-note-card is-job-scope">
@@ -1366,7 +1495,7 @@ function JobOrderDetail({ row }: { row: EntityRow }) {
         <DetailRow label="Team Members">
           {Array.isArray(row.team_members) ? (row.team_members as string[]).join(', ') : String(row.assigned_to ?? '')}
         </DetailRow>
-        <DetailRow label="Scheduled">{dateShort(row.scheduled_date)}</DetailRow>
+        <DetailRow label="Scheduled">{jobScheduleText(row)}</DetailRow>
         <DetailRow label="Linked Complaint">{String(row.incident_ref ?? '')}</DetailRow>
       </dl>
       <div className="complaint-narratives job-order-narratives">
@@ -1847,7 +1976,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
     { header: 'Title', cell: (r) => String(r.title ?? '') },
     { header: 'Team', cell: (r) => String(r.team_name || titleCase(r.team) || '—') },
     { header: 'Assigned To', cell: (r) => String(r.assigned_to ?? '—') },
-    { header: 'Schedule', cell: (r) => dateShort(r.scheduled_date) },
+    { header: 'Schedule', cell: (r) => jobScheduleText(r) },
     { header: 'Status', cell: (r) => ({ text: jobStatusLabel(r.status), status: statusTone(r.status) }) },
   ];
 
@@ -1858,6 +1987,9 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
     { name: 'team', label: 'Team', kind: 'select', optionList: [{ value: 'in-house', label: 'In-house Team' }, { value: 'contractor', label: 'Contractor' }] },
     { name: 'assigned_to', label: 'Assigned To', placeholder: 'Crew or contractor name' },
     { name: 'scheduled_date', label: 'Scheduled Date', kind: 'date' },
+    { name: 'schedule_period', label: 'Time Slot', kind: 'select', optionList: [{ value: 'AM', label: 'AM' }, { value: 'PM', label: 'PM' }] },
+    { name: 'scheduled_start_time', label: 'Start Time', kind: 'time' },
+    { name: 'scheduled_end_time', label: 'End Time', kind: 'time' },
     { name: 'status', label: 'Status', kind: 'select', optionList: JOB_STATUS },
   ];
 
