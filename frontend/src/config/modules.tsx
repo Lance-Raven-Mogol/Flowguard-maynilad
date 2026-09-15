@@ -1884,19 +1884,47 @@ function MaterialReturnModal({
   );
 }
 
+/** Status badge colour for a material request status. */
+function mrfStatusTone(status: unknown): string {
+  const s = String(status ?? '').toLowerCase();
+  if (s === 'released') return 'mrf-status--released';
+  if (s === 'approved') return 'mrf-status--approved';
+  if (s === 'rejected') return 'mrf-status--rejected';
+  return 'mrf-status--pending';
+}
+
 /**
- * "View" action for a job order. Shows the full detail and — for anyone who can
- * file material requests (technical team, inventory, GM) — a "Request Materials"
- * button that opens the shared MRF modal pre-linked to this job order.
+ * "View" action for a job order — clean read-only detail modal.
+ * No materials section here; that lives in JobOrderMaterialsButton.
  */
-function JobOrderViewButton({ row, onReload }: { row: EntityRow; onReload: () => Promise<void> }) {
+function JobOrderViewButton({ row }: { row: EntityRow }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className="btn-action" onClick={() => setOpen(true)}>
+        View
+      </button>
+      {open && (
+        <Modal title={`Job Order ${row.ref_code}`} open wide onClose={() => setOpen(false)} closeText="Close">
+          <JobOrderDetail row={row} />
+        </Modal>
+      )}
+    </>
+  );
+}
+
+/**
+ * Dedicated "Materials" action button — visible only to the team leader of a
+ * specific job order (and GM). Opens a focused modal that shows:
+ *   1. A live list of all material requests filed for this job order
+ *   2. A "Request Materials" button (active job orders only)
+ *   3. A "Log Leftovers" button (completed job orders only)
+ */
+function JobOrderMaterialsButton({ row, onReload }: { row: EntityRow; onReload: () => Promise<void> }) {
   const { user } = useAuth();
   const role = user!.role;
   const isGM = role === 'general-manager';
-  // A user is the team leader of this specific job order when their name matches.
   const isLeader = String(row.team_leader ?? '').toLowerCase() === user!.fullName.toLowerCase();
-  // For contractor/inhouse-team/technical-team: only the team leader of this job
-  // order may request materials. GM can always request.
   const canRequest = isGM
     ? WRITE['material-requests'].includes(role)
     : WRITE['material-requests'].includes(role) && isLeader;
@@ -1907,26 +1935,103 @@ function JobOrderViewButton({ row, onReload }: { row: EntityRow; onReload: () =>
   const [open, setOpen] = useState(false);
   const [reqOpen, setReqOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
+  const [mrfs, setMrfs] = useState<EntityRow[]>([]);
+  const [mrfsLoading, setMrfsLoading] = useState(false);
+
+  const loadMrfs = async () => {
+    setMrfsLoading(true);
+    try {
+      const all = await resourceService.list('material-requests');
+      const ref = String(row.ref_code ?? '').trim().toUpperCase();
+      setMrfs(all.filter((r) => String(r.job_order_ref ?? '').trim().toUpperCase() === ref));
+    } catch {
+      // non-fatal — list stays empty
+    } finally {
+      setMrfsLoading(false);
+    }
+  };
+
+  const openModal = () => {
+    setOpen(true);
+    void loadMrfs();
+  };
+
+  const afterRequest = async () => {
+    await onReload();
+    void loadMrfs();
+  };
+
   return (
     <>
-      <button className="btn-action" onClick={() => setOpen(true)}>
-        View
+      <button className="btn-action btn-materials" onClick={openModal}>
+        Materials
       </button>
       {open && (
-        <Modal title={`Job Order ${row.ref_code}`} open wide onClose={() => setOpen(false)} closeText="Close">
-          <JobOrderDetail row={row} />
+        <Modal
+          title={`Materials — ${row.ref_code}`}
+          open
+          wide
+          onClose={() => setOpen(false)}
+          closeText="Close"
+        >
+          {/* Job order identity strip */}
+          <div className="jo-mrf-modal-header">
+            <div className="jo-mrf-modal-title-block">
+              <span className="jo-mrf-modal-ref">{String(row.ref_code ?? '')}</span>
+              <span className="jo-mrf-modal-joname">{String(row.title ?? '')}</span>
+            </div>
+            <span className={`jo-mrf-modal-status status-pill--${String(row.status ?? '').replace(/_/g, '-')}`}>
+              {jobStatusLabel(row.status)}
+            </span>
+          </div>
+
+          {/* Materials list */}
+          <p className="detail-section-title" style={{ marginTop: 20 }}>Materials Requested</p>
+          {mrfsLoading ? (
+            <p className="jo-mrf-loading">Loading materials…</p>
+          ) : mrfs.length === 0 ? (
+            <p className="jo-mrf-empty">No material requests filed for this job order yet.</p>
+          ) : (
+            <div className="jo-mrf-list">
+              {mrfs.map((mrf) => {
+                const rt = String(mrf.request_type ?? 'mrf').toLowerCase();
+                const typeLabel = rt === 'general' ? 'General' : rt === 'purchase' ? 'Purchase' : 'MRF';
+                return (
+                  <div className="jo-mrf-row" key={String(mrf.id)}>
+                    <div className="jo-mrf-ref">
+                      <span className="jo-mrf-ref-code">{String(mrf.ref_code ?? '—')}</span>
+                      <span className="jo-mrf-type-badge">{typeLabel}</span>
+                    </div>
+                    <div className="jo-mrf-info">
+                      <span className="jo-mrf-name">{String(mrf.material_name ?? '—')}</span>
+                      {String(mrf.material_sku ?? '') && (
+                        <span className="jo-mrf-sku">{String(mrf.material_sku)}</span>
+                      )}
+                    </div>
+                    <div className="jo-mrf-qty">
+                      {String(mrf.quantity ?? '—')} {String(mrf.unit ?? '')}
+                    </div>
+                    <div className="jo-mrf-requester">
+                      {String(mrf.requested_by ?? '—')}
+                    </div>
+                    <span className={`jo-mrf-status ${mrfStatusTone(mrf.status)}`}>
+                      {titleCase(mrf.status)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Actions */}
           {canRequest && isActive && (
-            <div style={{ marginTop: 18 }}>
+            <div className="jo-mrf-actions">
               <ActionButton label="Request Materials" icon="hammer" onClick={() => setReqOpen(true)} />
             </div>
           )}
           {canReturn && (
             <div style={{ marginTop: 12 }}>
-              <ActionButton
-                label="Log Leftovers"
-                icon="package"
-                onClick={() => setReturnOpen(true)}
-              />
+              <ActionButton label="Log Leftovers" icon="package" onClick={() => setReturnOpen(true)} />
             </div>
           )}
         </Modal>
@@ -1935,7 +2040,7 @@ function JobOrderViewButton({ row, onReload }: { row: EntityRow; onReload: () =>
         <RequestForm
           lockedJobOrderRef={String(row.ref_code)}
           onClose={() => setReqOpen(false)}
-          onCreated={onReload}
+          onCreated={afterRequest}
         />
       )}
       {returnOpen && (
@@ -1953,6 +2058,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
   const { user } = useAuth();
   const role = user!.role;
   const canWrite = !readOnly && WRITE['job-orders'].includes(role);
+  const isGM = role === 'general-manager';
   const isTechTeam = role === 'technical-team';
   const isCommercial = role === 'commercial-department';
   const isContractor = role === 'contractor';
@@ -1993,14 +2099,19 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
     { name: 'status', label: 'Status', kind: 'select', optionList: JOB_STATUS },
   ];
 
-  // View button: full detail + "Request Materials" for all roles.
-  const viewAction = (c: RowActionCtx) => <JobOrderViewButton row={c.row} onReload={c.reload} />;
+  // View button: full detail for all roles.
+  const viewAction = (c: RowActionCtx) => <JobOrderViewButton row={c.row} />;
+  // Materials button: visible only to the team leader of a row (and GM).
+  const materialsAction = (c: RowActionCtx) => <JobOrderMaterialsButton row={c.row} onReload={c.reload} />;
+  const isLeaderOf = (c: RowActionCtx) =>
+    String(c.row.team_leader ?? '').toLowerCase() === me;
 
   /** Technical Team assigns pending work orders; assigned crew leaders own later status updates. */
   const techTeamActions = (c: RowActionCtx) => {
     return (
       <div className="btn-row">
         {viewAction(c)}
+        {isLeaderOf(c) && materialsAction(c)}
         {!c.archived && String(c.row.status) === 'pending' && <AssignJobOrderButton c={c} />}
       </div>
     );
@@ -2011,8 +2122,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
    * specific job order they can update the status; otherwise view only.
    */
   const contractorActions = (c: RowActionCtx) => {
-    const isLeaderOfRow =
-      String(c.row.team_leader ?? '').toLowerCase() === me;
+    const isLeaderOfRow = isLeaderOf(c);
     return (
       <>
         {!c.archived && isLeaderOfRow && (
@@ -2025,6 +2135,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
         )}
         <div className="btn-row">
           {viewAction(c)}
+          {isLeaderOfRow && materialsAction(c)}
         </div>
       </>
     );
@@ -2070,12 +2181,13 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
                 )}
                 <div className="btn-row">
                   {viewAction(c)}
+                  {isGM && materialsAction(c)}
                   {!isCommercial && <EditBtn c={c} />}
                   <ArchiveBtn c={c} />
                 </div>
               </>
             )
-          : viewAction
+          : (c) => viewAction(c)
       }
     />
   );
