@@ -8,7 +8,7 @@ import { autoMigrate } from './models/autoMigrate.js';
 // Keep-alive ping — prevents Render free-tier from spinning down after 15 min
 // of inactivity. Pings /api/health every 5 minutes while the server is up.
 // ---------------------------------------------------------------------------
-const PING_URL = 'https://flowguard-api-yl5r.onrender.com/api/health';
+const PING_URL = 'https://flowguard-maynilad-wcq6.onrender.com/api/health';
 const PING_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 function startKeepAlivePing(): void {
