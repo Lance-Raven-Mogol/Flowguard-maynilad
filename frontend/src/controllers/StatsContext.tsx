@@ -229,13 +229,26 @@ const paymentTone = (status: unknown): Alert['tone'] => {
   return 'info';
 };
 
+const isMrf = (r: EntityRow) => (String(r.request_type ?? '').trim() || 'mrf') === 'mrf';
+/** MRF workflow step names (Inventory verifies → GM approves → Inventory releases). */
+const MRF_STEP_LABEL: Record<string, string> = {
+  pending: 'For Stock Verification',
+  verified: 'Stock verified, for GM approval',
+  approved: 'Approved, for release',
+  released: 'Released',
+  rejected: 'Rejected',
+};
+
 /** Role-aware notification feed derived from the live snapshot. */
 export function buildAlerts(stats: DashboardStats, role: string, fullName: string, userId = ''): Alert[] {
   const alerts: Alert[] = [];
   const outOfStock = stats.materials.filter((m) => m.status === 'out_of_stock' || Number(m.quantity) === 0);
   const lowStock = stats.materials.filter((m) => m.status === 'low_stock');
   const defective = stats.materials.filter((m) => m.status === 'defective');
-  const pendingMrf = stats.materialRequests.filter((r) => r.status === 'pending');
+  const mrfs = stats.materialRequests.filter(isMrf);
+  const mrfsToVerify = mrfs.filter((r) => r.status === 'pending');
+  const mrfsToApprove = mrfs.filter((r) => r.status === 'verified');
+  const mrfsToRelease = mrfs.filter((r) => r.status === 'approved');
   const criticalAssets = stats.assets.filter((a) => Number(a.health_score) < 15 || a.condition === 'dispose' || a.condition === 'needs_replacement');
   const openIncidents = stats.incidents.filter(isOpen);
   const draftAdvisories = stats.advisories.filter((a) => a.status !== 'published' && a.status !== 'approved');
@@ -328,7 +341,12 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
     if (outOfStock.length) alerts.push({ key: aggKey('outofstock', outOfStock), view: matView, icon: 'package-x', title: `${outOfStock.length} material(s) out of stock`, detail: outOfStock.map((m) => m.name).slice(0, 3).join(', '), tone: 'danger' });
     if (lowStock.length) alerts.push({ key: aggKey('lowstock', lowStock), view: matView, icon: 'alert-triangle', title: `${lowStock.length} material(s) low on stock`, detail: lowStock.map((m) => m.name).slice(0, 3).join(', '), tone: 'warn' });
     if (defective.length) alerts.push({ key: aggKey('defective', defective), view: matView, icon: 'package-x', title: `${defective.length} defective item(s)`, detail: 'Flagged for disposal / review', tone: 'danger' });
-    if (pendingMrf.length) alerts.push({ key: aggKey('mrf', pendingMrf), view: mrfView, icon: 'file-input', title: `${pendingMrf.length} material request(s) pending`, detail: 'Awaiting approval / release', tone: 'warn' });
+    if (role === 'inventory-officer') {
+      if (mrfsToVerify.length) alerts.push({ key: aggKey('mrf-verify', mrfsToVerify), view: mrfView, icon: 'file-input', title: `${mrfsToVerify.length} MRF(s) need stock verification`, detail: 'Check stock, then send to the General Manager', tone: 'warn' });
+      if (mrfsToRelease.length) alerts.push({ key: aggKey('mrf-release', mrfsToRelease), view: mrfView, icon: 'package-check', title: `${mrfsToRelease.length} MRF(s) ready for release`, detail: 'Approved by the General Manager', tone: 'info' });
+    } else if (mrfsToApprove.length) {
+      alerts.push({ key: aggKey('mrf-approve', mrfsToApprove), view: mrfView, icon: 'file-input', title: `${mrfsToApprove.length} MRF(s) awaiting your approval`, detail: 'Stock verified by the Inventory Officer', tone: 'warn' });
+    }
     if (pendingPurchases.length) alerts.push({ key: aggKey('purchase', pendingPurchases), view: 'purchase', icon: 'shopping-cart', title: `${pendingPurchases.length} purchase request(s) pending`, detail: 'Awaiting approval', tone: 'warn' });
   }
 
@@ -367,6 +385,21 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
     if (overduePayments.length) alerts.push({ key: aggKey('overdue', overduePayments), view: 'payments', icon: 'credit-card', title: `${overduePayments.length} payment(s) overdue`, detail: 'Follow up required', tone: 'danger' });
     if (pendingSupplies.length) alerts.push({ key: aggKey('supplies', pendingSupplies), view: 'requests', icon: 'package', title: `${pendingSupplies.length} supply request(s) pending`, detail: 'Awaiting fulfillment', tone: 'warn' });
   }
+
+  // Requesters hear about each step of their own MRFs.
+  if (['technical-team', 'contractor', 'inhouse-team'].includes(role)) {
+    const requestsView = role === 'technical-team' ? 'materials' : 'requests';
+    mrfs
+      .filter((r) => r.status !== 'pending' && (String(r.requested_by_id ?? '') === userId || String(r.requested_by ?? '').toLowerCase() === fullName.toLowerCase()))
+      .forEach((r) => alerts.push({
+        key: `mrf:${r.id}:${r.status}`,
+        view: requestsView,
+        icon: 'file-input',
+        title: `MRF ${r.ref_code} — ${MRF_STEP_LABEL[String(r.status)] ?? String(r.status)}`,
+        detail: `${String(r.job_order_ref ?? '')} · ${String(r.material_name ?? '')}`.replace(/^ · /, '').slice(0, 100),
+        tone: r.status === 'rejected' ? 'danger' : 'info',
+      }));
+  }
   return alerts;
 }
 
@@ -379,7 +412,10 @@ const ids = (rows: EntityRow[]) => rows.map((r) => String(r.id));
  */
 export function buildBadgeItems(stats: DashboardStats, role: string, fullName: string, userId = ''): Record<string, string[]> {
   const open = ids(stats.incidents.filter(isOpen));
-  const pendingMrf = ids(stats.materialRequests.filter((r) => r.status === 'pending'));
+  const mrfs = stats.materialRequests.filter(isMrf);
+  const mrfsToVerify = ids(mrfs.filter((r) => r.status === 'pending'));
+  const mrfsToApprove = ids(mrfs.filter((r) => r.status === 'verified'));
+  const mrfsToRelease = ids(mrfs.filter((r) => r.status === 'approved'));
   const outOfStock = ids(stats.materials.filter((m) => m.status === 'out_of_stock' || Number(m.quantity) === 0));
   const lowStock = ids(stats.materials.filter((m) => m.status === 'low_stock'));
   const activeJobs = ids(stats.jobOrders.filter((j) => j.status === 'pending' || j.status === 'in_progress'));
@@ -418,9 +454,9 @@ export function buildBadgeItems(stats: DashboardStats, role: string, fullName: s
     case 'technical-team':
       return { joborders: activeJobs };
     case 'inventory-officer':
-      return { materials: [...outOfStock, ...lowStock], mrf: [...pendingMrf, ...pendingPurchases] };
+      return { materials: [...outOfStock, ...lowStock], mrf: [...mrfsToVerify, ...mrfsToRelease, ...pendingPurchases] };
     case 'general-manager':
-      return { incidents: open, requests: [...pendingMrf, ...pendingSupplies, ...pendingPurchases], advisories: draftAdv, payments: overduePayments, inventory: [...outOfStock, ...lowStock], users: unlevedUsers };
+      return { incidents: open, requests: [...mrfsToApprove, ...pendingSupplies, ...pendingPurchases], advisories: draftAdv, payments: overduePayments, inventory: [...outOfStock, ...lowStock], users: unlevedUsers };
     case 'commercial-department':
       return { incidents: sitePlanItems, billing: billingReviewItems };
     default:

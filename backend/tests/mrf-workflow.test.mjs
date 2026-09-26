@@ -1,0 +1,116 @@
+// Run with: node --experimental-test-module-mocks --test tests/mrf-workflow.test.mjs
+import assert from 'node:assert/strict';
+import { mock, test } from 'node:test';
+
+process.env.SUPABASE_URL = '';
+process.env.SUPABASE_SERVICE_ROLE_KEY = '';
+process.env.SUPABASE_SECRET_KEY = '';
+
+// In-memory stand-in for the Supabase-backed resource repository.
+const tables = new Map();
+const table = (name) => (tables.has(name) ? tables.get(name) : tables.set(name, []).get(name));
+let seq = 0;
+const repo = {
+  listRows: async (name) => table(name).filter((r) => !r.archived),
+  insertRow: async (name, values) => { const row = { id: `id-${++seq}`, created_at: new Date().toISOString(), ...values }; table(name).push(row); return row; },
+  updateRow: async (name, id, values) => { const row = table(name).find((r) => r.id === id); if (!row) return null; Object.assign(row, values); return row; },
+  deleteRow: async (name, id) => { tables.set(name, table(name).filter((r) => r.id !== id)); },
+  deleteRowsBy: async () => {},
+  getRowById: async (name, id) => table(name).find((r) => r.id === id) ?? null,
+  findRowsBy: async (name, column, value) => table(name).filter((r) => r[column] === value),
+  updateRowsBy: async () => {},
+  renameIncidentReporter: async () => {},
+};
+mock.module('../dist/models/resourceRepo.js', { namedExports: repo });
+const { resourceService } = await import('../dist/services/resource.service.js');
+
+const user = (role, fullName) => ({ id: `u-${role}`, role, fullName, email: `${role}@x.com`, createdAt: '' });
+const leader = user('inhouse-team', 'Lea Leader');
+const other = user('contractor', 'Carl Other');
+const inventory = user('inventory-officer', 'Ivy Inventory');
+const gm = user('general-manager', 'Gina Manager');
+
+function seed() {
+  tables.clear();
+  table('materials').push(
+    { id: 'm1', sku: 'SKU-00001', name: 'PVC Pipe 50mm', unit: 'pcs', quantity: 20, min_level: 5, status: 'in_stock' },
+    { id: 'm2', sku: 'SKU-00002', name: 'Gate Valve', unit: 'pcs', quantity: 3, min_level: 1, status: 'in_stock' },
+  );
+  table('job_orders').push({ id: 'jo1', ref_code: 'JO-2026-001', status: 'in_progress', team_leader: 'Lea Leader' });
+}
+
+const fileMrf = (by = leader, items = [
+  { material_sku: 'SKU-00001', quantity: 4 },
+  { material_sku: 'SKU-00002', quantity: 2 },
+  { material_name: 'Teflon tape', quantity: 1 },
+]) => resourceService.create('material-requests', by, { request_type: 'mrf', job_order_ref: 'JO-2026-001', items, status: 'approved' });
+
+test('team leader files one MRF with several materials', async () => {
+  seed();
+  const mrf = await fileMrf(leader, [
+    { material_sku: 'SKU-00001', material_name: 'wrong name', quantity: 4 },
+    { material_sku: 'SKU-00001', quantity: 1 },
+    { material_sku: 'SKU-00002', quantity: 2 },
+  ]);
+  assert.equal(mrf.status, 'pending', 'always starts pending');
+  assert.equal(mrf.requested_by, 'Lea Leader');
+  assert.deepEqual(mrf.items.map((i) => [i.material_sku, i.material_name, i.quantity]), [
+    ['SKU-00001', 'PVC Pipe 50mm', 5],
+    ['SKU-00002', 'Gate Valve', 2],
+  ]);
+  assert.equal(mrf.material_name, 'PVC Pipe 50mm +1 more');
+
+  await assert.rejects(fileMrf(other), /Only the team leader/);
+  await assert.rejects(fileMrf(leader, [{ material_sku: 'SKU-00001', quantity: 0 }]), /quantity greater than 0/);
+  await assert.rejects(fileMrf(leader, [{ material_sku: 'SKU-99999', quantity: 1 }]), /No active inventory item/);
+});
+
+test('inventory verifies → GM approves (stock deducted) → inventory releases', async () => {
+  seed();
+  const mrf = await fileMrf();
+  const move = (by, status) => resourceService.update('material-requests', by, mrf.id, { status });
+
+  await assert.rejects(move(gm, 'approved'), /cannot be moved/);
+  await assert.rejects(move(leader, 'verified'), /Only the Inventory Officer can verify/);
+  await move(inventory, 'verified');
+  assert.equal(mrf.verified_by, 'Ivy Inventory');
+
+  await assert.rejects(move(inventory, 'approved'), /Only the General Manager can approve/);
+  await move(gm, 'approved');
+  assert.equal(mrf.approved_by, 'Gina Manager');
+  assert.equal(table('materials').find((m) => m.id === 'm1').quantity, 16);
+  assert.equal(table('materials').find((m) => m.id === 'm2').quantity, 1);
+
+  await assert.rejects(move(gm, 'released'), /Only the Inventory Officer can release/);
+  await move(inventory, 'released');
+  assert.equal(mrf.released_by, 'Ivy Inventory');
+  assert.equal(table('materials').find((m) => m.id === 'm1').quantity, 16, 'no double deduction');
+  assert.equal(table('audit_logs').filter((l) => l.details.movement_type === 'stock_out').length, 2);
+});
+
+test('verification and approval are blocked when stock is short', async () => {
+  seed();
+  const mrf = await fileMrf(leader, [{ material_sku: 'SKU-00002', quantity: 5 }]);
+  await assert.rejects(
+    resourceService.update('material-requests', inventory, mrf.id, { status: 'verified' }),
+    /Insufficient stock — "Gate Valve" \(SKU-00002\): 3 in stock, 5 requested/,
+  );
+  await resourceService.update('material-requests', inventory, mrf.id, { status: 'rejected' });
+  assert.equal(mrf.status, 'rejected');
+
+  // Stock taken by another request between verification and approval.
+  const second = await fileMrf(leader, [{ material_sku: 'SKU-00002', quantity: 2 }]);
+  await resourceService.update('material-requests', inventory, second.id, { status: 'verified' });
+  table('materials').find((m) => m.id === 'm2').quantity = 1;
+  await assert.rejects(resourceService.update('material-requests', gm, second.id, { status: 'approved' }), /Insufficient stock/);
+  assert.equal(second.status, 'verified');
+});
+
+test('inventory officer sees every MRF; leaders see only their own', async () => {
+  seed();
+  await fileMrf();
+  table('material_requests').push({ id: 'x', request_type: 'general', requested_by: 'Someone', status: 'pending' });
+  assert.equal((await resourceService.list('material-requests', inventory)).length, 1);
+  assert.equal((await resourceService.list('material-requests', leader)).length, 1);
+  assert.equal((await resourceService.list('material-requests', other)).length, 0);
+});

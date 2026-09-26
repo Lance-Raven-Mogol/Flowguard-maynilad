@@ -200,7 +200,7 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       faqView('help', 'Help', 'circle-help', 'Inventory Help', [
         { q: 'How do I add a new material?', a: "In 'Material List' click 'Add New Item'. A SKU is generated automatically. Set the quantity, minimum level, supplier and source." },
         { q: 'How are low-stock items flagged?', a: 'Set a material status to Low Stock (or it can be marked when quantity nears the minimum). The overview and notifications surface them automatically.' },
-        { q: 'How do I process a material request?', a: "In 'MRF Requests', use the status dropdown to move a request from Ongoing → Approved → Released, or Reject it." },
+        { q: 'How do I process a material request?', a: "In 'Requests', click 'Verify Stock' on an MRF to check every material against inventory, then mark it Stock Verified (it goes to the General Manager) or Reject it. Once the GM approves, click 'Release' when the materials are handed out." },
       ]),
       settings(),
     ],
@@ -236,7 +236,7 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       },
       faqView('support', 'Field Support', 'help-circle', 'Technical Field Support', [
         { q: 'How do I update a job order?', a: "In 'Job Orders' use the status dropdown to move a job from Ongoing → In Progress → Completed, or edit its details." },
-        { q: 'How do I request materials?', a: "In 'Material Requests' click 'New Request', enter the material and quantity, and optionally link a job order ref." },
+        { q: 'How do I request materials?', a: "In 'Requests' click 'New Request', choose the job order, and add every material you need on one MRF. It goes to the Inventory Officer for stock verification, then to the General Manager for approval, then back to Inventory for release." },
         { q: 'Safety protocol for main line repairs', a: 'Cordon off the area and confirm with the zone specialist that water flow is isolated at the nearest main valve before excavation.' },
       ]),
       settings(),
@@ -290,7 +290,7 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       },
       faqView('support', 'Field Support', 'help-circle', 'Contractor Field Support', [
         { q: 'How do I update a job order?', a: "In 'Job Orders', use the status dropdown to move a job from Pending → In Progress → Completed. You can also add notes or update the assigned team details." },
-        { q: 'How do I request materials?', a: "In 'Material Requests', click 'New Request'. Select the material from inventory or type a custom item, enter the quantity, and optionally link it to a job order reference." },
+        { q: 'How do I request materials?', a: "As team leader, open the job order and click 'Materials' → 'Request Materials' (or 'New Request' in 'Material Requests'). Add every material you need on one MRF. The Inventory Officer verifies stock, the General Manager approves, then Inventory releases the materials." },
         { q: 'How do I register an installed asset?', a: "In 'Asset Registry', click 'Register Asset'. Enter the asset name, type, location, and the installation date. The system will begin tracking its health score from that date." },
         { q: 'What is the Asset Health Score?', a: "The health score (0–100) is automatically calculated based on the asset's age relative to its expected lifespan and its reported condition. It updates every time the asset record is viewed." },
       ]),
@@ -320,7 +320,7 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       },
       faqView('support', 'Field Support', 'help-circle', 'In-house Team Field Support', [
         { q: 'How do I update a job order?', a: "In 'Job Orders', use the status dropdown to move a job from Pending → In Progress → Completed. You can also add notes or update the assigned team details." },
-        { q: 'How do I request materials?', a: "In 'Material Requests', click 'New Request'. Select the material from inventory or type a custom item, enter the quantity, and optionally link it to a job order reference." },
+        { q: 'How do I request materials?', a: "As team leader, open the job order and click 'Materials' → 'Request Materials' (or 'New Request' in 'Material Requests'). Add every material you need on one MRF. The Inventory Officer verifies stock, the General Manager approves, then Inventory releases the materials." },
         { q: 'How do I register an installed asset?', a: "In 'Asset Registry', click 'Register Asset'. Enter the asset name, type, location, and the installation date. The system will begin tracking its health score from that date." },
         { q: 'What is the Asset Health Score?', a: "The health score (0–100) is automatically calculated based on the asset's age relative to its expected lifespan and its reported condition. It updates every time the asset record is viewed." },
       ]),

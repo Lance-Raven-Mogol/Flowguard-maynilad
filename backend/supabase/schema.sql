@@ -293,6 +293,17 @@ alter table public.material_requests add column if not exists justification text
 --   delivery_address: where to deliver the requested item (pre-filled from the customer's barangay)
 alter table public.material_requests add column if not exists payment_option   text;
 alter table public.material_requests add column if not exists delivery_address text;
+-- MRF workflow + multi-material requests: pending → verified (Inventory) → approved (GM) → released (Inventory).
+alter table public.material_requests add column if not exists items       jsonb not null default '[]'::jsonb;
+alter table public.material_requests add column if not exists verified_by text;
+alter table public.material_requests add column if not exists verified_at timestamptz;
+alter table public.material_requests add column if not exists approved_by text;
+alter table public.material_requests add column if not exists approved_at timestamptz;
+alter table public.material_requests add column if not exists released_by text;
+alter table public.material_requests add column if not exists released_at timestamptz;
+alter table public.material_requests drop constraint if exists material_requests_status_check;
+alter table public.material_requests add constraint material_requests_status_check
+  check (status in ('pending','verified','approved','released','rejected','ordered','received'));
 -- supply_requests and purchase_requests are superseded by material_requests.
 -- Kept in schema for backward compatibility; no new rows should be written here.
 alter table public.assets            add column if not exists archived boolean not null default false;

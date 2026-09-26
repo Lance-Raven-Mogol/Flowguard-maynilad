@@ -188,7 +188,7 @@ function ManagerOverview({ stats }: { stats: DashboardStats }) {
           items={[
             { icon: 'clipboard-list', color: 'var(--blue)', label: 'Pending Job Orders', value: String(pendingJobs.length) },
             { icon: 'wrench', color: '#16a34a', label: 'Ongoing Job Orders', value: String(ongoingJobs.length) },
-            { icon: 'file-input', color: '#f59e0b', label: 'Pending MRFs', value: String(n(stats.materialRequests, (r) => r.status === 'pending')) },
+            { icon: 'file-input', color: '#f59e0b', label: 'MRFs for Approval', value: String(n(stats.materialRequests, (r) => (String(r.request_type ?? '') || 'mrf') === 'mrf' && r.status === 'verified')) },
             { icon: 'shopping-cart', color: 'var(--pink)', label: 'Pending Purchases', value: String(n(stats.materialRequests.filter((r) => r.request_type === 'purchase'), (r) => r.status === 'pending')) },
           ]}
         />
@@ -251,8 +251,9 @@ function InventoryOverview({ stats }: { stats: DashboardStats }) {
         <StatList
           title="Material Requests"
           items={[
-            { icon: 'clock', color: '#f59e0b', label: 'Pending', value: String(n(stats.materialRequests, (r) => r.status === 'pending')) },
-            { icon: 'check-circle', color: 'var(--blue)', label: 'Approved', value: String(n(stats.materialRequests, (r) => r.status === 'approved')) },
+            { icon: 'clock', color: '#f59e0b', label: 'For Stock Verification', value: String(n(stats.materialRequests, (r) => r.status === 'pending')) },
+            { icon: 'file-check', color: 'var(--blue)', label: 'For GM Approval', value: String(n(stats.materialRequests, (r) => r.status === 'verified')) },
+            { icon: 'check-circle', color: 'var(--blue)', label: 'For Release', value: String(n(stats.materialRequests, (r) => r.status === 'approved')) },
             { icon: 'package-check', color: '#16a34a', label: 'Released', value: String(n(stats.materialRequests, (r) => r.status === 'released')) },
             { icon: 'x-circle', color: 'var(--pink)', label: 'Rejected', value: String(n(stats.materialRequests, (r) => r.status === 'rejected')) },
           ]}

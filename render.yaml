@@ -29,7 +29,10 @@ services:
         sync: false
       - key: SUPABASE_ANON_KEY
         sync: false
+      # Service-role key (legacy) — or leave unset and use SUPABASE_SECRET_KEY (sb_secret_…).
       - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY
         sync: false
       # Optional: personal access token (sbp_…) to auto-apply schema on boot.
       - key: SUPABASE_ACCESS_TOKEN

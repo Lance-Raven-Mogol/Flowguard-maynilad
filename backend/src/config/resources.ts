@@ -114,13 +114,16 @@ export const RESOURCES: Record<string, ResourceDef> = {
   'material-requests': {
     table: 'material_requests',
     // All roles can create requests; request_type determines the form variant:
-    //   'mrf'      — formal Material Request Form, linked to inventory SKU / job order (technical-team, inventory-officer)
+    //   'mrf'      — formal Material Request Form with one or more materials for a job order;
+    //                flow: pending → verified (Inventory) → approved (GM) → released (Inventory)
     //   'general'  — informal supply request open to all roles including customers
     //   'purchase' — procurement request with pricing & supplier (inventory-officer only, enforced frontend-side)
     writeRoles: ['customer', 'zone-specialist', 'technical-team', 'contractor', 'inhouse-team', 'inventory-officer'],
     allowed: [
       // shared
       'material_name', 'quantity', 'requested_by', 'requested_by_id', 'status', 'archived', 'request_type',
+      // mrf: every material on the form — [{ material_sku, material_name, quantity, unit }]
+      'items',
       // mrf
       'material_sku', 'job_order_ref',
       // general
@@ -134,6 +137,8 @@ export const RESOURCES: Record<string, ResourceDef> = {
     required: ['material_name'],
     numeric: ['quantity', 'min_level', 'weight_kg', 'unit_price', 'total_cost'],
     nullable: ['supplier_id'],
+    // A multi-material MRF must keep its item list — fail loudly if not migrated.
+    critical: ['items'],
     autoKeys: [{ column: 'ref_code', prefix: 'REQ', digits: 4 }],
   },
 

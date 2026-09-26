@@ -1,6 +1,6 @@
 # FlowGuard — Capstone Panel Reminders (Status Check)
 > Checked against the codebase: 2026-09-26 (commit `4aec3de`)
-> Updated: 2026-09-26 — #1 tapos na (email OTP)
+> Updated: 2026-09-26 — #1 tapos na (email OTP); bagong MRF flow + multi-material MRF (tingnan sa ibaba); #5 at #14 na-update
 
 Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
 
@@ -12,7 +12,7 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
 | 2 | Paid vs. free complaints (sakop ng organization) | ❌ |
 | 3 | Traditional payment (walk-in / cash) | 🟡 |
 | 4 | Categorize ang complaints | 🟡 |
-| 5 | MRF — column para sa natitirang stock | ❌ |
+| 5 | MRF — column para sa natitirang stock | 🟡 |
 | 6 | Inventory — bawal ma-0, warning levels | 🟡 |
 | 7 | Warning kapag 10 na lang ang stock | 🟡 |
 | 8 | FIFO (first in, first out) | ❌ |
@@ -21,7 +21,7 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
 | 11 | GM — print function | ❌ |
 | 12 | Customer — alisin ang Request function | ❌ |
 | 13 | Photo required sa complaint | ❌ |
-| 14 | Identity kung sino ang nag-out ng item | 🟡 |
+| 14 | Identity kung sino ang nag-out ng item | ✅ |
 | 15 | Audit logs sa Admin | ✅ |
 | 16 | Tech dept — full payment + breakdown/receipt, hindi estimate | ❌ |
 | 17 | Purok sa location | ❌ |
@@ -47,6 +47,16 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
   - Na-test na: gumagana ang pag-send gamit ang Gmail app password.
   - **Napupunta sa Spam:** dahil bago ang sender at automated ang emails. May plain-text version na ang email at `replyTo` para bumaba ang spam score. Bago ang demo, i-click ang **"Not spam"** at idagdag ang `thecapstone01@gmail.com` sa Contacts ng mga email na gagamitin. Para sa siguradong inbox, kailangan ng sariling domain + email service (Resend / Brevo). Optional ito at hindi kailangan para sa capstone.
   - **Security:** naka-hardcode pa rin ang Gmail app password sa `backend/src/config/env.ts`, at naka-commit ito sa git. Mas mabuting ilipat sa `SMTP_USER` / `SMTP_PASS` env vars (sa `backend/.env` at sa Render), tapos gumawa ng bagong app password.
+
+## ✅ Bagong MRF flow + multi-material MRF (DONE 2026-09-26)
+- **Flow:** Team Leader nag-file ng MRF → **Inventory Officer** nag-verify ng stock → **General Manager** nag-approve → balik sa **Inventory Officer** para i-release. Pwedeng mag-reject ang IO sa verification o ang GM sa approval.
+  - Status labels: `pending` = *For Stock Verification*, `verified` = *For GM Approval*, `approved` = *For Release*, `released`, `rejected`.
+  - Bawas sa inventory ang stock pagka-approve ng GM, para naka-reserve na ito at hindi makuha ng ibang MRF. Kapag kulang ang stock, hindi pwedeng i-verify o i-approve.
+  - Server-side ang pagbabantay kung sino ang pwedeng gumawa ng bawat step (`MRF_TRANSITIONS` sa `resource.service.ts`).
+- **Multi-material:** Isang MRF, maraming materials ("+ Add another material"). Nakikita ito sa JO → Materials, sa Requests tab (Item/Qty columns + items table sa View), at sa Log Leftovers.
+- Team leader lang ng JO ang pwedeng mag-request (contractor / in-house), at para lang sa ongoing na JO.
+- **Tests:** `backend/tests/mrf-workflow.test.mjs`. Patakbuhin gamit ang `node --experimental-test-module-mocks --test tests/mrf-workflow.test.mjs`.
+- ⚠️ **Kailangan ng DB migration:** patakbuhin ang `backend/supabase/mrf-workflow-migration.sql` sa Supabase SQL Editor.
 
 ## ❌ 2. Paid vs. free complaints
 - **Ngayon:** Lahat ng incident ay dumadaan sa `for_estimation` → `for_billing`, at laging hinihingi ng zone specialist ang `bill_to_customer_id` (`modules.tsx:1163`). Walang konsepto ng "libre / sakop ng Maynilad".
@@ -74,9 +84,9 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
   - **Other**
 - Mag-add ng category filter/metric sa Incidents module. Gamitin ang category para ma-set ang `billable` (#2).
 
-## ❌ 5. MRF — column para sa natitirang stock
-- **Ngayon:** Ang Requests table (`modules.tsx:3529-3556`) ay may Ref, Type, Item, Qty, Details, Requested By, at Status lang.
-- **Gagawin:** Mag-add ng column na **"Available Stock"**. Kukunin ito sa `materials.quantity` gamit ang `material_sku`. Pwede ring **"Remaining after release"** (= stock − qty). Kulayan ng pula kapag kulang, at dilaw kapag magiging low stock.
+## 🟡 5. MRF — column para sa natitirang stock
+- **Meron na (2026-09-26):** Sa **View** ng MRF at sa **Verify Stock / Review & Approve** modal, may table ng bawat material na may **Requested**, **In Stock** (live), at **Check** (Available / Short by N / Custom). Sa MRF form naman, lumalabas sa bawat material ang "N in stock" at nagiging pula kapag kulang.
+- **Kulang pa:** Wala pa sa mismong Requests table bilang column. Mahirap itong ipakita bilang isang column dahil pwedeng maraming material ang isang MRF. Kung hihingin pa ng panel, pwedeng maglagay ng column na "Stock OK / May kulang".
 
 ## 🟡 6. Inventory — bawal ma-0, may warning levels
 - **Meron na:** Auto status `in_stock` / `low_stock` / `out_of_stock` base sa `min_level` (`resource.service.ts:47-53`). Hinaharang din ang release kapag mas malaki ang request kaysa sa stock (`resource.service.ts:166-170`).
@@ -134,10 +144,10 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
 - **Ngayon:** `{ name: 'images', label: 'Photos (optional)' }` (`modules.tsx:1393`). Walang validation.
 - **Gagawin:** Palitan ang label ng "Photos (required)". Mag-validate ng hindi bababa sa 1 photo sa frontend, at idagdag ang `images` sa backend validation (hindi pwedeng empty array). Tandaan: `required` sa `resources.ts` ay para sa non-empty value, kaya kailangan ng hiwalay na check para sa empty array.
 
-## 🟡 14. Identity ng nag-out ng item
-- **Meron na:** Nire-record ng audit log `stock_movement` / `stock_out` ang `actor` (ang nag-approve o nag-release) (`resource.service.ts:187`).
-- **Kulang:** Hindi ito makikita sa MRF record o table mismo, at walang record kung sino ang **tumanggap** ng item.
-- **Gagawin:** Mag-add ng `released_by`, `released_at`, at `received_by` sa `material_requests`. Auto-fill ang `released_by` mula sa naka-login na user kapag `released`. Ipakita sa table/details at isama sa report.
+## ✅ 14. Identity ng nag-out ng item (DONE 2026-09-26)
+- Bawat MRF ay may **`verified_by` / `verified_at`** (Inventory Officer na nag-check ng stock), **`approved_by` / `approved_at`** (GM), at **`released_by` / `released_at`** (Inventory Officer na nag-release). Auto-fill ito ng server mula sa naka-login na user, at makikita sa **View** ng request.
+- May audit log (`stock_movement` / `stock_out`) din sa bawat material, kasama ang reference ng MRF at ng job order.
+- *Optional pa:* `received_by` kung gusto ring i-record kung sinong team member ang tumanggap ng materials.
 
 ## ✅ 15. Audit logs sa Admin
 - May **Audit Log** view na ang General Manager (`roleViews.tsx`, `AuditLogsModule` sa `modules.tsx:4292`). Awtomatikong nagla-log ang backend ng create/update/stock movements.

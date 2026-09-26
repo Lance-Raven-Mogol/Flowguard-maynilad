@@ -138,64 +138,153 @@ function enrich(entity: string, row: Row): Row {
   return entity === 'assets' ? withAssetHealth(row) : row;
 }
 
+/* ------------------------------------------------ Material request items */
+/** One material line on an MRF. */
+interface MrfItem { material_sku: string; material_name: string; quantity: number; unit: string; }
+
+const MAX_MRF_ITEMS = 50;
+
+/** The items on a request — its `items` list, or the legacy single-item columns. */
+function mrfItems(row: Row): MrfItem[] {
+  const list = Array.isArray(row.items) ? (row.items as Row[]) : [];
+  const source = list.length
+    ? list
+    : [{ material_sku: row.material_sku, material_name: row.material_name, quantity: row.quantity, unit: row.unit }];
+  return source.map((item) => ({
+    material_sku: String(item.material_sku ?? '').trim(),
+    material_name: String(item.material_name ?? '').trim(),
+    quantity: Number(item.quantity ?? 0),
+    unit: String(item.unit ?? '').trim(),
+  }));
+}
+
+/** The active inventory row for a SKU, if any. */
+async function materialBySku(sku: string): Promise<Row | undefined> {
+  const rows = await repo.findRowsBy('materials', 'sku', sku);
+  return rows.find((m) => !m.archived) ?? rows[0];
+}
+
 /**
- * Deduct an approved material request's quantity from its linked inventory item
- * — exactly once. Idempotent via the `stock_deducted` flag, so re-approving or
- * editing an already-settled request never double-deducts. Requests with no SKU
- * (external procurement) settle without touching inventory. Throws when the
- * requested quantity exceeds available stock, blocking the approval.
+ * Validate the materials on a new MRF. Accepts an `items` list (or the legacy
+ * single material_* fields), takes names/units of linked items from inventory,
+ * merges duplicate lines, and fills the summary columns shown in tables.
+ */
+async function normalizeMrfItems(values: Row, body: Record<string, unknown>): Promise<void> {
+  const raw = Array.isArray(body.items) && body.items.length
+    ? (body.items as Row[])
+    : [{ material_sku: values.material_sku, material_name: values.material_name, quantity: values.quantity ?? 1 }];
+  if (raw.length > MAX_MRF_ITEMS) throw badRequest(`An MRF can list at most ${MAX_MRF_ITEMS} materials.`);
+
+  const items: MrfItem[] = [];
+  for (const entry of raw) {
+    const sku = String(entry.material_sku ?? '').trim();
+    let name = String(entry.material_name ?? '').trim();
+    let unit = String(entry.unit ?? '').trim();
+    const qty = Number(entry.quantity);
+    if (sku) {
+      const material = await materialBySku(sku);
+      if (!material || material.archived) throw badRequest(`No active inventory item found for SKU "${sku}".`);
+      name = String(material.name ?? name);
+      unit = String(material.unit ?? unit);
+    }
+    if (!name) throw badRequest('Each material needs a name.');
+    if (!Number.isInteger(qty) || qty <= 0) throw badRequest(`Enter a whole-number quantity greater than 0 for "${name}".`);
+    const same = items.find((item) => (sku ? item.material_sku === sku : !item.material_sku && item.material_name.toLowerCase() === name.toLowerCase()));
+    if (same) same.quantity += qty;
+    else items.push({ material_sku: sku, material_name: name, quantity: qty, unit });
+  }
+  if (!items.length) throw badRequest('Add at least one material.');
+
+  values.items = items;
+  values.material_name = items.length === 1 ? items[0].material_name : `${items[0].material_name} +${items.length - 1} more`;
+  values.material_sku = items.length === 1 ? items[0].material_sku : '';
+  values.quantity = items.reduce((sum, item) => sum + item.quantity, 0);
+  if (items.length === 1 && items[0].unit) values.unit = items[0].unit;
+}
+
+/**
+ * Check that inventory can cover every linked item on a request. Returns each
+ * item with its inventory row; throws one error listing every shortage.
+ * Custom (no-SKU) items are skipped — they are procured outside inventory.
+ */
+async function checkMrfStock(row: Row): Promise<Array<{ item: MrfItem; material: Row }>> {
+  const lines: Array<{ item: MrfItem; material: Row }> = [];
+  const problems: string[] = [];
+  for (const item of mrfItems(row)) {
+    if (!item.material_sku || !(item.quantity > 0)) continue;
+    const material = await materialBySku(item.material_sku);
+    if (!material) {
+      problems.push(`"${item.material_name}" (${item.material_sku}) is no longer in inventory`);
+      continue;
+    }
+    const available = Number(material.quantity ?? 0);
+    if (available < item.quantity) {
+      problems.push(`"${material.name}" (${item.material_sku}): ${available} in stock, ${item.quantity} requested`);
+      continue;
+    }
+    lines.push({ item, material });
+  }
+  if (problems.length) throw conflict(`Insufficient stock — ${problems.join('; ')}.`);
+  return lines;
+}
+
+/**
+ * Deduct every linked item on an approved material request from inventory —
+ * exactly once. Idempotent via the `stock_deducted` flag. All items are
+ * checked before any is deducted, so a shortage blocks the whole approval.
  */
 async function settleStockDeduction(mrfId: string, user: PublicUser): Promise<void> {
   const current = await repo.getRowById('material_requests', mrfId);
   if (!current) throw notFound('Material request not found.');
   if (current.stock_deducted) return; // already settled — no double deduction
 
-  const sku = String(current.material_sku ?? '').trim();
-  const qty = Number(current.quantity ?? 0);
-
-  // External procurement (no inventory link) or a zero quantity: settle, no-op.
-  if (!sku || !(qty > 0)) {
-    await repo.updateRow('material_requests', mrfId, { stock_deducted: true });
-    return;
-  }
-
-  const materials = await repo.findRowsBy('materials', 'sku', sku);
-  const material = materials.find((m) => !m.archived) ?? materials[0];
-  if (!material) throw badRequest(`No inventory item found for SKU "${sku}".`);
-
-  const available = Number(material.quantity ?? 0);
-  if (available < qty) {
-    throw conflict(
-      `Insufficient stock for "${material.name}" (${sku}): ${available} in stock, ${qty} requested.`,
-    );
-  }
-
-  const remaining = available - qty;
-  const patch: Row = { quantity: remaining };
-  // Keep the stock status honest after the deduction (never override defective).
-  if (material.status !== 'defective') {
-    if (remaining === 0) {
-      patch.status = 'out_of_stock';
-    } else if (remaining <= Number(material.min_level ?? 0)) {
-      patch.status = 'low_stock';
-    } else {
-      patch.status = 'in_stock';
+  const lines = await checkMrfStock(current);
+  for (const { item, material } of lines) {
+    const available = Number(material.quantity ?? 0);
+    const remaining = available - item.quantity;
+    const patch: Row = { quantity: remaining };
+    // Keep the stock status honest after the deduction (never override defective).
+    if (material.status !== 'defective') {
+      patch.status = materialStockStatus(remaining, material.min_level);
     }
+    await repo.updateRow('materials', String(material.id), patch);
+    await logAudit('materials', String(material.id), 'stock_movement', user.fullName, user.role, {
+      movement_type: 'stock_out',
+      material_name: material.name,
+      sku: material.sku,
+      previous_quantity: available,
+      new_quantity: remaining,
+      quantity_change: -item.quantity,
+      unit: material.unit,
+      reference: current.ref_code,
+      job_order_ref: current.job_order_ref ?? null,
+      reason: 'Material request approved',
+    });
   }
-  await repo.updateRow('materials', String(material.id), patch);
   await repo.updateRow('material_requests', mrfId, { stock_deducted: true });
-  await logAudit('materials', String(material.id), 'stock_movement', user.fullName, user.role, {
-    movement_type: 'stock_out',
-    material_name: material.name,
-    sku: material.sku,
-    previous_quantity: available,
-    new_quantity: remaining,
-    quantity_change: -qty,
-    unit: material.unit,
-    reference: current.ref_code,
-    reason: 'Material request released',
-  });
 }
+
+/**
+ * MRF workflow: Team Leader files → Inventory Officer verifies stock → General
+ * Manager approves → Inventory Officer releases. Either reviewer can reject.
+ */
+const MRF_TRANSITIONS: Array<{ from: string; to: string; roles: Role[]; denied: string }> = [
+  { from: 'pending', to: 'verified', roles: ['inventory-officer'], denied: 'Only the Inventory Officer can verify stock for a material request.' },
+  { from: 'pending', to: 'rejected', roles: ['inventory-officer', 'general-manager'], denied: 'Only the Inventory Officer or General Manager can reject a material request.' },
+  { from: 'verified', to: 'approved', roles: ['general-manager'], denied: 'Only the General Manager can approve a stock-verified material request.' },
+  { from: 'verified', to: 'rejected', roles: ['general-manager'], denied: 'Only the General Manager can reject a stock-verified material request.' },
+  { from: 'approved', to: 'released', roles: ['inventory-officer'], denied: 'Only the Inventory Officer can release approved materials.' },
+];
+
+const MRF_STATUS_LABEL: Record<string, string> = {
+  pending: 'For Stock Verification',
+  verified: 'For GM Approval',
+  approved: 'For Release',
+  released: 'Released',
+  rejected: 'Rejected',
+};
+
+const isMrf = (row: Row) => (String(row.request_type ?? '').trim() || 'mrf') === 'mrf';
 
 /**
  * When a purchase request is marked "received", add its quantity to inventory.
@@ -340,11 +429,12 @@ export const resourceService = {
     // Non-GM roles only see their own material/purchase requests. The GM sees all
     // so they can review, approve, and release requests from every department.
     if (entity === 'material-requests' && user.role === 'inventory-officer') {
-      // Inventory receives the GM-approved queue regardless of who requested it.
-      // Keep already released rows visible as release history.
+      // Inventory works every MRF (verify stock → release) regardless of who
+      // requested it, plus the officer's own general/purchase requests.
       rows = rows.filter((row) =>
-        String(row.request_type ?? 'mrf') === 'mrf' &&
-        ['approved', 'released'].includes(String(row.status ?? '')),
+        isMrf(row) ||
+        String(row.requested_by_id ?? '').trim() === user.id ||
+        String(row.requested_by ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase(),
       );
     } else if (entity === 'material-requests' && user.role !== 'general-manager') {
       rows = rows.filter(
@@ -435,6 +525,36 @@ export const resourceService = {
         values.incident_ref = linkedIncidentRef;
       } else {
         values.incident_ref = '';
+      }
+    }
+
+    if (entity === 'material-requests') {
+      // Requests always start at the beginning of their workflow, filed by the caller.
+      values.status = 'pending';
+      values.requested_by = user.fullName;
+      values.requested_by_id = user.id;
+      if (isMrf(values)) {
+        values.request_type = 'mrf';
+        if (['customer', 'zone-specialist'].includes(user.role)) {
+          throw forbidden('Material Request Forms are filed by job order team leaders.');
+        }
+        const jobOrderRef = String(values.job_order_ref ?? '').trim();
+        if (jobOrderRef) {
+          const jobOrder = (await repo.findRowsBy('job_orders', 'ref_code', jobOrderRef)).find((j) => !j.archived);
+          if (!jobOrder) throw badRequest(`Job order ${jobOrderRef} was not found.`);
+          if (!['pending', 'in_progress'].includes(String(jobOrder.status))) {
+            throw conflict('Materials can only be requested for an ongoing job order.');
+          }
+          const isLeader = String(jobOrder.team_leader ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase();
+          if (['contractor', 'inhouse-team'].includes(user.role) && !isLeader) {
+            throw forbidden('Only the team leader of this job order can request its materials.');
+          }
+        } else if (['contractor', 'inhouse-team'].includes(user.role)) {
+          throw badRequest('Select the job order these materials are for.');
+        }
+        await normalizeMrfItems(values, body);
+      } else {
+        delete values.items;
       }
     }
 
@@ -933,30 +1053,49 @@ export const resourceService = {
       );
     }
 
+    // The materials on a request are fixed once filed.
+    if (entity === 'material-requests') delete values.items;
+
     // Role-based material request status transition guards.
-    // General Manager: can approve, reject, or release any request.
-    // Inventory Officer: can ONLY release requests that are already approved by GM.
-    // All other write roles: cannot change status at all.
-    if (entity === 'material-requests' && 'status' in values && user.role !== 'general-manager') {
+    if (entity === 'material-requests' && 'status' in values) {
       const currentMrf = await repo.getRowById(def.table, id);
       if (!currentMrf) throw notFound('Record not found.');
       const from = String(currentMrf.status ?? '');
       const to = String(values.status ?? '');
-      if (from !== to) {
+      if (from !== to && isMrf(currentMrf)) {
+        // MRF: Inventory verifies stock → GM approves → Inventory releases.
+        const step = MRF_TRANSITIONS.find((t) => t.from === from && t.to === to);
+        if (!step) {
+          throw badRequest(`A material request that is ${MRF_STATUS_LABEL[from] ?? from} cannot be moved to ${MRF_STATUS_LABEL[to] ?? to}.`);
+        }
+        if (!step.roles.includes(user.role)) throw forbidden(step.denied);
+        const now = new Date().toISOString();
+        if (to === 'verified') {
+          await checkMrfStock(currentMrf);
+          values.verified_by = user.fullName;
+          values.verified_at = now;
+        } else if (to === 'approved') {
+          values.approved_by = user.fullName;
+          values.approved_at = now;
+        } else if (to === 'released') {
+          values.released_by = user.fullName;
+          values.released_at = now;
+        }
+      } else if (from !== to && user.role !== 'general-manager') {
+        // General / purchase requests: GM approves or rejects; Inventory Officer
+        // may only release a request the GM already approved.
         if (user.role === 'inventory-officer') {
-          // Inventory Officer may only move approved → released.
           if (!(from === 'approved' && to === 'released')) {
             throw forbidden('Inventory Officers can only release requests that have already been approved by the General Manager.');
           }
         } else {
-          // All other write roles (requester roles) cannot change status.
-          throw forbidden('Only the General Manager can approve or reject material requests.');
+          throw forbidden('Only the General Manager can approve or reject requests.');
         }
       }
     }
 
-    // Approving/releasing a material request deducts its quantity from stock —
-    // once. Runs before the status write so insufficient stock blocks approval.
+    // Approving a material request deducts its items from stock — once. Runs
+    // before the status write so insufficient stock blocks the approval.
     if (entity === 'material-requests' && (values.status === 'approved' || values.status === 'released')) {
       await settleStockDeduction(id, user);
     }

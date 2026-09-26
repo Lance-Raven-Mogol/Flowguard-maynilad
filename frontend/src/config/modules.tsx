@@ -42,7 +42,41 @@ const titleCase = (v: unknown): string =>
 
 const statusCell = (v: unknown): TableCell => ({ text: titleCase(v), status: statusTone(v) });
 const workflowStatusLabel = (v: unknown): string => String(v ?? '').toLowerCase() === 'pending' ? 'Ongoing' : titleCase(v);
-const workflowStatusCell = (v: unknown): TableCell => ({ text: workflowStatusLabel(v), status: statusTone(v) });
+
+/* MRF workflow: Team Leader files → Inventory Officer verifies stock → General
+ * Manager approves → Inventory Officer releases. Either reviewer can reject. */
+const MRF_STATUS_LABEL: Record<string, string> = {
+  pending: 'For Stock Verification',
+  verified: 'For GM Approval',
+  approved: 'For Release',
+  released: 'Released',
+  rejected: 'Rejected',
+};
+const isMrfRow = (row: EntityRow): boolean => (String(row.request_type ?? '').trim() || 'mrf') === 'mrf';
+/** Status label for any request row — MRFs use their workflow step names. */
+const requestStatusLabel = (row: EntityRow): string =>
+  isMrfRow(row) ? MRF_STATUS_LABEL[String(row.status)] ?? titleCase(row.status) : workflowStatusLabel(row.status);
+
+interface MrfItem { material_sku: string; material_name: string; quantity: number; unit: string; }
+/** The materials on a request — its `items` list, or the legacy single-item fields. */
+function mrfItems(row: EntityRow): MrfItem[] {
+  const list = Array.isArray(row.items) ? (row.items as EntityRow[]) : [];
+  const source = list.length
+    ? list
+    : [{ material_sku: row.material_sku, material_name: row.material_name, quantity: row.quantity, unit: row.unit }];
+  return source.map((item) => ({
+    material_sku: String(item.material_sku ?? '').trim(),
+    material_name: String(item.material_name ?? item.material_sku ?? '').trim(),
+    quantity: Number(item.quantity ?? 0),
+    unit: String(item.unit ?? '').trim(),
+  }));
+}
+/** "PVC Pipe × 4, Gate Valve × 2 +1 more" */
+function mrfItemsSummary(row: EntityRow, max = 2): string {
+  const items = mrfItems(row);
+  const shown = items.slice(0, max).map((i) => `${i.material_name} × ${i.quantity}`).join(', ');
+  return items.length > max ? `${shown} +${items.length - max} more` : shown;
+}
 const badgeCell = (text: string, tone: BadgeTone): TableCell => ({ text, badge: tone });
 const money = (v: unknown): string =>
   '₱ ' + Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1546,6 +1580,8 @@ type ReturnQuality = 'good' | 'fair' | 'damaged';
 
 interface ReturnRow {
   id: string;
+  /** An MRF that released this SKU — the audit entry is filed against it. */
+  mrfId: string;
   sku: string;
   name: string;
   released: number;
@@ -1606,30 +1642,36 @@ function MaterialReturnModal({
             loggedQtyBySku[sku] = (loggedQtyBySku[sku] ?? 0) + Number(d.qty_leftover ?? d.returned_quantity ?? 0);
           });
 
-        const linked = mrfs.filter((r) => {
-          if (String(r.job_order_ref ?? '').trim().toUpperCase() !== ref) return false;
-          if (String(r.status ?? '') !== 'released') return false;
-          const rt = String(r.request_type ?? '').trim().toLowerCase();
-          if (rt !== '' && rt !== 'mrf') return false;
-          const sku = String(r.material_sku ?? '').trim();
-          if (!sku) return false;
-          return materials.some((m) => String(m.sku ?? '').trim() === sku);
-        });
+        // Every released inventory-linked item on this job order's MRFs, summed per SKU.
+        const releasedBySku = new Map<string, { mrfId: string; name: string; unit: string; released: number }>();
+        mrfs
+          .filter((r) =>
+            String(r.job_order_ref ?? '').trim().toUpperCase() === ref &&
+            String(r.status ?? '') === 'released' &&
+            isMrfRow(r),
+          )
+          .forEach((r) => {
+            mrfItems(r).forEach((item) => {
+              const sku = item.material_sku;
+              if (!sku || !materials.some((m) => String(m.sku ?? '').trim() === sku)) return;
+              const entry = releasedBySku.get(sku);
+              if (entry) entry.released += item.quantity;
+              else releasedBySku.set(sku, { mrfId: String(r.id), name: item.material_name, unit: item.unit, released: item.quantity });
+            });
+          });
 
-        setRows(linked.map((r) => {
-          const sku = String(r.material_sku ?? '').trim();
+        setRows([...releasedBySku].map(([sku, entry]) => {
           const mat = materials.find((m) => String(m.sku ?? '').trim() === sku);
-          const released = Number(r.quantity ?? 0);
           const alreadyLogged = loggedQtyBySku[sku] ?? 0;
-          const remaining = Math.max(0, released - alreadyLogged);
           return {
-            id: String(r.id),
+            id: sku,
+            mrfId: entry.mrfId,
             sku,
-            name: String(r.material_name ?? (sku || 'Unknown')),
-            released,
+            name: entry.name || String(mat?.name ?? sku),
+            released: entry.released,
             alreadyLogged,
-            remaining,
-            unit: String(r.unit ?? mat?.unit ?? 'units'),
+            remaining: Math.max(0, entry.released - alreadyLogged),
+            unit: entry.unit || String(mat?.unit ?? 'units'),
             returnQty: '',
             quality: 'good' as ReturnQuality,
             isUsable: true,
@@ -1704,7 +1746,7 @@ function MaterialReturnModal({
           // Write the leftover_log so the discard is recorded in Inventory History.
           await resourceService.create('audit-logs', {
             entity: 'material-requests',
-            entity_id: item.id,
+            entity_id: item.mrfId,
             action: 'leftover_log',
             actor,
             actor_role: actorRole,
@@ -1889,6 +1931,7 @@ function mrfStatusTone(status: unknown): string {
   const s = String(status ?? '').toLowerCase();
   if (s === 'released') return 'mrf-status--released';
   if (s === 'approved') return 'mrf-status--approved';
+  if (s === 'verified') return 'mrf-status--verified';
   if (s === 'rejected') return 'mrf-status--rejected';
   return 'mrf-status--pending';
 }
@@ -2003,19 +2046,21 @@ function JobOrderMaterialsButton({ row, onReload }: { row: EntityRow; onReload: 
                       <span className="jo-mrf-type-badge">{typeLabel}</span>
                     </div>
                     <div className="jo-mrf-info">
-                      <span className="jo-mrf-name">{String(mrf.material_name ?? '—')}</span>
-                      {String(mrf.material_sku ?? '') && (
-                        <span className="jo-mrf-sku">{String(mrf.material_sku)}</span>
-                      )}
+                      {mrfItems(mrf).map((item, i) => (
+                        <span className="jo-mrf-name" key={`${item.material_sku}-${i}`}>
+                          {item.material_name} × {item.quantity}{item.unit ? ` ${item.unit}` : ''}
+                          {item.material_sku && <span className="jo-mrf-sku">{item.material_sku}</span>}
+                        </span>
+                      ))}
                     </div>
                     <div className="jo-mrf-qty">
-                      {String(mrf.quantity ?? '—')} {String(mrf.unit ?? '')}
+                      {mrfItems(mrf).length} item{mrfItems(mrf).length === 1 ? '' : 's'}
                     </div>
                     <div className="jo-mrf-requester">
                       {String(mrf.requested_by ?? '—')}
                     </div>
                     <span className={`jo-mrf-status ${mrfStatusTone(mrf.status)}`}>
-                      {titleCase(mrf.status)}
+                      {requestStatusLabel(mrf)}
                     </span>
                   </div>
                 );
@@ -2873,17 +2918,22 @@ function RequestForm({
   const { stats } = useStats();
   const role = user!.role;
 
-  // MRF type is only relevant for roles that deal with inventory/job orders.
-  const canUseMrf = role === 'technical-team' || role === 'inventory-officer' || role === 'general-manager';
+  // MRFs are filed for job orders — by team leaders (in-house / contractor) and
+  // by the roles that manage inventory and job orders.
+  const isFieldTeam = role === 'contractor' || role === 'inhouse-team';
+  const canUseMrf = isFieldTeam || ['technical-team', 'inventory-officer', 'general-manager'].includes(role);
+  const canUsePurchase = ['technical-team', 'inventory-officer', 'general-manager'].includes(role);
   const defaultType = canUseMrf ? 'mrf' : 'general';
 
   // Only active, in-stock inventory can be requested by SKU.
   const inventory = stats.materials.filter(
     (m) => !m.archived && m.status !== 'defective' && m.status !== 'out_of_stock' && Number(m.quantity ?? 0) > 0,
   );
-  // Active job orders available to link to an MRF.
+  // Active job orders available to link to an MRF — team leaders only see the
+  // job orders they lead.
   const activeJobOrders = stats.jobOrders.filter((j) =>
-    ['pending', 'in_progress'].includes(String(j.status)),
+    ['pending', 'in_progress'].includes(String(j.status)) &&
+    (!isFieldTeam || String(j.team_leader ?? '').trim().toLowerCase() === user!.fullName.trim().toLowerCase()),
   );
   const supplierOptions = useSupplierOptions();
 
@@ -2912,6 +2962,12 @@ function RequestForm({
     supplier_id: '',
     justification: '',
   });
+  // MRF: one form, many materials.
+  const newItem = () => ({ key: Math.random().toString(36).slice(2), name: '', sku: '', quantity: '1' });
+  const [items, setItems] = useState(() => [newItem()]);
+  const updateItem = (key: string, patch: Partial<ReturnType<typeof newItem>>) =>
+    setItems((list) => list.map((item) => (item.key === key ? { ...item, ...patch } : item)));
+  const stockOf = (sku: string) => (sku ? inventory.find((m) => String(m.sku) === sku) : undefined);
   const [saving, setSaving] = useState(false);
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -2920,8 +2976,33 @@ function RequestForm({
   const isGeneral = form.request_type === 'general';
   const isPurchase = form.request_type === 'purchase';
 
+  const validateMrf = (): string | null => {
+    if (isFieldTeam && !form.job_order_ref) return 'Select the job order these materials are for.';
+    for (const item of items) {
+      const label = item.name.trim() || 'a material';
+      if (!item.name.trim()) return 'Enter or pick a material for every row, or remove the empty row.';
+      const qty = Number(item.quantity);
+      if (!Number.isInteger(qty) || qty <= 0) return `Enter a whole-number quantity for ${label}.`;
+    }
+    // Same SKU on two rows is merged by the server — check the combined amount.
+    const totals = new Map<string, number>();
+    items.forEach((item) => item.sku && totals.set(item.sku, (totals.get(item.sku) ?? 0) + Number(item.quantity)));
+    for (const [sku, qty] of totals) {
+      const stock = stockOf(sku);
+      if (stock && qty > Number(stock.quantity ?? 0)) {
+        return `Only ${stock.quantity} ${stock.unit ?? 'units'} of ${stock.name} in stock (requested ${qty}).`;
+      }
+    }
+    return null;
+  };
+
   const save = async () => {
-    if (!form.material_name.trim()) return notify('Item name is required.', 'error');
+    if (isMrf) {
+      const problem = validateMrf();
+      if (problem) return notify(problem, 'error');
+    } else if (!form.material_name.trim()) {
+      return notify('Item name is required.', 'error');
+    }
     setSaving(true);
     try {
       const base = {
@@ -2932,7 +3013,15 @@ function RequestForm({
         requested_by_id: user!.id,
       };
       const payload = isMrf
-        ? { ...base, material_sku: form.material_sku, job_order_ref: form.job_order_ref }
+        ? {
+            request_type: 'mrf',
+            job_order_ref: form.job_order_ref,
+            items: items.map((item) => ({
+              material_sku: item.sku,
+              material_name: item.name.trim(),
+              quantity: Number(item.quantity),
+            })),
+          }
         : isGeneral
         ? {
             ...base,
@@ -2974,7 +3063,7 @@ function RequestForm({
           };
 
       await resourceService.create('material-requests', payload);
-      notify('Request submitted successfully!');
+      notify(isMrf ? 'MRF submitted — sent to the Inventory Officer for stock verification.' : 'Request submitted successfully!');
       await onCreated();
       onClose();
     } catch (e) {
@@ -2985,23 +3074,98 @@ function RequestForm({
   };
 
   return (
-    <Modal title="New Request" open onClose={onClose} onSubmit={save} submitText="Submit" submitting={saving}>
+    <Modal title={lockedJobOrderRef ? `Request Materials — ${lockedJobOrderRef}` : 'New Request'} open wide={isMrf} onClose={onClose} onSubmit={save} submitText="Submit" submitting={saving}>
       {/* Request type switcher */}
       {canUseMrf && !lockedJobOrderRef && (
         <div className="form-group">
           <label>Request Type</label>
           <select value={form.request_type} onChange={set('request_type')}>
-            <option value="mrf">Material Request Form (MRF) — linked to inventory / job order</option>
+            <option value="mrf">Material Request Form (MRF) — materials for a job order</option>
             <option value="general">General Request — informal supply request</option>
-            <option value="purchase">Purchase Request — procurement with pricing &amp; supplier</option>
+            {canUsePurchase && <option value="purchase">Purchase Request — procurement with pricing &amp; supplier</option>}
           </select>
         </div>
       )}
 
+      {/* ── MRF: job order link ── */}
+      {isMrf && (
+        <div className="form-group">
+          <label>Job Order Ref{isFieldTeam ? '' : ' (optional)'}</label>
+          {lockedJobOrderRef ? (
+            <>
+              <input value={form.job_order_ref} readOnly />
+              <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>Linked to this job order.</small>
+            </>
+          ) : (
+            <JobOrderCombobox
+              jobOrders={activeJobOrders}
+              value={form.job_order_ref}
+              onChange={(ref) => setForm((f) => ({ ...f, job_order_ref: ref }))}
+            />
+          )}
+        </div>
+      )}
+
+      {/* ── MRF: every material on one form ── */}
+      {isMrf && (
+        <div className="form-group">
+          <label>Materials</label>
+          <div className="mrf-item-editor">
+            {items.map((item, index) => {
+              const stock = stockOf(item.sku);
+              const short = stock && Number(item.quantity) > Number(stock.quantity ?? 0);
+              return (
+                <div className="mrf-item-row" key={item.key}>
+                  <span className="mrf-item-num">{index + 1}</span>
+                  <div className="mrf-item-material">
+                    <MaterialCombobox
+                      inventory={inventory}
+                      value={{ name: item.name, sku: item.sku }}
+                      onChange={(next) => updateItem(item.key, { name: next.name, sku: next.sku })}
+                    />
+                  </div>
+                  <div className="mrf-item-qty">
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      aria-label={`Quantity for material ${index + 1}`}
+                      value={item.quantity}
+                      onChange={(e) => updateItem(item.key, { quantity: e.target.value })}
+                    />
+                    {stock && (
+                      <small className={short ? 'is-short' : undefined}>
+                        {Number(stock.quantity ?? 0)} {String(stock.unit ?? 'units')} in stock
+                      </small>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="mrf-item-remove"
+                    aria-label={`Remove material ${index + 1}`}
+                    disabled={items.length === 1}
+                    onClick={() => setItems((list) => list.filter((x) => x.key !== item.key))}
+                  >
+                    ✕
+                  </button>
+                </div>
+              );
+            })}
+            <button type="button" className="btn-action mrf-item-add" onClick={() => setItems((list) => [...list, newItem()])}>
+              + Add another material
+            </button>
+          </div>
+          <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>
+            Goes to the Inventory Officer for stock verification, then to the General Manager for approval.
+          </small>
+        </div>
+      )}
+
       {/* ── Item name ── */}
+      {!isMrf && (
       <div className="form-group">
-        <label>{isMrf ? 'Material' : isPurchase ? 'Material to Purchase' : 'Item Name'}</label>
-        {isMrf || isGeneral ? (
+        <label>{isPurchase ? 'Material to Purchase' : 'Item Name'}</label>
+        {isGeneral ? (
           <MaterialCombobox
             inventory={inventory}
             value={{ name: form.material_name, sku: form.material_sku }}
@@ -3026,6 +3190,7 @@ function RequestForm({
           />
         )}
       </div>
+      )}
 
       {/* ── Purchase: category + description ── */}
       {isPurchase && (
@@ -3051,10 +3216,12 @@ function RequestForm({
       )}
 
       {/* ── Quantity + unit ── */}
-      <div className="form-group">
-        <label>Quantity</label>
-        <input type="number" min={1} value={form.quantity} onChange={set('quantity')} />
-      </div>
+      {!isMrf && (
+        <div className="form-group">
+          <label>Quantity</label>
+          <input type="number" min={1} value={form.quantity} onChange={set('quantity')} />
+        </div>
+      )}
       {isPurchase && (
         <div className="form-group">
           <label>Unit</label>
@@ -3073,25 +3240,6 @@ function RequestForm({
           <small style={{ display: 'block', marginTop: 4, color: 'var(--muted)' }}>
             {Number(form.quantity || 0)} {form.linked_unit || 'unit(s)'} × ₱{Number(form.unit_price).toLocaleString('en-PH', { minimumFractionDigits: 2 })} per {form.linked_unit || 'unit'}
           </small>
-        </div>
-      )}
-
-      {/* ── MRF: job order link ── */}
-      {isMrf && (
-        <div className="form-group">
-          <label>Job Order Ref (optional)</label>
-          {lockedJobOrderRef ? (
-            <>
-              <input value={form.job_order_ref} readOnly />
-              <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>Linked to this job order.</small>
-            </>
-          ) : (
-            <JobOrderCombobox
-              jobOrders={activeJobOrders}
-              value={form.job_order_ref}
-              onChange={(ref) => setForm((f) => ({ ...f, job_order_ref: ref }))}
-            />
-          )}
         </div>
       )}
 
@@ -3223,13 +3371,6 @@ function RequestButton({
 // Legacy alias so Job Order inline "Request Materials" buttons still compile.
 export const MaterialRequestButton = RequestButton;
 
-const MRF_STATUS = [
-  { value: 'pending', label: 'Ongoing' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'released', label: 'Released' },
-  { value: 'rejected', label: 'Rejected' },
-];
-
 const GENERAL_STATUS = [
   { value: 'pending', label: 'Ongoing' },
   { value: 'approved', label: 'Approved' },
@@ -3246,7 +3387,154 @@ const PURCHASE_STATUS = [
 ];
 
 const requestStatusOptions = (requestType: string) =>
-  requestType === 'purchase' ? PURCHASE_STATUS : requestType === 'general' ? GENERAL_STATUS : MRF_STATUS;
+  requestType === 'purchase' ? PURCHASE_STATUS : GENERAL_STATUS;
+
+/** Materials on a request with live stock — what the Inventory Officer checks. */
+function MrfItemsTable({ row, showStock = true }: { row: EntityRow; showStock?: boolean }) {
+  const { stats } = useStats();
+  const items = mrfItems(row);
+  return (
+    <div className="mrf-items-table-wrap">
+      <table className="mrf-items-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Material</th>
+            <th>SKU</th>
+            <th className="num">Requested</th>
+            {showStock && <th className="num">In Stock</th>}
+            {showStock && <th>Check</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item, i) => {
+            const material = item.material_sku
+              ? stats.materials.find((m) => String(m.sku) === item.material_sku && !m.archived)
+              : undefined;
+            const inStock = material ? Number(material.quantity ?? 0) : null;
+            const unit = item.unit || String(material?.unit ?? '');
+            const check = !item.material_sku
+              ? { text: 'Custom — not in inventory', cls: 'is-custom' }
+              : inStock === null
+              ? { text: 'Not found', cls: 'is-short' }
+              : inStock >= item.quantity
+              ? { text: 'Available', cls: 'is-ok' }
+              : { text: `Short by ${item.quantity - inStock}`, cls: 'is-short' };
+            return (
+              <tr key={`${item.material_sku}-${i}`}>
+                <td>{i + 1}</td>
+                <td>{item.material_name || '—'}</td>
+                <td>{item.material_sku || '—'}</td>
+                <td className="num">{item.quantity} {unit}</td>
+                {showStock && <td className="num">{inStock === null ? '—' : `${inStock} ${unit}`}</td>}
+                {showStock && <td><span className={`mrf-check ${check.cls}`}>{check.text}</span></td>}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Items that inventory cannot cover right now (linked SKUs only). */
+function mrfShortages(row: EntityRow, materials: EntityRow[]): string[] {
+  return mrfItems(row)
+    .filter((item) => item.material_sku)
+    .flatMap((item) => {
+      const material = materials.find((m) => String(m.sku) === item.material_sku && !m.archived);
+      const inStock = material ? Number(material.quantity ?? 0) : 0;
+      return inStock >= item.quantity ? [] : [`${item.material_name}: ${inStock} in stock, ${item.quantity} requested`];
+    });
+}
+
+/**
+ * Workflow buttons for one MRF, by role and step:
+ *   Inventory Officer — Verify Stock / Reject (for stock verification), Release (approved)
+ *   General Manager   — Approve / Reject (stock verified)
+ */
+function MrfWorkflowActions({ c }: { c: RowActionCtx }) {
+  const { user } = useAuth();
+  const { notify } = useToast();
+  const { stats } = useStats();
+  const role = user!.role;
+  const status = String(c.row.status);
+  const [review, setReview] = useState<'verify' | 'approve' | 'release' | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  if (c.archived) return null;
+
+  const move = async (to: string, done: string) => {
+    setSaving(true);
+    try {
+      await resourceService.update('material-requests', String(c.row.id), { status: to });
+      notify(done);
+      setReview(null);
+      await c.reload();
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not update the request.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const reject = () => {
+    if (window.confirm(`Reject ${String(c.row.ref_code)}? The team leader will need to file a new request.`)) {
+      void move('rejected', `${String(c.row.ref_code)} rejected.`);
+    }
+  };
+
+  const shortages = review ? mrfShortages(c.row, stats.materials) : [];
+  const step = review === 'verify'
+    ? { title: 'Verify Stock', submit: 'Mark Stock Verified', to: 'verified', done: 'Stock verified — sent to the General Manager for approval.', blocked: shortages.length > 0 }
+    : review === 'approve'
+    ? { title: 'Approve Material Request', submit: 'Approve', to: 'approved', done: 'Approved — sent back to the Inventory Officer for release.', blocked: shortages.length > 0 }
+    : { title: 'Release Materials', submit: 'Mark Released', to: 'released', done: 'Materials released.', blocked: false };
+
+  return (
+    <>
+      {role === 'inventory-officer' && status === 'pending' && (
+        <button className="btn-action btn-restock" disabled={c.busy || saving} onClick={() => setReview('verify')}>Verify Stock</button>
+      )}
+      {role === 'general-manager' && status === 'verified' && (
+        <button className="btn-action btn-restock" disabled={c.busy || saving} onClick={() => setReview('approve')}>Review &amp; Approve</button>
+      )}
+      {role === 'inventory-officer' && status === 'approved' && (
+        <button className="btn-action btn-restock" disabled={c.busy || saving} onClick={() => setReview('release')}>Release</button>
+      )}
+
+      {review && (
+        <Modal
+          title={`${step.title} — ${String(c.row.ref_code ?? '')}`}
+          open
+          wide
+          onClose={() => setReview(null)}
+          onSubmit={step.blocked ? undefined : () => void move(step.to, step.done)}
+          submitText={step.submit}
+          submitting={saving}
+        >
+          <dl className="detail-list">
+            <DetailRow label="Job Order">{String(c.row.job_order_ref || '—')}</DetailRow>
+            <DetailRow label="Requested By">{String(c.row.requested_by ?? '—')}</DetailRow>
+            {String(c.row.verified_by ?? '') && <DetailRow label="Stock Verified By">{`${String(c.row.verified_by)} · ${dateShort(c.row.verified_at)}`}</DetailRow>}
+            {String(c.row.approved_by ?? '') && <DetailRow label="Approved By">{`${String(c.row.approved_by)} · ${dateShort(c.row.approved_at)}`}</DetailRow>}
+          </dl>
+          <p className="detail-section-title">Materials ({mrfItems(c.row).length})</p>
+          <MrfItemsTable row={c.row} showStock={review !== 'release'} />
+          {step.blocked && (
+            <p className="mrf-review-warning">
+              Not enough stock for: {shortages.join('; ')}. Reject this request, or restock first.
+            </p>
+          )}
+          {review !== 'release' && (
+            <div className="mrf-review-reject">
+              <button type="button" className="btn-danger" disabled={saving} onClick={reject}>Reject Request</button>
+            </div>
+          )}
+        </Modal>
+      )}
+    </>
+  );
+}
 
 /**
  * Row-level component that owns the "Approve → issue bill" interaction for a
@@ -3503,28 +3791,23 @@ export function RequestsModule({ filter, title }: ModuleProps & { title?: string
   const { user } = useAuth();
   const role = user!.role;
   const canWrite = WRITE['material-requests'].includes(role);
-  // GM only can approve or reject requests.
+  // General / purchase requests: GM approves or rejects; Inventory Officer
+  // releases. MRFs have their own step buttons (MrfWorkflowActions).
   const canApprove = role === 'general-manager';
-  // Inventory Officer can only release requests that are already GM-approved.
   const canRelease = role === 'inventory-officer';
 
-  // Non-GM roles see only their own requests. The General Manager sees all so
-  // they can review, approve, and release requests from every department.
+  // The General Manager sees everything. The Inventory Officer works every MRF
+  // plus their own requests. Everyone else sees only their own requests.
   const isGM = role === 'general-manager';
+  const isMine = (row: EntityRow) =>
+    // Match by stored ID first; fall back to name for legacy rows.
+    String(row.requested_by_id ?? '').trim() === user!.id ||
+    String(row.requested_by ?? '').trim().toLowerCase() === user!.fullName.trim().toLowerCase();
   const rowFilter = isGM
     ? undefined
     : role === 'inventory-officer'
-    ? (row: EntityRow) =>
-        String(row.request_type ?? 'mrf') === 'mrf' &&
-        ['approved', 'released'].includes(String(row.status ?? ''))
-    : (row: EntityRow) => {
-        // Match by stored ID first; fall back to name for legacy rows.
-        if (String(row.requested_by_id ?? '').trim() === user!.id) return true;
-        return (
-          String(row.requested_by ?? '').trim().toLowerCase() ===
-          user!.fullName.trim().toLowerCase()
-        );
-      };
+    ? (row: EntityRow) => isMrfRow(row) || isMine(row)
+    : isMine;
 
   const columns: ModuleColumn[] = [
     { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
@@ -3537,10 +3820,13 @@ export function RequestsModule({ filter, title }: ModuleProps & { title?: string
         return 'General';
       },
     },
-    { header: 'Item', cell: (r) => String(r.material_name ?? r.material_sku ?? '') },
+    { header: 'Item', cell: (r) => (isMrfRow(r) ? mrfItemsSummary(r) : String(r.material_name ?? r.material_sku ?? '')) },
     {
       header: 'Qty',
-      cell: (r) => `${r.quantity ?? 0}${r.unit ? ` ${r.unit}` : ''}`.trim(),
+      cell: (r) => {
+        const n = isMrfRow(r) ? mrfItems(r).length : 1;
+        return n > 1 ? `${n} items` : `${r.quantity ?? 0}${r.unit ? ` ${r.unit}` : ''}`.trim();
+      },
     },
     {
       header: 'Details',
@@ -3552,7 +3838,7 @@ export function RequestsModule({ filter, title }: ModuleProps & { title?: string
       },
     },
     { header: 'Requested By', cell: (r) => String(r.requested_by ?? '—') },
-    { header: 'Status', cell: (r) => workflowStatusCell(r.status) },
+    { header: 'Status', cell: (r) => ({ text: requestStatusLabel(r), status: statusTone(r.status) }) },
   ];
 
   return (
@@ -3568,8 +3854,8 @@ export function RequestsModule({ filter, title }: ModuleProps & { title?: string
       renderCreate={({ reload }) => <RequestButton onCreated={reload} />}
       metrics={(rows) => [
         metric('req1', 'Total Requests', String(rows.length), 'file-input', 'customers'),
-        metric('req2', 'Ongoing', count(rows, (r) => r.status === 'pending'), 'clock', 'revenue'),
-        metric('req3', 'Approved', count(rows, (r) => r.status === 'approved'), 'check-circle', 'profit'),
+        metric('req2', 'Awaiting Review', count(rows, (r) => r.status === 'pending' || r.status === 'verified'), 'clock', 'revenue'),
+        metric('req3', 'Approved / For Release', count(rows, (r) => r.status === 'approved'), 'check-circle', 'profit'),
         metric('req4', 'Released / Received', count(rows, (r) => r.status === 'released' || r.status === 'received'), 'package-check', 'invoices'),
       ]}
       actions={(c) => {
@@ -3582,9 +3868,11 @@ export function RequestsModule({ filter, title }: ModuleProps & { title?: string
                 <DetailRow label="Type">
                   {t === 'mrf' ? 'Material Request Form (MRF)' : t === 'purchase' ? 'Purchase Request' : 'General Request'}
                 </DetailRow>
-                <DetailRow label="Item">{String(c.row.material_name ?? c.row.material_sku ?? '—')}</DetailRow>
-                {String(c.row.material_sku ?? '') && <DetailRow label="SKU">{String(c.row.material_sku)}</DetailRow>}
-                <DetailRow label="Quantity">{`${c.row.quantity ?? 0}${c.row.unit ? ` ${c.row.unit}` : ''}`}</DetailRow>
+                {!isMrfRow(c.row) && (<>
+                  <DetailRow label="Item">{String(c.row.material_name ?? c.row.material_sku ?? '—')}</DetailRow>
+                  {String(c.row.material_sku ?? '') && <DetailRow label="SKU">{String(c.row.material_sku)}</DetailRow>}
+                  <DetailRow label="Quantity">{`${c.row.quantity ?? 0}${c.row.unit ? ` ${c.row.unit}` : ''}`}</DetailRow>
+                </>)}
                 {/* MRF fields */}
                 {String(c.row.job_order_ref ?? '') && <DetailRow label="Job Order">{String(c.row.job_order_ref)}</DetailRow>}
                 {/* General fields */}
@@ -3617,13 +3905,24 @@ export function RequestsModule({ filter, title }: ModuleProps & { title?: string
                   {String(c.row.justification ?? '') && <DetailRow label="Justification">{String(c.row.justification)}</DetailRow>}
                 </>)}
                 <DetailRow label="Requested By">{String(c.row.requested_by ?? '—')}</DetailRow>
-                <DetailRow label="Status">{workflowStatusLabel(c.row.status)}</DetailRow>
+                <DetailRow label="Status">{requestStatusLabel(c.row)}</DetailRow>
                 <DetailRow label="Submitted On">{dateShort(c.row.created_at)}</DetailRow>
+                {String(c.row.verified_by ?? '') && <DetailRow label="Stock Verified By">{`${String(c.row.verified_by)} · ${dateShort(c.row.verified_at)}`}</DetailRow>}
+                {String(c.row.approved_by ?? '') && <DetailRow label="Approved By">{`${String(c.row.approved_by)} · ${dateShort(c.row.approved_at)}`}</DetailRow>}
+                {String(c.row.released_by ?? '') && <DetailRow label="Released By">{`${String(c.row.released_by)} · ${dateShort(c.row.released_at)}`}</DetailRow>}
               </dl>
+              {isMrfRow(c.row) && (
+                <>
+                  <p className="detail-section-title">Materials ({mrfItems(c.row).length})</p>
+                  <MrfItemsTable row={c.row} showStock={['pending', 'verified'].includes(String(c.row.status))} />
+                </>
+              )}
             </ViewAction>
             {canWrite && (
               <>
-                <ApprovalBillingRow c={c} canApprove={canApprove} canRelease={canRelease} />
+                {isMrfRow(c.row)
+                  ? <MrfWorkflowActions c={c} />
+                  : <ApprovalBillingRow c={c} canApprove={canApprove} canRelease={canRelease} />}
                 <ArchiveBtn c={c} />
               </>
             )}
