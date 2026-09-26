@@ -113,12 +113,12 @@ export const RESOURCES: Record<string, ResourceDef> = {
 
   'material-requests': {
     table: 'material_requests',
-    // All roles can create requests; request_type determines the form variant:
+    // Staff roles can create requests (customers cannot); request_type determines the form variant:
     //   'mrf'      — formal Material Request Form with one or more materials for a job order;
     //                flow: pending → verified (Inventory) → approved (GM) → released (Inventory)
-    //   'general'  — informal supply request open to all roles including customers
+    //   'general'  — informal internal supply request
     //   'purchase' — procurement request with pricing & supplier (inventory-officer only, enforced frontend-side)
-    writeRoles: ['customer', 'zone-specialist', 'technical-team', 'contractor', 'inhouse-team', 'inventory-officer'],
+    writeRoles: ['zone-specialist', 'technical-team', 'contractor', 'inhouse-team', 'inventory-officer'],
     allowed: [
       // shared
       'material_name', 'quantity', 'requested_by', 'requested_by_id', 'status', 'archived', 'request_type',
@@ -128,8 +128,6 @@ export const RESOURCES: Record<string, ResourceDef> = {
       'material_sku', 'job_order_ref',
       // general
       'reason',
-      // general (customer fulfilment)
-      'payment_option', 'delivery_address',
       // purchase
       'category', 'description', 'unit', 'min_level', 'weight_kg', 'size', 'color',
       'unit_price', 'total_cost', 'source', 'supplier', 'supplier_id', 'justification',

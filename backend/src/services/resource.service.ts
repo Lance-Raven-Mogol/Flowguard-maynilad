@@ -53,6 +53,8 @@ function materialStockStatus(quantity: unknown, minLevel: unknown, requestedStat
   return 'in_stock';
 }
 
+const hasImages = (value: unknown): boolean => Array.isArray(value) && value.length > 0;
+
 const randDigits = (n: number): string =>
   Math.floor(Math.random() * 10 ** n)
     .toString()
@@ -491,6 +493,11 @@ export const resourceService = {
       delete values.urgency;
     }
 
+    // Every complaint needs photo evidence.
+    if (entity === 'incidents' && !hasImages(values.images)) {
+      throw badRequest('Attach at least one photo of the concern.');
+    }
+
     if (entity === 'support-messages') {
       const message = String(values.message ?? '').trim();
       if (!message) throw badRequest('Message cannot be empty.');
@@ -910,6 +917,14 @@ export const resourceService = {
       }
       if (period !== 'NO_WORK' && sameDay.some((schedule) => schedule.schedule_period === 'NO_WORK')) {
         throw conflict('Remove the existing No Work schedule before adding a work shift.');
+      }
+    }
+    // A complaint's photos can be replaced but not all removed (legacy rows
+    // saved before photos were required may stay empty).
+    if (entity === 'incidents' && 'images' in values && !hasImages(values.images)) {
+      const currentIncident = await repo.getRowById(def.table, id);
+      if (currentIncident && hasImages(currentIncident.images)) {
+        throw badRequest('A complaint must keep at least one photo.');
       }
     }
     if (entity === 'incidents' && 'bill_to_customer_id' in values) {

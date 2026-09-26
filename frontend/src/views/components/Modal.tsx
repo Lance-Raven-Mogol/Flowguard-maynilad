@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { X } from 'lucide-react';
+import { Printer, X } from 'lucide-react';
+import { printHtml } from './print';
 
 interface ModalProps {
   title: string;
@@ -14,6 +15,9 @@ interface ModalProps {
   className?: string;
   /** Label for the dismiss button (defaults to "Cancel", or "Close" when there's no submit action). */
   closeText?: string;
+  /** Show a Print button that prints the modal body (optionally stamped with who printed it). */
+  printable?: boolean;
+  printedBy?: string;
   children: React.ReactNode;
 }
 
@@ -28,11 +32,12 @@ function unlockScroll() {
   if (lockCount === 0) document.body.style.overflow = '';
 }
 
-export function Modal({ title, open, onClose, onSubmit, submitText = 'Submit', submitting, wide, className, closeText, children }: ModalProps) {
+export function Modal({ title, open, onClose, onSubmit, submitText = 'Submit', submitting, wide, className, closeText, printable, printedBy, children }: ModalProps) {
   // Only dismiss on a backdrop click that BOTH starts and ends on the overlay.
   // This prevents the modal from closing when you select text inside a field
   // and release the mouse outside the card (which would discard your input).
   const pressedOnBackdrop = useRef(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -65,8 +70,14 @@ export function Modal({ title, open, onClose, onSubmit, submitText = 'Submit', s
             <X size={18} />
           </button>
         </div>
-        <div className="modal-body">{children}</div>
+        <div className="modal-body" ref={bodyRef}>{children}</div>
         <div className="modal-footer">
+          {printable && (
+            <button className="btn-secondary" onClick={() => printHtml(title, bodyRef.current?.innerHTML ?? '', printedBy)}>
+              <Printer size={16} style={{ marginRight: 8 }} />
+              Print
+            </button>
+          )}
           <button className="btn-secondary" onClick={onClose}>
             {closeText ?? (onSubmit ? 'Cancel' : 'Close')}
           </button>

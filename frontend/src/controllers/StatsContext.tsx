@@ -202,8 +202,14 @@ const urgencyTone = (urgency: unknown): Alert['tone'] => {
 };
 
 /** Human-readable incident status label. */
+const INCIDENT_STATUS_WORD: Record<string, string> = {
+  under_verification: 'Pending',
+  in_progress: 'Ongoing',
+  for_estimation: 'Estimating',
+  for_billing: 'Billing',
+};
 const incidentStatusLabel = (status: unknown): string =>
-  String(status ?? '').replace(/_/g, ' ');
+  INCIDENT_STATUS_WORD[String(status ?? '')] ?? String(status ?? '');
 
 const customerCanTrackIncident = (incident: EntityRow, customerId: string, fullName: string): boolean =>
   String(incident.reported_by_id ?? '') === customerId ||
@@ -303,10 +309,6 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
         tone: paymentTone(status),
       });
     });
-    const mySupplies = stats.materialRequests.filter((r) => r.request_type === 'general' && String(r.requested_by ?? '').toLowerCase() === fullName.toLowerCase() && r.status !== 'released');
-    mySupplies.forEach((s) =>
-      alerts.push({ key: `supply:${s.id}:${s.status}`, view: 'requests', icon: 'package', title: `Request ${s.ref_code} is ${s.status}`, detail: String(s.material_name ?? ''), tone: s.status === 'rejected' ? 'danger' : 'info' }),
-    );
     stats.advisories
       .filter((a) => a.status === 'published' || a.status === 'approved')
       .slice(0, 3)
@@ -446,7 +448,6 @@ export function buildBadgeItems(stats: DashboardStats, role: string, fullName: s
           ...trackable.filter((i) => String(i.site_action ?? '').trim() !== '').map(sitePlanBadgeId),
         ],
         billing: billingItems,
-        requests: ids(stats.materialRequests.filter((r) => r.request_type === 'general' && String(r.requested_by ?? '').toLowerCase() === fullName.toLowerCase() && r.status !== 'released')),
       };
       }
     case 'zone-specialist':

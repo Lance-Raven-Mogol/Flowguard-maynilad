@@ -104,10 +104,6 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter }) => <BillingModule filter={filter} />,
       },
       {
-        id: 'requests', label: 'Requests', icon: 'package', group: 'main',
-        render: ({ filter }) => <RequestsModule filter={filter} title="My Requests" />,
-      },
-      {
         id: 'inquiries', label: 'Inquiries / Chat', icon: 'messages-square', group: 'main',
         render: ({ filter }) => <InquiriesModule filter={filter} />,
       },
@@ -117,7 +113,7 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       },
       faqView('help', 'Help Center', 'circle-help', 'Help & Support Center', [
         { q: 'How do I file a complaint?', a: "Go to 'Complaints' and click 'File Complaint'. Describe the concern, set the location and urgency, then submit. A zone specialist will be notified to verify it." },
-        { q: 'How do I track my complaint?', a: "Open 'Complaints' — each row shows a live status: Under Verification, In Progress, For Estimation, For Billing, or Resolved." },
+        { q: 'How do I track my complaint?', a: "Open 'Complaints' — each row shows a live status: Pending, Ongoing, Estimating, Billing, or Resolved." },
         { q: 'Where do I see service interruptions?', a: "Check 'Service Advisories' for published maintenance, interruption, and emergency notices for your area." },
       ]),
       settings(),
@@ -261,7 +257,7 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       },
       faqView('guidelines', 'Zone Guidelines', 'book-open', 'Zone Investigation Guidelines', [
         { q: 'Standard safety protocol for site inspection', a: 'Wear high-visibility vests and protective gear. Coordinate with the barangay office before entering private property.' },
-        { q: 'How do I verify an incident?', a: "Open 'Investigations', review the reported concern, and use the status dropdown to set it In Progress, For Estimation, For Billing, or Resolved after inspection." },
+        { q: 'How do I verify an incident?', a: "Open 'Investigations', review the reported concern, and use the status dropdown to set it Ongoing, Estimating, Billing, or Resolved after inspection." },
         { q: 'Recording asset condition', a: "In 'Asset Inspections', update an asset's condition (Good / Needs Maintenance / Needs Replacement / Dispose). The health score recalculates automatically." },
       ]),
       settings(),

@@ -1,6 +1,7 @@
 # FlowGuard — Capstone Panel Reminders (Status Check)
 > Checked against the codebase: 2026-09-26 (commit `4aec3de`)
 > Updated: 2026-09-26 — #1 tapos na (email OTP); bagong MRF flow + multi-material MRF (tingnan sa ibaba); #5 at #14 na-update
+> Updated: 2026-09-26 — Quick wins tapos na: #5 (Stock column), #11 (GM print), #12 (tinanggal ang customer Requests), #13 (required photo)
 
 Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
 
@@ -12,15 +13,15 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
 | 2 | Paid vs. free complaints (sakop ng organization) | ❌ |
 | 3 | Traditional payment (walk-in / cash) | 🟡 |
 | 4 | Categorize ang complaints | 🟡 |
-| 5 | MRF — column para sa natitirang stock | 🟡 |
+| 5 | MRF — column para sa natitirang stock | ✅ |
 | 6 | Inventory — bawal ma-0, warning levels | 🟡 |
 | 7 | Warning kapag 10 na lang ang stock | 🟡 |
 | 8 | FIFO (first in, first out) | ❌ |
 | 9 | Report ng lahat ng transactions | ❌ |
 | 10 | Barcode scanner para match ang actual vs. system | 🟡 |
-| 11 | GM — print function | ❌ |
-| 12 | Customer — alisin ang Request function | ❌ |
-| 13 | Photo required sa complaint | ❌ |
+| 11 | GM — print function | ✅ |
+| 12 | Customer — alisin ang Request function | ✅ |
+| 13 | Photo required sa complaint | ✅ |
 | 14 | Identity kung sino ang nag-out ng item | ✅ |
 | 15 | Audit logs sa Admin | ✅ |
 | 16 | Tech dept — full payment + breakdown/receipt, hindi estimate | ❌ |
@@ -84,9 +85,9 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
   - **Other**
 - Mag-add ng category filter/metric sa Incidents module. Gamitin ang category para ma-set ang `billable` (#2).
 
-## 🟡 5. MRF — column para sa natitirang stock
-- **Meron na (2026-09-26):** Sa **View** ng MRF at sa **Verify Stock / Review & Approve** modal, may table ng bawat material na may **Requested**, **In Stock** (live), at **Check** (Available / Short by N / Custom). Sa MRF form naman, lumalabas sa bawat material ang "N in stock" at nagiging pula kapag kulang.
-- **Kulang pa:** Wala pa sa mismong Requests table bilang column. Mahirap itong ipakita bilang isang column dahil pwedeng maraming material ang isang MRF. Kung hihingin pa ng panel, pwedeng maglagay ng column na "Stock OK / May kulang".
+## ✅ 5. MRF — column para sa natitirang stock (DONE 2026-09-26)
+- **Requests table:** May bagong **Stock** column. Para sa MRF na *For Stock Verification* o *For GM Approval*, live itong nagche-check laban sa inventory: **Stock OK** (green) o **Short (N items)** (red). `—` kapag approved na (naka-reserve na ang stock) o kapag hindi MRF.
+- **View / Verify Stock / Review & Approve:** nandoon pa rin ang per-material table (Requested, In Stock, Check). Sa MRF form, "N in stock" sa bawat material.
 
 ## 🟡 6. Inventory — bawal ma-0, may warning levels
 - **Meron na:** Auto status `in_stock` / `low_stock` / `out_of_stock` base sa `min_level` (`resource.service.ts:47-53`). Hinaharang din ang release kapag mas malaki ang request kaysa sa stock (`resource.service.ts:166-170`).
@@ -128,21 +129,23 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
   - Pwede ring gamitin ang scan sa MRF release para siguradong tama ang item na lalabas.
   - Tanggalin sa "Out of scope" sa `PENDING.md`.
 
-## ❌ 11. GM — print function — Recalla
-- **Ngayon:** Ang QR label lang ang may `window.print()`.
-- **Gagawin:** Mag-add ng **Print** button sa GM views: Incidents, Job Orders, Inventory, Billing, Audit Log, Reports, at sa bawat detail modal (JO, bill/receipt). Gumamit ng `@media print` stylesheet na nagtatago ng sidebar at topbar. Pinakamadaling ilagay sa `LiveModule` para lahat ng table ay may print.
+## ✅ 11. GM — print function — Recalla (DONE 2026-09-26)
+- **Print button sa bawat table** (GM lang): nasa taas ng Incidents, Job Orders, Inventory, Requests, Suppliers, Billing, Asset Lifecycle, Service Advisories, at Audit Log. Kung ano ang nakikita sa table (kasama ang search filter at archived view), iyon ang ipi-print.
+- **Print button sa detail modals** (GM lang): Complaint, Job Order, Materials ng JO, Request, Asset, Bill / Payment.
+- Bubukas ang malinis na print window na may header (FlowGuard, title, petsa, at kung sino ang nag-print). Hiwalay na window ito kaya hindi naaapektuhan ng `@media print` ng QR label.
+- **Files:** bagong `views/components/print.ts` (`printHtml`, `printTable`), `LiveModule.tsx`, `Modal.tsx` (`printable` / `printedBy` props), `modules.tsx` (`useGmPrint`).
+- *Hindi pa kasama:* User Management (hindi LiveModule). Ang Reports view (#9) ay wala pa.
 
-## ❌ 12. Customer — alisin ang Request function
-- **Ngayon:** May **Requests** menu ang customer (`roleViews.tsx`, customer views). Kasama ang `customer` sa `writeRoles` ng `material-requests` (`resources.ts`).
-- **Gagawin:**
-  - Tanggalin ang `requests` view sa customer sa `roleViews.tsx`.
-  - Tanggalin ang `'customer'` sa `RESOURCES['material-requests'].writeRoles`.
-  - Linisin ang customer-only code (general request + Cash on Delivery / GCash flow, `mySupplies` alerts sa `StatsContext.tsx:293`, at billing ng approved general requests sa `modules.tsx:4830`).
-  - I-update ang Help Center FAQ.
+## ✅ 12. Customer — alisin ang Request function (DONE 2026-09-26)
+- Tinanggal ang **Requests** menu ng customer (`roleViews.tsx`) at ang `customer` sa `writeRoles` ng `material-requests` (backend `resources.ts` at frontend `WRITE`). Kapag nag-POST pa rin ang customer, 403 na.
+- Tinanggal ang customer-only code: Payment Option (COD / GCash) + Delivery Address sa request form, ang "Approve → Issue Bill" modal para sa customer item requests (`ApprovalBillingRow` → `RequestStatusActions`, status lang), ang "Approved Item Requests" sa **Issue Final Bill** (incidents na lang), at ang customer request alerts/badges sa `StatsContext.tsx`.
+- Tinanggal ang `payment_option` / `delivery_address` sa allowed columns. Naiwan ang DB columns para hindi masira ang lumang data (walang migration na kailangan).
+- Walang binanggit na Requests sa customer Help Center FAQ, kaya walang binago roon.
 
-## ❌ 13. Photo — gawing required
-- **Ngayon:** `{ name: 'images', label: 'Photos (optional)' }` (`modules.tsx:1393`). Walang validation.
-- **Gagawin:** Palitan ang label ng "Photos (required)". Mag-validate ng hindi bababa sa 1 photo sa frontend, at idagdag ang `images` sa backend validation (hindi pwedeng empty array). Tandaan: `required` sa `resources.ts` ay para sa non-empty value, kaya kailangan ng hiwalay na check para sa empty array.
+## ✅ 13. Photo — required na (DONE 2026-09-26)
+- Label: **"Photos (required)"**. Hindi makaka-submit ng bagong complaint kapag walang photo ("Attach at least one photo.").
+- Bagong `required` option sa `ModuleField` ng `LiveModule` (hiwalay na check para sa empty array).
+- **Backend:** `resource.service.ts` — 400 kapag walang photo sa bagong incident, at hindi pwedeng tanggalin lahat ng photo sa update. Ang lumang complaints na walang photo ay pwede pa ring i-edit.
 
 ## ✅ 14. Identity ng nag-out ng item (DONE 2026-09-26)
 - Bawat MRF ay may **`verified_by` / `verified_at`** (Inventory Officer na nag-check ng stock), **`approved_by` / `approved_at`** (GM), at **`released_by` / `released_at`** (Inventory Officer na nag-release). Auto-fill ito ng server mula sa naka-login na user, at makikita sa **View** ng request.
@@ -185,7 +188,7 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
 ---
 
 ## Suggested order
-1. Mabilis lang: #12 (alisin ang customer requests), #13 (required photo), #5 (stock column), #14 (released_by), #11 (print).
+1. ~~Mabilis lang: #12, #13, #5, #14, #11~~ — tapos na lahat.
 2. Complaint flow: #4 → #18 → #2 → #16 (magkakaugnay, sabay-sabay dapat).
 3. Location/visit: #17, #19.
 4. Inventory: #6, #7 → #8 (FIFO) → #10 (scanner/stock count) → #9 (reports).

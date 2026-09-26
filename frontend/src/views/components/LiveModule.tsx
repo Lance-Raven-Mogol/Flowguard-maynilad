@@ -16,10 +16,12 @@ import {
 import { ApiError } from '../../services/apiClient';
 import { useToast } from '../../controllers/ToastContext';
 import { useStats } from '../../controllers/StatsContext';
+import { useAuth } from '../../controllers/AuthContext';
 import { MetricsGrid } from './MetricsGrid';
 import { DataTable } from './DataTable';
 import { PanelHead, ActionButton } from './panels';
 import { Modal } from './Modal';
+import { printTable } from './print';
 
 export interface ModuleField {
   name: string;
@@ -45,7 +47,11 @@ export interface ModuleField {
   maxFiles?: number;
   /** For images fields: max bytes per file (default 5 MB). */
   maxSizeBytes?: number;
+  /** Must be filled (images: at least one) before the form can be submitted. */
+  required?: boolean;
 }
+
+const isBlank = (v: unknown) => (Array.isArray(v) ? v.length === 0 : String(v ?? '').trim() === '');
 
 /** Today's date as YYYY-MM-DD — used as the min for scheduling date pickers. */
 const todayISO = (): string => new Date().toISOString().slice(0, 10);
@@ -300,6 +306,8 @@ export function LiveModule({
 }: LiveModuleProps) {
   const { notify } = useToast();
   const { reload: reloadStats } = useStats();
+  const { user } = useAuth();
+  const canPrint = user?.role === 'general-manager';
   const [rows, setRows] = useState<EntityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -424,6 +432,18 @@ export function LiveModule({
   };
 
   const submit = async () => {
+    // Legacy rows saved before a field became required can still be edited
+    // as long as they stay blank.
+    const missing = fields?.find((f) =>
+      f.required &&
+      (!f.visibleWhen || f.visibleWhen(values)) &&
+      isBlank(values[f.name]) &&
+      (!editing || !isBlank(editing[f.name])),
+    );
+    if (missing) {
+      notify(missing.kind === 'images' ? 'Attach at least one photo.' : `"${missing.label}" is required.`, 'error');
+      return;
+    }
     setSubmitting(true);
     try {
       const submittedValues = prepareValues ? prepareValues(values) : values;
@@ -505,6 +525,21 @@ export function LiveModule({
         title={showArchived ? `${title} · Archived` : title}
         action={
           <div className="panel-head-actions">
+            {canPrint && (
+              <ActionButton
+                label="Print"
+                icon="printer"
+                variant="secondary"
+                onClick={() => {
+                  // Match what the table shows, including the search filter.
+                  const q = filter.trim().toLowerCase();
+                  const printed = q
+                    ? { ...table, rows: table.rows.filter((r) => r.cells.some((c) => c.text.toLowerCase().includes(q))) }
+                    : table;
+                  printTable(showArchived ? `${title} · Archived` : title, printed, user?.fullName);
+                }}
+              />
+            )}
             {showArchiveToggle && (
               <button className="btn-action" type="button" onClick={() => setShowArchived((s) => !s)}>
                 {showArchived ? 'View Active' : 'View Archived'}
