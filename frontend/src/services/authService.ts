@@ -29,17 +29,21 @@ export interface LoginResult {
 }
 
 export const authService = {
+  /** Forgot password step 1: email a 6-digit reset code. */
+  async requestPasswordReset(email: string): Promise<{ message: string }> {
+    return api.post<{ message: string }>('/auth/forgot-password', { email });
+  },
   async resetPassword(input: { email: string; otpCode: string; newPassword: string }): Promise<{ message: string }> {
     return api.post<{ message: string }>('/auth/reset-password', input);
   },
-  /** Step 1: Validate form, generate TOTP secret + QR code. Returns { email, qrCodeDataUrl, manualKey }. */
-  async initiateRegistration(input: InitiateRegistrationInput): Promise<{ message: string; email: string; qrCodeDataUrl: string; manualKey: string }> {
-    return api.post<{ message: string; email: string; qrCodeDataUrl: string; manualKey: string }>('/auth/register/initiate', input);
+  /** Step 1: Validate the form and email a 6-digit verification code. */
+  async initiateRegistration(input: InitiateRegistrationInput): Promise<{ message: string; email: string }> {
+    return api.post<{ message: string; email: string }>('/auth/register/initiate', input);
   },
 
-  /** Step 2: Complete registration with first TOTP token from authenticator app. */
-  async completeRegistration(email: string, totpToken: string): Promise<{ token: string; user: User }> {
-    const res = await api.post<{ token: string; user: User }>('/auth/register/complete', { email, totpToken });
+  /** Step 2: Complete registration with the emailed code. */
+  async completeRegistration(email: string, otpCode: string): Promise<{ token: string; user: User }> {
+    const res = await api.post<{ token: string; user: User }>('/auth/register/complete', { email, otpCode });
     if (res.token) {
       tokenStore.set(res.token);
     }
@@ -93,17 +97,14 @@ export const authService = {
     return res.user;
   },
 
-  /** Generate a new TOTP secret + QR code for Account Settings. Returns { qrCodeDataUrl, manualKey }. */
-  async generateOtp(): Promise<{ qrCodeDataUrl: string; manualKey: string }> {
-    return api.post<{ qrCodeDataUrl: string; manualKey: string }>('/auth/otp/generate', {});
+  /** Account Settings: email a code to confirm turning two-factor on. */
+  async generateOtp(): Promise<{ email: string; message: string }> {
+    return api.post<{ email: string; message: string }>('/auth/otp/generate', {});
   },
 
-  async verifyOtp(code: string): Promise<{ valid: boolean }> {
-    return api.post<{ valid: boolean }>('/auth/otp/verify', { code });
-  },
-
-  async enableOtp(): Promise<void> {
-    await api.post<{ ok: true }>('/auth/otp/enable', {});
+  /** Verify the emailed code; the server turns two-factor on when it matches. */
+  async verifyOtp(code: string): Promise<void> {
+    await api.post<{ ok: true }>('/auth/otp/verify', { code });
   },
 
   async disableOtp(): Promise<void> {

@@ -10,7 +10,7 @@ const HIGHLIGHTS = [
   { icon: ShieldCheck, text: 'Secure, role-based access control' },
 ];
 
-export function AuthCard({ label, subtitle, children, wide }: { label: string; subtitle: string; children: ReactNode; wide?: boolean }) {
+export function AuthCard({ label, subtitle, children }: { label: string; subtitle: string; children: ReactNode }) {
   return (
     <main className="auth-shell">
       <aside className="auth-brand">
@@ -39,7 +39,7 @@ export function AuthCard({ label, subtitle, children, wide }: { label: string; s
       </aside>
 
       <section className="auth-panel" aria-label={label}>
-        <div className={`auth-form-wrap${wide ? ' auth-form-wrap--wide' : ''}`}>
+        <div className="auth-form-wrap">
           <header className="auth-head">
             <span className="auth-logo-sm">
               <img src={logo} alt="FlowGuard" />

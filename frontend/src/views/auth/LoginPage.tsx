@@ -1,16 +1,17 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ShieldCheck } from 'lucide-react';
+import { MailCheck } from 'lucide-react';
 import { useAuth } from '../../controllers/AuthContext';
 import { useToast } from '../../controllers/ToastContext';
 import { ApiError } from '../../services/apiClient';
 import { AuthCard } from './AuthCard';
 import { PasswordInput } from './PasswordInput';
+import { OtpCodeInput, ResendCodeButton } from './OtpCodeInput';
 
 type Step = 'credentials' | 'otp';
 
 export function LoginPage() {
-  const { login, verifyLoginOtp } = useAuth();
+  const { login, verifyLoginOtp, resendLoginOtp } = useAuth();
   const { notify } = useToast();
   const navigate = useNavigate();
 
@@ -20,11 +21,10 @@ export function LoginPage() {
   const [remember, setRemember] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // TOTP state
+  // Emailed sign-in code state
   const [otpCode, setOtpCode] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
   const [loginToken, setLoginToken] = useState('');
-  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,6 +37,7 @@ export function LoginPage() {
       const result = await login({ email, password, remember });
       if (result.otpRequired && result.loginToken) {
         setLoginToken(result.loginToken);
+        setOtpCode('');
         setStep('otp');
       } else {
         navigate('/dashboard');
@@ -66,12 +67,23 @@ export function LoginPage() {
     }
   };
 
+  const handleResend = async () => {
+    try {
+      const res = await resendLoginOtp(loginToken);
+      notify(res.message);
+      return true;
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : 'Could not resend the code.', 'error');
+      return false;
+    }
+  };
+
   return (
     <AuthCard
       label={step === 'credentials' ? 'Welcome back' : 'Verify your identity'}
       subtitle={step === 'credentials'
         ? 'Sign in to your FlowGuard account.'
-        : 'Enter the code from your authenticator app.'
+        : 'Enter the code we sent to your email.'
       }
     >
       {step === 'credentials' ? (
@@ -99,46 +111,14 @@ export function LoginPage() {
       ) : (
         <div className="login-form otp-step">
           <div className="otp-icon-wrap">
-            <ShieldCheck size={32} strokeWidth={1.8} />
+            <MailCheck size={32} strokeWidth={1.8} />
           </div>
           <p className="otp-step-desc">
-            Open your <strong>authenticator app</strong> and enter<br />
-            the 6-digit code for <strong>FlowGuard</strong>.
+            We sent a 6-digit sign-in code to<br />
+            <strong>{email.trim()}</strong>. It expires in 5 minutes.
           </p>
 
-          <div className="otp-input-group">
-            {[0, 1, 2, 3, 4, 5].map((i) => (
-              <input
-                key={i}
-                ref={(el) => { otpRefs.current[i] = el; }}
-                className="otp-digit"
-                type="text"
-                inputMode="numeric"
-                maxLength={1}
-                value={otpCode[i] ?? ''}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, '');
-                  const next = otpCode.split('');
-                  next[i] = val;
-                  const joined = next.join('').slice(0, 6);
-                  setOtpCode(joined);
-                  if (val && i < 5) otpRefs.current[i + 1]?.focus();
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Backspace' && !otpCode[i] && i > 0) {
-                    otpRefs.current[i - 1]?.focus();
-                  }
-                }}
-                onPaste={(e) => {
-                  e.preventDefault();
-                  const pasted = (e.clipboardData.getData('text') ?? '').replace(/\D/g, '').slice(0, 6);
-                  setOtpCode(pasted);
-                  otpRefs.current[Math.min(pasted.length, 5)]?.focus();
-                }}
-              />
-            ))}
-          </div>
-          <p className="otp-cooldown" style={{ textAlign: 'center', marginTop: '0.3rem' }}>Codes change every 30 seconds.</p>
+          <OtpCodeInput value={otpCode} onChange={setOtpCode} />
 
           <button
             className="primary-submit"
@@ -150,6 +130,7 @@ export function LoginPage() {
           </button>
 
           <div className="otp-actions">
+            <ResendCodeButton onResend={handleResend} />
             <button
               type="button"
               className="otp-link-btn otp-back"

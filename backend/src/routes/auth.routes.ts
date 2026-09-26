@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth.middleware.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 export const authRoutes = Router();
+authRoutes.post('/forgot-password', asyncHandler(authController.requestPasswordReset));
 authRoutes.post('/reset-password', asyncHandler(authController.resetPassword));
 
 // Email verification registration flow
@@ -22,8 +23,7 @@ authRoutes.patch('/profile', requireAuth, asyncHandler(authController.updateProf
 authRoutes.patch('/password', requireAuth, asyncHandler(authController.changePassword));
 authRoutes.patch('/avatar', requireAuth, asyncHandler(authController.updateAvatar));
 
-// OTP endpoints
+// Two-factor (email OTP) settings
 authRoutes.post('/otp/generate', requireAuth, asyncHandler(authController.generateOtp));
 authRoutes.post('/otp/verify', requireAuth, asyncHandler(authController.verifyOtp));
-authRoutes.post('/otp/enable', requireAuth, asyncHandler(authController.enableOtp));
 authRoutes.post('/otp/disable', requireAuth, asyncHandler(authController.disableOtp));

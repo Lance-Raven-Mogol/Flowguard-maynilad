@@ -4,18 +4,25 @@ import { authService } from '../services/auth.service.js';
 import { unauthorized } from '../utils/httpError.js';
 
 export const authController = {
+  /** Forgot password step 1: email a reset code. */
+  async requestPasswordReset(req: Request, res: Response): Promise<void> {
+    const result = await authService.requestPasswordReset(req.body ?? {});
+    res.json(result);
+  },
+
+  /** Forgot password step 2: verify the code and set the new password. */
   async resetPassword(req: Request, res: Response): Promise<void> {
     await authService.resetPassword(req.body ?? {});
     res.json({ message: 'Password reset successfully. Sign in with your new password.' });
   },
 
-  /** Step 1: Validate form, generate TOTP secret + QR code. Returns { email, qrCodeDataUrl, manualKey }. */
+  /** Step 1: Validate the form and email a 6-digit verification code. */
   async initiateRegistration(req: Request, res: Response): Promise<void> {
     const result = await authService.initiateRegistration(req.body ?? {});
     res.status(200).json(result);
   },
 
-  /** Step 2: Verify first TOTP token from authenticator app, create account. */
+  /** Step 2: Verify the emailed code and create the account. */
   async completeRegistration(req: Request, res: Response): Promise<void> {
     const result = await authService.completeRegistration(req.body ?? {});
     res.status(201).json(result);
@@ -69,22 +76,16 @@ export const authController = {
     res.json({ user });
   },
 
+  /** Email a code to confirm turning two-factor on. */
   async generateOtp(req: Request, res: Response): Promise<void> {
     if (!req.user) throw unauthorized();
-    const result = await authService.generateOtp(req.user.id);
-    // result = { qrCodeDataUrl, manualKey }
-    res.json({ ...result, message: 'Scan the QR code with your authenticator app.' });
+    res.json(await authService.generateOtp(req.user.id));
   },
 
+  /** Verify the emailed code and turn two-factor on. */
   async verifyOtp(req: Request, res: Response): Promise<void> {
     if (!req.user) throw unauthorized();
-    const valid = await authService.verifyOtp(req.user.id, req.body?.code ?? '');
-    res.json({ valid });
-  },
-
-  async enableOtp(req: Request, res: Response): Promise<void> {
-    if (!req.user) throw unauthorized();
-    await authService.enableOtp(req.user.id);
+    await authService.verifyOtp(req.user.id, req.body?.code);
     res.json({ ok: true });
   },
 

@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { env } from '../config/env.js';
+import { serviceUnavailable } from '../utils/httpError.js';
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -9,12 +10,40 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-export async function sendOtpEmail(to: string, otpCode: string): Promise<void> {
+export type OtpPurpose = 'signup' | 'login' | 'reset' | 'enable-2fa';
+
+const PURPOSE_COPY: Record<OtpPurpose, { subject: string; heading: string; body: string }> = {
+  signup: { subject: 'Your FlowGuard Verification Code', heading: 'Verify your email', body: 'Use the code below to complete your registration.' },
+  login: { subject: 'Your FlowGuard Sign-in Code', heading: 'Sign-in verification', body: 'Use the code below to finish signing in to your account.' },
+  reset: { subject: 'Your FlowGuard Password Reset Code', heading: 'Reset your password', body: 'Use the code below to set a new password for your account.' },
+  'enable-2fa': { subject: 'Your FlowGuard Two-Factor Code', heading: 'Turn on two-factor authentication', body: 'Use the code below to confirm email verification for your sign-ins.' },
+};
+
+/**
+ * Email a 6-digit verification code through Gmail SMTP. In production a
+ * delivery failure is thrown so the user is told; in development the code is
+ * logged to the console so auth still works without SMTP.
+ */
+export async function sendOtpEmail(to: string, otpCode: string, purpose: OtpPurpose = 'signup', expiresInMinutes = 10): Promise<void> {
+  const copy = PURPOSE_COPY[purpose];
   try {
   await transporter.sendMail({
     from: `"FlowGuard" <${env.smtp.user}>`,
     to,
-    subject: 'Your FlowGuard Verification Code',
+    replyTo: env.smtp.user,
+    subject: copy.subject,
+    // A plain-text part alongside the HTML — HTML-only mail scores worse with spam filters.
+    text: [
+      copy.heading,
+      '',
+      `${copy.body} This code expires in ${expiresInMinutes} minutes.`,
+      '',
+      `Your code: ${otpCode}`,
+      '',
+      'If you did not request this code, you can safely ignore this email. Do not share this code with anyone.',
+      '',
+      '— FlowGuard · Maynilad Water Utility',
+    ].join('\n'),
     html: `
       <!DOCTYPE html>
       <html lang="en">
@@ -44,9 +73,9 @@ export async function sendOtpEmail(to: string, otpCode: string): Promise<void> {
                 <!-- Body -->
                 <tr>
                   <td style="padding:36px 40px 16px;">
-                    <h2 style="margin:0 0 8px;font-size:18px;font-weight:600;color:#14233f;">Verify your email</h2>
+                    <h2 style="margin:0 0 8px;font-size:18px;font-weight:600;color:#14233f;">${copy.heading}</h2>
                     <p style="margin:0 0 28px;font-size:14px;line-height:1.6;color:#7d8aa6;">
-                      Use the code below to complete your registration. This code expires in <strong style="color:#14233f;">5 minutes</strong>.
+                      ${copy.body} This code expires in <strong style="color:#14233f;">${expiresInMinutes} minutes</strong>.
                     </p>
 
                     <!-- OTP box -->
@@ -97,9 +126,12 @@ export async function sendOtpEmail(to: string, otpCode: string): Promise<void> {
     `,
   });
   } catch (err) {
-    // In development, log the OTP to the console so login still works
-    // even when Gmail SMTP is unavailable or misconfigured.
-    console.warn(`[mailer] Failed to send OTP email to ${to}: ${err instanceof Error ? err.message : err}`);
-    console.warn(`[mailer] ⚠️  DEV OTP for ${to}: ${otpCode}`);
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`[mailer] Failed to send OTP email to ${to}: ${reason}`);
+    if (env.isProduction) throw serviceUnavailable('Could not send the verification email. Please try again in a moment.');
+    console.warn(`[mailer] DEV OTP for ${to}: ${otpCode}`);
   }
 }
+
+/** Mutable holder so tests can stub email delivery. */
+export const mailer = { sendOtpEmail };
