@@ -53,6 +53,9 @@ function materialStockStatus(quantity: unknown, minLevel: unknown, requestedStat
   return 'in_stock';
 }
 
+/** Payment method stored for cash paid in person at the office. */
+const CASH_WALK_IN = 'Cash (Walk-in)';
+
 const hasImages = (value: unknown): boolean => Array.isArray(value) && value.length > 0;
 
 const randDigits = (n: number): string =>
@@ -204,8 +207,12 @@ async function normalizeMrfItems(values: Row, body: Record<string, unknown>): Pr
   if (items.length === 1 && items[0].unit) values.unit = items[0].unit;
 }
 
+/** Units kept as safety stock — MRFs can never take a material below this. */
+const safetyLevel = (material: Row): number => Math.max(0, Number(material.safety_level ?? 1));
+
 /**
- * Check that inventory can cover every linked item on a request. Returns each
+ * Check that inventory can cover every linked item on a request without
+ * dipping into safety stock. Returns each
  * item with its inventory row; throws one error listing every shortage.
  * Custom (no-SKU) items are skipped — they are procured outside inventory.
  */
@@ -219,9 +226,10 @@ async function checkMrfStock(row: Row): Promise<Array<{ item: MrfItem; material:
       problems.push(`"${item.material_name}" (${item.material_sku}) is no longer in inventory`);
       continue;
     }
-    const available = Number(material.quantity ?? 0);
+    const reserve = safetyLevel(material);
+    const available = Math.max(0, Number(material.quantity ?? 0) - reserve);
     if (available < item.quantity) {
-      problems.push(`"${material.name}" (${item.material_sku}): ${available} in stock, ${item.quantity} requested`);
+      problems.push(`"${material.name}" (${item.material_sku}): ${available} available after ${reserve} safety stock, ${item.quantity} requested`);
       continue;
     }
     lines.push({ item, material });
@@ -771,6 +779,9 @@ export const resourceService = {
       if (!values.payment_method || !values.payment_reference || !values.payment_proof || !values.amount_paid || !values.payment_date) {
         throw badRequest('Payment method, amount, date, reference number, and proof are required.');
       }
+      if (values.payment_method === CASH_WALK_IN) {
+        throw badRequest('Cash payments are made at the office and recorded by staff.');
+      }
       values.status = 'for_verification';
       values.verification_notes = '';
 
@@ -794,6 +805,34 @@ export const resourceService = {
     }
     if (entity === 'payments' && user.role === 'general-manager' && values.status === 'paid') {
       values.paid_date = new Date().toISOString().slice(0, 10);
+    }
+
+    // Walk-in cash: staff record the payment against the official receipt —
+    // no proof upload, and the bill is settled immediately.
+    if (entity === 'payments' && !isCustomerPayment && values.payment_method === CASH_WALK_IN) {
+      if (!['general-manager', 'commercial-department'].includes(user.role)) {
+        throw forbidden('Only the Commercial Department or General Manager can record a cash payment.');
+      }
+      const current = await repo.getRowById(def.table, id);
+      if (!current) throw notFound('Bill not found.');
+      if (String(current.status) === 'paid') throw conflict('This bill is already paid.');
+      const paidOn = String(values.payment_date ?? '').trim();
+      if (!String(values.payment_reference ?? '').trim()) throw badRequest('Enter the Official Receipt (OR) number.');
+      if (!(Number(values.amount_paid) > 0)) throw badRequest('Enter the amount received.');
+      if (!paidOn) throw badRequest('Enter the payment date.');
+      values.status = 'paid';
+      values.paid_date = paidOn;
+      values.payment_proof = [];
+      values.recorded_by = user.fullName;
+
+      // Settling the bill resolves its complaint, same as verifying an online payment.
+      const incidentRef = String(current.incident_ref ?? '').trim();
+      if (incidentRef) {
+        const incident = (await repo.findRowsBy('incidents', 'ref_code', incidentRef)).find((i) => !i.archived);
+        if (incident && ['for_billing', 'declined'].includes(String(incident.status))) {
+          await repo.updateRow('incidents', String(incident.id), { status: 'resolved', updated_at: new Date().toISOString() });
+        }
+      }
     }
 
     if (entity === 'job-orders' && user.role !== 'general-manager') {
@@ -1057,6 +1096,8 @@ export const resourceService = {
 
     const currentMaterial = entity === 'materials' ? await repo.getRowById(def.table, id) : null;
     if (entity === 'materials' && !currentMaterial) throw notFound('Record not found.');
+    // Read before the write — the row object may be updated in place.
+    const previousQuantity = Number(currentMaterial?.quantity ?? 0);
 
     if (entity === 'materials' && ('quantity' in values || 'min_level' in values)) {
       const current = currentMaterial!;
@@ -1164,7 +1205,6 @@ export const resourceService = {
           });
         }
       }
-      const previousQuantity = Number(currentMaterial?.quantity ?? 0);
       const newQuantity = Number(row.quantity ?? previousQuantity);
       const quantityChange = newQuantity - previousQuantity;
       const auditDetails = entity === 'materials'
@@ -1183,6 +1223,15 @@ export const resourceService = {
             ...(isTeamMaterialReturn ? {
               returned_from_job_order: String(body.return_job_order_ref),
               returned_quantity: Number(body.return_quantity),
+            } : {}),
+            // Physical count from the Stock Count screen: system vs. actual.
+            ...(body.stock_count === true && 'quantity' in values ? {
+              movement_type: 'stock_count',
+              reason: 'Physical stock count',
+              reference: String(body.stock_count_note ?? '').trim() || 'Stock count',
+              system_quantity: previousQuantity,
+              counted_quantity: newQuantity,
+              variance: quantityChange,
             } : {}),
           }
         : values;

@@ -201,6 +201,12 @@ const urgencyTone = (urgency: unknown): Alert['tone'] => {
   return 'info';
 };
 
+/** In stock but at the reorder point or down to 10 units — time to add stock (#7). */
+const needsRestock = (m: EntityRow): boolean => {
+  const qty = Number(m.quantity ?? 0);
+  return !m.archived && m.status !== 'defective' && qty > 0 && qty <= Math.max(10, Number(m.min_level ?? 10));
+};
+
 /** Human-readable incident status label. */
 const INCIDENT_STATUS_WORD: Record<string, string> = {
   under_verification: 'Pending',
@@ -249,7 +255,7 @@ const MRF_STEP_LABEL: Record<string, string> = {
 export function buildAlerts(stats: DashboardStats, role: string, fullName: string, userId = ''): Alert[] {
   const alerts: Alert[] = [];
   const outOfStock = stats.materials.filter((m) => m.status === 'out_of_stock' || Number(m.quantity) === 0);
-  const lowStock = stats.materials.filter((m) => m.status === 'low_stock');
+  const lowStock = stats.materials.filter(needsRestock);
   const defective = stats.materials.filter((m) => m.status === 'defective');
   const mrfs = stats.materialRequests.filter(isMrf);
   const mrfsToVerify = mrfs.filter((r) => r.status === 'pending');
@@ -341,7 +347,7 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
 
   if (['inventory-officer', 'general-manager'].includes(role)) {
     if (outOfStock.length) alerts.push({ key: aggKey('outofstock', outOfStock), view: matView, icon: 'package-x', title: `${outOfStock.length} material(s) out of stock`, detail: outOfStock.map((m) => m.name).slice(0, 3).join(', '), tone: 'danger' });
-    if (lowStock.length) alerts.push({ key: aggKey('lowstock', lowStock), view: matView, icon: 'alert-triangle', title: `${lowStock.length} material(s) low on stock`, detail: lowStock.map((m) => m.name).slice(0, 3).join(', '), tone: 'warn' });
+    if (lowStock.length) alerts.push({ key: aggKey('lowstock', lowStock), view: matView, icon: 'alert-triangle', title: `${lowStock.length} material(s) need restocking`, detail: `Add stock: ${lowStock.map((m) => `${m.name} (${m.quantity} left)`).slice(0, 3).join(', ')}`, tone: 'warn' });
     if (defective.length) alerts.push({ key: aggKey('defective', defective), view: matView, icon: 'package-x', title: `${defective.length} defective item(s)`, detail: 'Flagged for disposal / review', tone: 'danger' });
     if (role === 'inventory-officer') {
       if (mrfsToVerify.length) alerts.push({ key: aggKey('mrf-verify', mrfsToVerify), view: mrfView, icon: 'file-input', title: `${mrfsToVerify.length} MRF(s) need stock verification`, detail: 'Check stock, then send to the General Manager', tone: 'warn' });
@@ -419,7 +425,7 @@ export function buildBadgeItems(stats: DashboardStats, role: string, fullName: s
   const mrfsToApprove = ids(mrfs.filter((r) => r.status === 'verified'));
   const mrfsToRelease = ids(mrfs.filter((r) => r.status === 'approved'));
   const outOfStock = ids(stats.materials.filter((m) => m.status === 'out_of_stock' || Number(m.quantity) === 0));
-  const lowStock = ids(stats.materials.filter((m) => m.status === 'low_stock'));
+  const lowStock = ids(stats.materials.filter(needsRestock));
   const activeJobs = ids(stats.jobOrders.filter((j) => j.status === 'pending' || j.status === 'in_progress'));
   const draftAdv = ids(stats.advisories.filter((a) => a.status !== 'published' && a.status !== 'approved'));
   const pendingPurchases = ids(stats.materialRequests.filter((r) => r.request_type === 'purchase' && r.status === 'pending'));

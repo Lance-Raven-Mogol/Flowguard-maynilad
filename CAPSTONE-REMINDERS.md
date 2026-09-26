@@ -1,6 +1,8 @@
 # FlowGuard — Capstone Panel Reminders (Status Check)
 > Checked against the codebase: 2026-09-26 (commit `4aec3de`)
 > Updated: 2026-09-26 — #1 tapos na (email OTP); bagong MRF flow + multi-material MRF (tingnan sa ibaba); #5 at #14 na-update
+> Updated: 2026-09-26 — Lahat ng yellow tapos na: #3, #4, #6, #7, #10 (tingnan sa ibaba). ⚠️ May bagong DB migration: `backend/supabase/capstone-yellow-migration.sql`
+> Updated: 2026-09-26 — Complaint statuses: isang salita na lang (Pending, Ongoing, Estimating, Billing, Resolved, Cancelled, Declined)
 > Updated: 2026-09-26 — Quick wins tapos na: #5 (Stock column), #11 (GM print), #12 (tinanggal ang customer Requests), #13 (required photo)
 
 Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
@@ -11,14 +13,14 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
 |---|---|---|
 | 1 | Ibalik ang authentication code sa Gmail | ✅ |
 | 2 | Paid vs. free complaints (sakop ng organization) | ❌ |
-| 3 | Traditional payment (walk-in / cash) | 🟡 |
-| 4 | Categorize ang complaints | 🟡 |
+| 3 | Traditional payment (walk-in / cash) | ✅ |
+| 4 | Categorize ang complaints | ✅ |
 | 5 | MRF — column para sa natitirang stock | ✅ |
-| 6 | Inventory — bawal ma-0, warning levels | 🟡 |
-| 7 | Warning kapag 10 na lang ang stock | 🟡 |
+| 6 | Inventory — bawal ma-0, warning levels | ✅ |
+| 7 | Warning kapag 10 na lang ang stock | ✅ |
 | 8 | FIFO (first in, first out) | ❌ |
 | 9 | Report ng lahat ng transactions | ❌ |
-| 10 | Barcode scanner para match ang actual vs. system | 🟡 |
+| 10 | Barcode scanner para match ang actual vs. system | ✅ |
 | 11 | GM — print function | ✅ |
 | 12 | Customer — alisin ang Request function | ✅ |
 | 13 | Photo required sa complaint | ✅ |
@@ -67,42 +69,43 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
   - Ipakita ang "Walang bayad / Covered by Maynilad" na badge sa incident list at details.
   - Idokumento sa paper kung aling complaints ang may bayad at alin ang wala.
 
-## 🟡 3. Traditional payment (walk-in / cash)
-- **Meron na:** Cash on Delivery para sa customer general requests (`modules.tsx:3336`). Sa billing, free-text ang payment method (`"GCash / Maya / Bank"`, `modules.tsx:4597`).
-- **Kulang:** Walang option na **Walk-in / Cash sa office** para sa bills. Sa ngayon, ang customer ang nagre-record ng payment at kailangan ng proof.
-- **Gagawin:**
-  - Gawing dropdown ang payment method: `GCash`, `Maya`, `Bank Transfer`, `Cash (Walk-in)`.
-  - Commercial Dept / GM: "Record Cash Payment" button sa bill. Ilalagay dito ang amount, OR number, at date, tapos auto-`paid` na. Walang upload ng proof.
-  - Isama ang payment method sa receipt/report.
+## ✅ 3. Traditional payment (walk-in / cash) (DONE 2026-09-26)
+- **Record Cash** button sa Billing (Commercial Dept / GM) para sa bills na Unpaid / Overdue / Rejected. Ilalagay ang **amount received, OR number, at payment date**. Walang upload ng proof. Magiging **Paid** agad ang bill, `Cash (Walk-in)` ang payment method, at naka-save kung sino ang nag-record (`recorded_by`). Kapag may linked complaint na nasa *Billing* (o *Declined*), magiging **Resolved** ito.
+- **Customer:** dropdown na ang payment method (GCash / Maya / Bank Transfer) at may note na sa office ang cash. Hindi pwedeng mag-submit ang customer ng "Cash (Walk-in)".
+- **Bill details / print:** OR Number, Amount Received, at Recorded By. May bagong **Paid Via** column sa Billing table.
+- Server-side ang checks (`resource.service.ts`): Commercial / GM lang, kailangan ang OR number, bawal sa bill na bayad na.
+- **Tests:** `mrf-workflow.test.mjs` → "walk-in cash".
 
-## 🟡 4. Categorize ang complaints
-- **Ngayon:** `INCIDENT_TYPE_OPTIONS` (`modules.tsx:690`) = General Complaint, Pipe Leak, New Connection, Disconnection, Other. Masyadong general.
-- **Gagawin:** Gawing grouped categories, halimbawa:
-  - **Water Quality (libre):** Mabaho ang tubig, Madumi / malabo ang tubig
-  - **Water Supply (libre):** Mahina ang tubig, Walang tubig
-  - **Leak / Pipe (libre o may bayad depende kung public line o private):** Pipe leak, Burst main
-  - **Service Request (may bayad):** New connection, Reconnection, Meter transfer / replacement, Disconnection
-  - **Other**
-- Mag-add ng category filter/metric sa Incidents module. Gamitin ang category para ma-set ang `billable` (#2).
+## ✅ 4. Categorize ang complaints (DONE 2026-09-26)
+- Grouped na ang **Concern** dropdown sa complaint form:
+  - **Water Quality:** Mabaho ang tubig, Madumi / malabo ang tubig
+  - **Water Supply:** Mahina ang tubig, Walang tubig
+  - **Leak / Pipe:** Pipe leak, Burst main
+  - **Service Request:** New connection, Reconnection, Meter transfer / replacement, Disconnection
+  - **Other:** Other concern. Ang lumang "General complaint" ay para lang sa lumang records.
+- Sa Incidents table, may **Category** (may kulay) at **Concern** columns, at may **category quick filters** (All / Water Quality / … na may bilang).
+- Naka-define na sa `INCIDENT_CATEGORIES` (`modules.tsx`) ang `free` flag bawat category: libre ang Water Quality/Supply, may bayad ang Service Request, depende ang Leak. Gagamitin ito sa #2 / #18.
+- ⚠️ **DB:** kailangang patakbuhin ang `capstone-yellow-migration.sql`, dahil papalitan nito ang `incidents_type_check` constraint.
 
 ## ✅ 5. MRF — column para sa natitirang stock (DONE 2026-09-26)
 - **Requests table:** May bagong **Stock** column. Para sa MRF na *For Stock Verification* o *For GM Approval*, live itong nagche-check laban sa inventory: **Stock OK** (green) o **Short (N items)** (red). `—` kapag approved na (naka-reserve na ang stock) o kapag hindi MRF.
 - **View / Verify Stock / Review & Approve:** nandoon pa rin ang per-material table (Requested, In Stock, Check). Sa MRF form, "N in stock" sa bawat material.
 
-## 🟡 6. Inventory — bawal ma-0, may warning levels
-- **Meron na:** Auto status `in_stock` / `low_stock` / `out_of_stock` base sa `min_level` (`resource.service.ts:47-53`). Hinaharang din ang release kapag mas malaki ang request kaysa sa stock (`resource.service.ts:166-170`).
-- **Kulang:** Pwede pa ring ma-release hanggang **0 exactly**. Iisa lang din ang level (min_level).
-- **Gagawin:**
-  - Sa `settleStockDeduction`: i-block (o hingan ng GM override) ang release kapag `remaining < reserve/safety level`. Hindi dapat ma-0.
-  - Mag-add ng mga level, halimbawa: **Normal**, **Reorder** (≤ reorder point), **Critical** (≤ 10), **Reserved/Safety** (hindi pwedeng galawin).
-  - Ipakita ang level bilang badge + progress bar sa Material List.
+## ✅ 6. Inventory — bawal ma-0, may warning levels (DONE 2026-09-26)
+- Bagong **Safety Stock** (`materials.safety_level`, default 1) sa bawat material. Hindi ito pwedeng i-release ng MRF, kaya **hindi na mauubos sa 0** ang item. Server-side ito (`checkMrfStock`) sa verify at approve: *"2 available after 1 safety stock, 3 requested"*. Kung talagang kailangan, pwedeng ibaba ng IO / GM ang safety stock ng item.
+- **Levels** (Level column, badge + progress bar sa Material List):
+  - **Normal**
+  - **Reorder**: ≤ reorder point (`min_level`)
+  - **Critical**: ≤ 10
+  - **Safety Stock**: nasa safety level na
+- MRF form, View, at Requests "Stock" column: **Available** na ang ipinapakita (stock minus safety stock).
+- Metrics: *Critical / Safety* at *Reorder*.
+- **Tests:** "safety stock is never released".
 
-## 🟡 7. Warning kapag 10 na lang ang items
-- **Meron na:** Default ng `min_level` ay 10 (`modules.tsx:2475`). May bell alert na "X material(s) low on stock" (`StatsContext.tsx:329`).
-- **Gagawin:** Gawing mas malinaw na **"Kailangan nang mag-add ng stock"**:
-  - Warning banner sa taas ng Inventory kasama ang listahan ng items.
-  - "Create Purchase Request" shortcut button sa bawat low item.
-  - Warning din sa MRF form kapag ang ire-request ay magpapababa sa ≤ 10.
+## ✅ 7. Warning kapag 10 na lang ang items (DONE 2026-09-26)
+- **Warning banner** sa taas ng Inventory (IO / GM): "N items need restocking". Kasama ang listahan (level, natitira, reorder point) at **Create Purchase Request** button sa bawat item. Pre-filled ang button (name, category, unit, price, supplier) at ang quantity ay pabalik sa 2× ng reorder point.
+- Bell alert: "N material(s) need restocking", para sa stock na ≤ 10 o nasa reorder point.
+- Sa MRF form, may warning kapag ≤ 10 na lang ang matitira pagkatapos ng request: *"only N left after this — needs restocking"*.
 
 ## ❌ 8. FIFO (First In, First Out)
 - **Ngayon:** Iisang `quantity` lang bawat material. Walang batch / lot / date received.
@@ -120,14 +123,17 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
   - Summary totals (e.g. total collected, total stock out per item).
   - **Export CSV** + **Print** (tingnan ang #11).
 
-## 🟡 10. Barcode / QR scanner
-- **Meron na:** Printable QR label bawat material (`panels.tsx:203`, button sa `modules.tsx:2542`). Kapag na-scan gamit ang phone camera, bubukas ang public Material Page.
-- **Kulang:** Walang in-app scanner at walang stock count/reconciliation.
-- **Gagawin:**
-  - In-app scanner gamit ang `html5-qrcode` o ang `BarcodeDetector` API (camera) + support sa USB barcode scanner (keyboard input).
-  - **Stock Count mode:** mag-scan ng item → ilagay ang actual count → ipakita ang *system vs. actual* variance → i-save bilang adjustment na may audit log.
-  - Pwede ring gamitin ang scan sa MRF release para siguradong tama ang item na lalabas.
-  - Tanggalin sa "Out of scope" sa `PENDING.md`.
+## ✅ 10. Barcode / QR scanner + Stock Count (DONE 2026-09-26)
+- Bagong tab na **Inventory → Stock Count (Scan)** (IO / GM):
+  - Pwedeng mag-scan gamit ang **camera** (QR label o 1D barcode, `html5-qrcode`), **USB/Bluetooth barcode scanner** (nagta-type ito at nag-e-Enter), o i-type ang SKU.
+  - Ipapakita ang **System** quantity. Ilalagay ang **Actual count**, tapos makikita ang **Variance** (Match / ±N).
+  - Pagka-save, magiging actual count ang system quantity. Naka-log ito sa Inventory History bilang **Counted** (audit: `movement_type: stock_count`, `system_quantity`, `counted_quantity`, `variance`, note).
+  - May listahan ng lahat ng na-count sa session.
+- Nababasa ng scanner ang mga existing QR label (`/material/<SKU>`).
+- Kailangan ng **HTTPS** para sa camera (OK sa Vercel; sa localhost din).
+- Tinanggal na sa "Out of scope" sa `PENDING.md`.
+- *Hindi pa kasama:* scan-to-verify sa MRF release (optional ito sa reminder).
+- **Tests:** "stock count logs system vs. actual".
 
 ## ✅ 11. GM — print function — Recalla (DONE 2026-09-26)
 - **Print button sa bawat table** (GM lang): nasa taas ng Incidents, Job Orders, Inventory, Requests, Suppliers, Billing, Asset Lifecycle, Service Advisories, at Audit Log. Kung ano ang nakikita sa table (kasama ang search filter at archived view), iyon ang ipi-print.
@@ -191,5 +197,5 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
 1. ~~Mabilis lang: #12, #13, #5, #14, #11~~ — tapos na lahat.
 2. Complaint flow: #4 → #18 → #2 → #16 (magkakaugnay, sabay-sabay dapat).
 3. Location/visit: #17, #19.
-4. Inventory: #6, #7 → #8 (FIFO) → #10 (scanner/stock count) → #9 (reports).
-5. Payments: #3.
+4. Inventory: ~~#6, #7~~ → #8 (FIFO) → ~~#10~~ → #9 (reports).
+5. ~~Payments: #3~~ — tapos na.

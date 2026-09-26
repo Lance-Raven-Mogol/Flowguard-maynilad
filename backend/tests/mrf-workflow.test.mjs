@@ -93,7 +93,7 @@ test('verification and approval are blocked when stock is short', async () => {
   const mrf = await fileMrf(leader, [{ material_sku: 'SKU-00002', quantity: 5 }]);
   await assert.rejects(
     resourceService.update('material-requests', inventory, mrf.id, { status: 'verified' }),
-    /Insufficient stock — "Gate Valve" \(SKU-00002\): 3 in stock, 5 requested/,
+    /Insufficient stock — "Gate Valve" \(SKU-00002\): 2 available after 1 safety stock, 5 requested/,
   );
   await resourceService.update('material-requests', inventory, mrf.id, { status: 'rejected' });
   assert.equal(mrf.status, 'rejected');
@@ -113,4 +113,51 @@ test('inventory officer sees every MRF; leaders see only their own', async () =>
   assert.equal((await resourceService.list('material-requests', inventory)).length, 1);
   assert.equal((await resourceService.list('material-requests', leader)).length, 1);
   assert.equal((await resourceService.list('material-requests', other)).length, 0);
+});
+
+test('safety stock is never released — a material cannot reach 0 through an MRF', async () => {
+  seed();
+  // Gate Valve: 3 in stock, default safety stock 1 → only 2 can go out.
+  const all = await fileMrf(leader, [{ material_sku: 'SKU-00002', quantity: 3 }]);
+  await assert.rejects(
+    resourceService.update('material-requests', inventory, all.id, { status: 'verified' }),
+    /2 available after 1 safety stock, 3 requested/,
+  );
+  table('materials').find((m) => m.id === 'm2').safety_level = 0;
+  await resourceService.update('material-requests', inventory, all.id, { status: 'verified' });
+  table('materials').find((m) => m.id === 'm2').safety_level = 2;
+  await assert.rejects(resourceService.update('material-requests', gm, all.id, { status: 'approved' }), /1 available after 2 safety stock/);
+});
+
+test('stock count logs system vs. actual', async () => {
+  seed();
+  await resourceService.update('materials', inventory, 'm1', { quantity: 17, stock_count: true, stock_count_note: 'Shelf A' });
+  assert.equal(table('materials').find((m) => m.id === 'm1').quantity, 17);
+  const log = table('audit_logs').at(-1);
+  assert.equal(log.details.movement_type, 'stock_count');
+  assert.deepEqual([log.details.system_quantity, log.details.counted_quantity, log.details.variance], [20, 17, -3]);
+  assert.equal(log.details.reference, 'Shelf A');
+});
+
+test('walk-in cash: staff record it with an OR number; bill paid and complaint resolved', async () => {
+  seed();
+  const commercial = user('commercial-department', 'Cora Commercial');
+  const customer = { ...user('customer', 'Cruz Customer'), id: 'c1' };
+  table('incidents').push({ id: 'i1', ref_code: 'INC-0001', status: 'for_billing' });
+  table('payments').push({ id: 'p1', ref_code: 'PAY-00001', customer_id: 'c1', amount: 500, status: 'pending', incident_ref: 'INC-0001' });
+  const cash = { payment_method: 'Cash (Walk-in)', amount_paid: 500, payment_date: '2026-09-26' };
+
+  await assert.rejects(resourceService.update('payments', commercial, 'p1', cash), /Official Receipt/);
+  await assert.rejects(resourceService.update('payments', inventory, 'p1', { ...cash, payment_reference: 'OR-1' }), /Only the Commercial Department or General Manager/);
+  await assert.rejects(
+    resourceService.update('payments', customer, 'p1', { ...cash, payment_reference: 'OR-1', payment_proof: ['x'] }),
+    /made at the office/,
+  );
+  await resourceService.update('payments', commercial, 'p1', { ...cash, payment_reference: 'OR-1' });
+  const bill = table('payments').find((p) => p.id === 'p1');
+  assert.equal(bill.status, 'paid');
+  assert.equal(bill.recorded_by, 'Cora Commercial');
+  assert.equal(bill.paid_date, '2026-09-26');
+  assert.equal(table('incidents').find((i) => i.id === 'i1').status, 'resolved');
+  await assert.rejects(resourceService.update('payments', commercial, 'p1', { ...cash, payment_reference: 'OR-2' }), /already paid/);
 });

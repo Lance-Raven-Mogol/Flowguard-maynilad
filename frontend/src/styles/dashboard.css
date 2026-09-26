@@ -6472,3 +6472,54 @@ input:checked + .slider:before {
   justify-content: flex-end;
   margin-top: 14px;
 }
+
+/* ============================================================ Inventory levels (#6/#7) */
+.level-cell { display: inline-flex; flex-direction: column; gap: 5px; min-width: 96px; }
+.level-meter { display: block; height: 5px; border-radius: 999px; background: #eef1f5; overflow: hidden; }
+.level-meter > span { display: block; height: 100%; border-radius: inherit; background: currentColor; }
+.level-meter.paid { color: #16a37b; }
+.level-meter.pending { color: #d98a2b; }
+.level-meter.overdue { color: #d6447a; }
+.mrf-item-qty small.is-warn { color: #b45309; font-weight: 600; }
+
+.restock-banner {
+  border: 1px solid #f5c38b;
+  background: #fff8ef;
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.restock-banner.is-danger { border-color: #f3a5bf; background: #fff4f7; }
+.restock-banner-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+.restock-banner-head strong { display: block; font-size: 14.5px; color: #7c2d12; }
+.restock-banner.is-danger .restock-banner-head strong { color: #9b1c4b; }
+.restock-banner-head small { color: var(--muted); }
+.restock-banner ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.restock-banner li {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  background: #fff; border-radius: 10px; padding: 8px 10px;
+}
+.restock-banner li .restock-item { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.restock-banner li .restock-item span { color: var(--muted); font-size: 12.5px; }
+
+/* ============================================================ Scanner + Stock Count (#10) */
+.scan-input { display: grid; gap: 10px; }
+.scan-input-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.scan-input-row > svg { color: var(--muted); flex: none; }
+.scan-input-row input { flex: 1 1 220px; min-width: 0; }
+.scan-camera { width: 100%; max-width: 420px; border-radius: 12px; overflow: hidden; background: #0f172a; }
+.scan-error { color: #b45309; }
+.stock-count { padding: 18px; display: grid; gap: 16px; margin-bottom: 18px; }
+.stock-count-help { margin: 0; color: var(--muted); font-size: 13.5px; }
+.stock-count-card { border: 1px solid #e3e8f0; border-radius: 14px; padding: 16px; display: grid; gap: 14px; }
+.stock-count-item { display: grid; gap: 2px; }
+.stock-count-item small { color: var(--muted); letter-spacing: .04em; }
+.stock-count-item strong { font-size: 17px; }
+.stock-count-item span { color: var(--muted); font-size: 13px; }
+.stock-count-figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; align-items: end; }
+.stock-count-figures > div:not(.form-group) { display: grid; gap: 4px; padding: 10px 12px; border-radius: 10px; background: #f6f8fb; }
+.stock-count-figures span { color: var(--muted); font-size: 12px; }
+.stock-count-figures .form-group { margin: 0; }
+.stock-count-variance.is-ok { background: #e3f8f0 !important; color: #16a37b; }
+.stock-count-variance.is-off { background: #fdebf2 !important; color: #d6447a; }
+.stock-count-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }

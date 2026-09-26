@@ -84,7 +84,6 @@
 |---|---|
 | Multi-account background session | Unclear ang intent — baka tab switching lang |
 | E-billing online payment integration | Explicitly out of scope sa paper (billing/payment processing) |
-| Barcode / QR scanner integration | Modeled in data (SKU) pero scanner hardware integration is future work |
 
 ---
 

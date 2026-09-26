@@ -10,6 +10,7 @@ import { ROLES } from '../models/types';
 import { useAuth } from '../controllers/AuthContext';
 import { useToast } from '../controllers/ToastContext';
 import { useStats } from '../controllers/StatsContext';
+import { Icon } from '../views/components/Icon';
 import { api, ApiError } from '../services/apiClient';
 import { resourceService, type EntityRow } from '../services/resourceService';
 import { ImageUpload, LiveModule, StatusSelect, type ModuleColumn, type ModuleField, type RowActionCtx, AutocompleteInput } from '../views/components/LiveModule';
@@ -17,6 +18,7 @@ import { DataTable } from '../views/components/DataTable';
 import { Modal } from '../views/components/Modal';
 import { ActionButton, PanelHead, QRLabelModal } from '../views/components/panels';
 import { BARANGAYS } from '../views/components/BarangayCombobox';
+import { StockCountPanel } from '../views/inventory/StockCountPanel';
 
 /** Flat list of all barangay values for autocomplete suggestions. */
 const BARANGAY_SUGGESTIONS = BARANGAYS.flatMap(({ municipality, barangays }) =>
@@ -52,6 +54,22 @@ const MRF_STATUS_LABEL: Record<string, string> = {
   released: 'Released',
   rejected: 'Rejected',
 };
+/* Inventory levels. Safety stock is never released, so a material never hits 0
+ * through an MRF; at or below CRITICAL_STOCK units it needs restocking now. */
+const CRITICAL_STOCK = 10;
+const safetyLevel = (m: EntityRow): number => Math.max(0, Number(m.safety_level ?? 1));
+/** Units an MRF may take — everything above the safety stock. */
+const usableStock = (m: EntityRow): number => Math.max(0, Number(m.quantity ?? 0) - safetyLevel(m));
+type StockLevel = { id: 'safety' | 'critical' | 'reorder' | 'normal'; label: string; tone: 'danger' | 'warn' | 'ok' };
+function stockLevel(m: EntityRow): StockLevel {
+  const qty = Number(m.quantity ?? 0);
+  if (qty <= safetyLevel(m)) return { id: 'safety', label: 'Safety Stock', tone: 'danger' };
+  if (qty <= CRITICAL_STOCK) return { id: 'critical', label: 'Critical', tone: 'danger' };
+  if (qty <= Number(m.min_level ?? 10)) return { id: 'reorder', label: 'Reorder', tone: 'warn' };
+  return { id: 'normal', label: 'Normal', tone: 'ok' };
+}
+const needsRestock = (m: EntityRow): boolean => !m.archived && m.status !== 'defective' && stockLevel(m).id !== 'normal';
+
 const isMrfRow = (row: EntityRow): boolean => (String(row.request_type ?? '').trim() || 'mrf') === 'mrf';
 /** Status label for any request row — MRFs use their workflow step names. */
 const requestStatusLabel = (row: EntityRow): string =>
@@ -737,13 +755,46 @@ const INCIDENT_STATUS = [
 ];
 const incidentStatusLabel = (v: unknown): string =>
   INCIDENT_STATUS.find((o) => o.value === String(v ?? ''))?.label ?? titleCase(v);
-const INCIDENT_TYPE_OPTIONS = [
-  { value: 'complaint', label: 'General Complaint' },
-  { value: 'leak', label: 'Pipe Leak' },
-  { value: 'new-connection', label: 'New Connection' },
-  { value: 'disconnection', label: 'Disconnection' },
-  { value: 'other', label: 'Other' },
+/**
+ * Complaint categories and the concerns under each. `free` marks categories
+ * that are normally covered by the water utility (no charge to the customer);
+ * leaks depend on whether the line is public or private.
+ */
+const INCIDENT_CATEGORIES = [
+  { id: 'water-quality', label: 'Water Quality', color: '#0ea5e9', free: true, types: [
+    { value: 'odor-water', label: 'Foul-smelling water (Mabaho)' },
+    { value: 'dirty-water', label: 'Dirty / cloudy water (Madumi / Malabo)' },
+  ] },
+  { id: 'water-supply', label: 'Water Supply', color: '#6366f1', free: true, types: [
+    { value: 'low-pressure', label: 'Low water pressure (Mahina)' },
+    { value: 'no-water', label: 'No water (Walang tubig)' },
+  ] },
+  { id: 'leak', label: 'Leak / Pipe', color: '#f59e0b', free: null, types: [
+    { value: 'leak', label: 'Pipe leak' },
+    { value: 'burst-main', label: 'Burst main' },
+  ] },
+  { id: 'service', label: 'Service Request', color: '#10b981', free: false, types: [
+    { value: 'new-connection', label: 'New connection' },
+    { value: 'reconnection', label: 'Reconnection' },
+    { value: 'meter-replacement', label: 'Meter transfer / replacement' },
+    { value: 'disconnection', label: 'Disconnection' },
+  ] },
+  { id: 'other', label: 'Other', color: '#94a3b8', free: null, types: [
+    { value: 'other', label: 'Other concern' },
+    { value: 'complaint', label: 'General complaint' },
+  ] },
 ];
+const INCIDENT_TYPE_OPTIONS = INCIDENT_CATEGORIES.flatMap((category) =>
+  category.types
+    // 'complaint' is kept only so older records still display; not offered for new ones.
+    .filter((type) => type.value !== 'complaint')
+    .map((type) => ({ ...type, group: category.label })),
+);
+const incidentCategory = (type: unknown) =>
+  INCIDENT_CATEGORIES.find((category) => category.types.some((t) => t.value === String(type ?? ''))) ??
+  INCIDENT_CATEGORIES[INCIDENT_CATEGORIES.length - 1];
+const incidentTypeLabel = (type: unknown): string =>
+  INCIDENT_CATEGORIES.flatMap((category) => category.types).find((t) => t.value === String(type ?? ''))?.label ?? titleCase(type);
 const URGENCY = ['low', 'medium', 'high'];
 
 interface BillingCustomerOption {
@@ -867,7 +918,8 @@ function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRema
       <p className="detail-section-title">Complaint Details</p>
       <dl className="detail-list complaint-detail-grid">
         <DetailRow label="Reference">{String(row.ref_code ?? '')}</DetailRow>
-        <DetailRow label="Type">{titleCase(row.type)}</DetailRow>
+        <DetailRow label="Category">{incidentCategory(row.type).label}</DetailRow>
+        <DetailRow label="Concern">{incidentTypeLabel(row.type)}</DetailRow>
         <DetailRow label="Status">{incidentStatusLabel(row.status)}</DetailRow>
         <DetailRow label="Urgency">{row.urgency ? titleCase(row.urgency) : '— Not yet assessed'}</DetailRow>
         <DetailRow label="Location">{String(row.location ?? '')}</DetailRow>
@@ -1424,7 +1476,8 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
 
   const columns: ModuleColumn[] = [
     { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
-    { header: 'Type', cell: (r) => titleCase(r.type) },
+    { header: 'Category', cell: (r) => ({ text: incidentCategory(r.type).label, swatch: incidentCategory(r.type).color }) },
+    { header: 'Concern', cell: (r) => incidentTypeLabel(r.type) },
     { header: 'Description', cell: (r) => String(r.description ?? '') },
     { header: 'Location', cell: (r) => String(r.location ?? '—') },
     { header: 'Urgency', cell: (r) => r.urgency ? badgeCell(titleCase(r.urgency), String(r.urgency) as BadgeTone) : { text: '—' } },
@@ -1432,7 +1485,7 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
   ];
 
   const fields: ModuleField[] = [
-    { name: 'type', label: 'Type', kind: 'select', optionList: INCIDENT_TYPE_OPTIONS, default: 'complaint' },
+    { name: 'type', label: 'Concern', kind: 'select', optionList: INCIDENT_TYPE_OPTIONS, default: 'odor-water', hint: 'Pick the closest concern — it sets the complaint category.' },
     { name: 'description', label: 'Description', kind: 'textarea', placeholder: 'Describe the concern…' },
     { name: 'location', label: 'Location', placeholder: 'e.g. Isok II Poblacion, Boac', default: user!.barangay ?? 'Isok II Poblacion, Boac', suggestionsFromRows: () => BARANGAY_SUGGESTIONS },
     ...(canManageUrgency ? [{
@@ -1505,6 +1558,15 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
       mineField={mine && role !== 'customer' ? 'reported_by' : undefined}
       mineValue={mine ? user!.fullName : undefined}
       actions={actions}
+      quickFilters={(rows) => INCIDENT_CATEGORIES
+        .map((category) => ({
+          id: `category:${category.id}`,
+          label: category.label,
+          color: category.color,
+          hint: String(rows.filter((row) => incidentCategory(row.type).id === category.id).length),
+          matches: (row: EntityRow) => incidentCategory(row.type).id === category.id,
+        }))
+        .filter((item) => item.hint !== '0')}
       metrics={
         manage
           ? (rows) => [
@@ -2465,6 +2527,7 @@ function InventoryHistory({ filter }: ModuleProps) {
         movement === 'stock_out'     ? 'Released' :
         movement === 'initial_stock' ? 'Initial'  :
         movement === 'stock_in'      ? 'Restocked' :
+        movement === 'stock_count'   ? 'Counted'  :
         change > 0 ? 'Restocked' : change < 0 ? 'Released' : 'Adjusted';
       const unit = String(details.unit ?? '').trim();
       const formatQty = (value: unknown) => value === undefined || value === null ? '—' : `${Number(value)}${unit ? ` ${unit}` : ''}`;
@@ -2503,8 +2566,16 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
   const role = user!.role;
   const canWrite = !readOnly && WRITE.materials.includes(role);
   const supplierOptions = useSupplierOptions();
-  const [activeTab, setActiveTab] = useState<'inventory' | 'history'>('inventory');
+  const [activeTab, setActiveTab] = useState<'inventory' | 'history' | 'count'>('inventory');
+  const canCount = ['inventory-officer', 'general-manager'].includes(role) && !readOnly;
   const [qrTarget, setQrTarget] = useState<EntityRow | null>(null);
+  const [purchaseTarget, setPurchaseTarget] = useState<EntityRow | null>(null);
+  const { stats, reload: reloadStats } = useStats();
+  // Restock warnings go to the people who can reorder.
+  const showRestock = ['inventory-officer', 'general-manager'].includes(role);
+  const restockItems = stats.materials
+    .filter(needsRestock)
+    .sort((a, b) => Number(a.quantity ?? 0) - Number(b.quantity ?? 0));
 
   const columns: ModuleColumn[] = [
     { header: 'SKU', cell: (r) => ({ text: String(r.sku), strong: true }) },
@@ -2519,7 +2590,20 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
     { header: 'Weight', cell: (r) => r.weight_kg ? `${r.weight_kg} kg` : '—' },
     { header: 'Size', cell: (r) => String(r.size ?? '—') },
     { header: 'Unit Price', cell: (r) => money(r.unit_price) },
-    { header: 'Status', cell: (r) => statusCell(materialStockStatus(r.quantity, r.min_level, r.status)) },
+    {
+      header: 'Level',
+      cell: (r) => {
+        if (r.status === 'defective') return statusCell('defective');
+        const level = stockLevel(r);
+        // Bar is full at twice the minimum level.
+        const full = Math.max(1, Number(r.min_level ?? 10) * 2);
+        return {
+          text: level.label,
+          status: level.tone === 'ok' ? 'paid' : level.tone === 'warn' ? 'pending' : 'overdue',
+          meter: Number(r.quantity ?? 0) / full,
+        };
+      },
+    },
   ];
 
   const fields: ModuleField[] = [
@@ -2538,7 +2622,8 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
     },
     { name: 'description', label: 'Description', kind: 'textarea' },
     { name: 'quantity', label: 'Quantity', kind: 'number', default: '0' },
-    { name: 'min_level', label: 'Minimum Level', kind: 'number', default: '10', hint: 'Stock at or below this level is automatically marked Low Stock.' },
+    { name: 'min_level', label: 'Reorder Point (Minimum Level)', kind: 'number', default: '10', hint: 'At or below this level the item is flagged Reorder and a restock warning appears.' },
+    { name: 'safety_level', label: 'Safety Stock', kind: 'number', default: '1', hint: 'Units that must always stay in stock — MRFs can never take the item below this, so it never reaches 0.' },
     { name: 'unit', label: 'Unit', default: 'units' },
     { name: 'weight_kg', label: 'Weight (kg)', kind: 'number' },
     { name: 'size', label: 'Size', placeholder: 'e.g. 50mm, 4 inches' },
@@ -2566,8 +2651,16 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
       <div className="inventory-tabs" role="tablist" aria-label="Inventory views">
         <button type="button" role="tab" aria-selected={activeTab === 'inventory'} className={activeTab === 'inventory' ? 'active' : ''} onClick={() => setActiveTab('inventory')}>Current Inventory</button>
         <button type="button" role="tab" aria-selected={activeTab === 'history'} className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>Inventory History</button>
+        {canCount && (
+          <button type="button" role="tab" aria-selected={activeTab === 'count'} className={activeTab === 'count' ? 'active' : ''} onClick={() => setActiveTab('count')}>Stock Count (Scan)</button>
+        )}
       </div>
-      {activeTab === 'history' ? (
+      {activeTab === 'inventory' && showRestock && restockItems.length > 0 && (
+        <RestockBanner items={restockItems} onPurchase={setPurchaseTarget} />
+      )}
+      {activeTab === 'count' ? (
+        <StockCountPanel />
+      ) : activeTab === 'history' ? (
         <InventoryHistory filter={filter} />
       ) : (
         <LiveModule
@@ -2589,8 +2682,8 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
       filter={filter}
       metrics={(rows) => [
         metric('m1', 'Total SKUs', String(rows.length), 'box', 'customers'),
-        metric('m2', 'Out of Stock', count(rows, (r) => materialStockStatus(r.quantity, r.min_level, r.status) === 'out_of_stock'), 'package-x', 'profit'),
-        metric('m3', 'Low Stock', count(rows, (r) => materialStockStatus(r.quantity, r.min_level, r.status) === 'low_stock'), 'alert-triangle', 'revenue'),
+        metric('m2', 'Critical / Safety', count(rows, (r) => r.status !== 'defective' && ['critical', 'safety'].includes(stockLevel(r).id)), 'package-x', 'profit'),
+        metric('m3', 'Reorder', count(rows, (r) => r.status !== 'defective' && stockLevel(r).id === 'reorder'), 'alert-triangle', 'revenue'),
         metric('m4', 'Inventory Value', money(rows.reduce((s, r) => s + Number(r.quantity || 0) * Number(r.unit_price || 0), 0)), 'wallet', 'invoices'),
       ]}
       quickFilters={(rows) => Array.from(new Set(rows.map((row) => String(row.category ?? 'Uncategorized'))))
@@ -2620,6 +2713,13 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
       }
         />
       )}
+      {purchaseTarget && (
+        <RequestForm
+          purchaseFor={purchaseTarget}
+          onClose={() => setPurchaseTarget(null)}
+          onCreated={() => reloadStats()}
+        />
+      )}
       {qrTarget && (
         <QRLabelModal
           sku={String(qrTarget.sku ?? '')}
@@ -2631,6 +2731,44 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
         />
       )}
     </>
+  );
+}
+
+/** "Kailangan nang mag-add ng stock" — every item at Reorder level or below. */
+function RestockBanner({ items, onPurchase }: { items: EntityRow[]; onPurchase: (m: EntityRow) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const urgent = items.some((m) => stockLevel(m).tone === 'danger');
+  const shown = expanded ? items : items.slice(0, 5);
+  return (
+    <section className={`restock-banner${urgent ? ' is-danger' : ''}`} role="alert">
+      <div className="restock-banner-head">
+        <Icon name="alert-triangle" size={20} />
+        <div>
+          <strong>{items.length} item{items.length === 1 ? '' : 's'} need restocking</strong>
+          <small>At or below the reorder point, or down to {CRITICAL_STOCK} units or fewer. Create a purchase request to add stock.</small>
+        </div>
+      </div>
+      <ul>
+        {shown.map((m) => {
+          const level = stockLevel(m);
+          return (
+            <li key={String(m.id)}>
+              <div className="restock-item">
+                <span className={`status ${level.tone === 'warn' ? 'pending' : 'overdue'}`}>{level.label}</span>
+                <strong>{String(m.name ?? '')}</strong>
+                <span>{`${Number(m.quantity ?? 0)} ${String(m.unit ?? 'units')} left · reorder at ${Number(m.min_level ?? 10)}`}</span>
+              </div>
+              <button type="button" className="btn-action" onClick={() => onPurchase(m)}>Create Purchase Request</button>
+            </li>
+          );
+        })}
+      </ul>
+      {items.length > 5 && (
+        <button type="button" className="btn-action" style={{ marginTop: 8 }} onClick={() => setExpanded((v) => !v)}>
+          {expanded ? 'Show fewer' : `Show all ${items.length}`}
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -2927,10 +3065,13 @@ function JobOrderCombobox({
  */
 function RequestForm({
   lockedJobOrderRef,
+  purchaseFor,
   onClose,
   onCreated,
 }: {
   lockedJobOrderRef?: string;
+  /** Start a purchase request pre-filled from this inventory item (low-stock shortcut). */
+  purchaseFor?: EntityRow;
   onClose: () => void;
   onCreated: () => Promise<void> | void;
 }) {
@@ -2948,7 +3089,7 @@ function RequestForm({
 
   // Only active, in-stock inventory can be requested by SKU.
   const inventory = stats.materials.filter(
-    (m) => !m.archived && m.status !== 'defective' && m.status !== 'out_of_stock' && Number(m.quantity ?? 0) > 0,
+    (m) => !m.archived && m.status !== 'defective' && usableStock(m) > 0,
   );
   // Active job orders available to link to an MRF — team leaders only see the
   // job orders they lead.
@@ -2958,27 +3099,33 @@ function RequestForm({
   );
   const supplierOptions = useSupplierOptions();
 
+  // Low-stock shortcut: order enough to get back to twice the minimum level.
+  const restockQty = purchaseFor
+    ? Math.max(1, Number(purchaseFor.min_level ?? 10) * 2 - Number(purchaseFor.quantity ?? 0))
+    : 1;
   const [form, setForm] = useState({
-    request_type: lockedJobOrderRef ? 'mrf' : defaultType,
-    material_name: '',
+    request_type: lockedJobOrderRef ? 'mrf' : purchaseFor && canUsePurchase ? 'purchase' : defaultType,
+    material_name: String(purchaseFor?.name ?? ''),
     material_sku: '',
-    quantity: '1',
+    quantity: String(restockQty),
     job_order_ref: lockedJobOrderRef ?? '',
     reason: '',
     // general: price info auto-filled from inventory when an item is picked
-    unit_price: '',
+    unit_price: purchaseFor?.unit_price != null ? String(purchaseFor.unit_price) : '',
     linked_unit: '',
     // purchase fields
-    category: '',
-    description: '',
-    unit: 'units',
-    min_level: '10',
-    weight_kg: '',
-    size: '',
-    color: '',
+    category: String(purchaseFor?.category ?? ''),
+    description: String(purchaseFor?.description ?? ''),
+    unit: String(purchaseFor?.unit ?? 'units'),
+    min_level: String(purchaseFor?.min_level ?? '10'),
+    weight_kg: purchaseFor?.weight_kg != null ? String(purchaseFor.weight_kg) : '',
+    size: String(purchaseFor?.size ?? ''),
+    color: String(purchaseFor?.color ?? ''),
     source: 'external',
-    supplier_id: '',
-    justification: '',
+    supplier_id: String(purchaseFor?.supplier_id ?? ''),
+    justification: purchaseFor
+      ? `Low stock: ${Number(purchaseFor.quantity ?? 0)} ${String(purchaseFor.unit ?? 'units')} left (minimum ${Number(purchaseFor.min_level ?? 10)}).`
+      : '',
   });
   // MRF: one form, many materials.
   const newItem = () => ({ key: Math.random().toString(36).slice(2), name: '', sku: '', quantity: '1' });
@@ -3007,8 +3154,8 @@ function RequestForm({
     items.forEach((item) => item.sku && totals.set(item.sku, (totals.get(item.sku) ?? 0) + Number(item.quantity)));
     for (const [sku, qty] of totals) {
       const stock = stockOf(sku);
-      if (stock && qty > Number(stock.quantity ?? 0)) {
-        return `Only ${stock.quantity} ${stock.unit ?? 'units'} of ${stock.name} in stock (requested ${qty}).`;
+      if (stock && qty > usableStock(stock)) {
+        return `Only ${usableStock(stock)} ${stock.unit ?? 'units'} of ${stock.name} can be released (requested ${qty}; ${safetyLevel(stock)} kept as safety stock).`;
       }
     }
     return null;
@@ -3124,7 +3271,9 @@ function RequestForm({
           <div className="mrf-item-editor">
             {items.map((item, index) => {
               const stock = stockOf(item.sku);
-              const short = stock && Number(item.quantity) > Number(stock.quantity ?? 0);
+              const short = stock && Number(item.quantity) > usableStock(stock);
+              const left = stock ? Number(stock.quantity ?? 0) - Number(item.quantity || 0) : null;
+              const dropsLow = !short && left !== null && left <= CRITICAL_STOCK;
               return (
                 <div className="mrf-item-row" key={item.key}>
                   <span className="mrf-item-num">{index + 1}</span>
@@ -3145,8 +3294,9 @@ function RequestForm({
                       onChange={(e) => updateItem(item.key, { quantity: e.target.value })}
                     />
                     {stock && (
-                      <small className={short ? 'is-short' : undefined}>
-                        {Number(stock.quantity ?? 0)} {String(stock.unit ?? 'units')} in stock
+                      <small className={short ? 'is-short' : dropsLow ? 'is-warn' : undefined}>
+                        {usableStock(stock)} {String(stock.unit ?? 'units')} available
+                        {dropsLow && ` · only ${left} left after this — needs restocking`}
                       </small>
                     )}
                   </div>
@@ -3389,7 +3539,7 @@ function MrfItemsTable({ row, showStock = true }: { row: EntityRow; showStock?: 
             <th>Material</th>
             <th>SKU</th>
             <th className="num">Requested</th>
-            {showStock && <th className="num">In Stock</th>}
+            {showStock && <th className="num" title="Stock above the safety level">Available</th>}
             {showStock && <th>Check</th>}
           </tr>
         </thead>
@@ -3398,7 +3548,7 @@ function MrfItemsTable({ row, showStock = true }: { row: EntityRow; showStock?: 
             const material = item.material_sku
               ? stats.materials.find((m) => String(m.sku) === item.material_sku && !m.archived)
               : undefined;
-            const inStock = material ? Number(material.quantity ?? 0) : null;
+            const inStock = material ? usableStock(material) : null;
             const unit = item.unit || String(material?.unit ?? '');
             const check = !item.material_sku
               ? { text: 'Custom — not in inventory', cls: 'is-custom' }
@@ -3430,8 +3580,8 @@ function mrfShortages(row: EntityRow, materials: EntityRow[]): string[] {
     .filter((item) => item.material_sku)
     .flatMap((item) => {
       const material = materials.find((m) => String(m.sku) === item.material_sku && !m.archived);
-      const inStock = material ? Number(material.quantity ?? 0) : 0;
-      return inStock >= item.quantity ? [] : [`${item.material_name}: ${inStock} in stock, ${item.quantity} requested`];
+      const inStock = material ? usableStock(material) : 0;
+      return inStock >= item.quantity ? [] : [`${item.material_name}: ${inStock} available, ${item.quantity} requested`];
     });
 }
 
@@ -4540,7 +4690,13 @@ const billingStatusLabel = (value: unknown): string => {
   return titleCase(status);
 };
 
+/** Online methods a customer can pay with; cash is paid at the office and recorded by staff. */
+const ONLINE_PAYMENT_METHODS = ['GCash', 'Maya', 'Bank Transfer'];
+const CASH_WALK_IN = 'Cash (Walk-in)';
+const isCashPayment = (row: EntityRow) => String(row.payment_method ?? '') === CASH_WALK_IN;
+
 function BillingDetails({ row, customer = false }: { row: EntityRow; customer?: boolean }) {
+  const cash = isCashPayment(row);
   return (
     <>
       <div className="billing-amount-card">
@@ -4560,14 +4716,15 @@ function BillingDetails({ row, customer = false }: { row: EntityRow; customer?: 
         {!customer && <DetailRow label="Email">{String(row.customer_email ?? '')}</DetailRow>}
         <DetailRow label="Status">{billingStatusLabel(row.status)}</DetailRow>
         <DetailRow label="Payment Method">{String(row.payment_method ?? '—')}</DetailRow>
-        <DetailRow label="Account Name">{String(row.account_name ?? '—')}</DetailRow>
-        <DetailRow label="Account Number">{String(row.account_number ?? '—')}</DetailRow>
-        {Boolean(row.payment_reference) && <DetailRow label="Submitted Reference">{String(row.payment_reference)}</DetailRow>}
-        {row.amount_paid != null && <DetailRow label="Amount Submitted">{money(row.amount_paid)}</DetailRow>}
+        {!cash && <DetailRow label="Account Name">{String(row.account_name ?? '—')}</DetailRow>}
+        {!cash && <DetailRow label="Account Number">{String(row.account_number ?? '—')}</DetailRow>}
+        {Boolean(row.payment_reference) && <DetailRow label={cash ? 'OR Number' : 'Submitted Reference'}>{String(row.payment_reference)}</DetailRow>}
+        {row.amount_paid != null && <DetailRow label={cash ? 'Amount Received' : 'Amount Submitted'}>{money(row.amount_paid)}</DetailRow>}
         {Boolean(row.payment_date) && <DetailRow label="Payment Date">{dateShort(row.payment_date)}</DetailRow>}
+        {Boolean(row.recorded_by) && <DetailRow label="Recorded By">{String(row.recorded_by)}</DetailRow>}
         {Boolean(row.verification_notes) && <DetailRow label="Verification Notes">{String(row.verification_notes)}</DetailRow>}
       </dl>
-      {Array.isArray(row.payment_qr) && row.payment_qr.length > 0 && <><p className="detail-section-title">Scan to Pay</p><ImageGallery images={row.payment_qr} /></>}
+      {!cash && Array.isArray(row.payment_qr) && row.payment_qr.length > 0 && <><p className="detail-section-title">Scan to Pay</p><ImageGallery images={row.payment_qr} /></>}
       {Array.isArray(row.payment_proof) && row.payment_proof.length > 0 && <><p className="detail-section-title">Payment Proof</p><ImageGallery images={row.payment_proof} /></>}
     </>
   );
@@ -4580,7 +4737,8 @@ function CustomerBillingAction({ c }: { c: RowActionCtx }) {
   const [resubmitOpen, setResubmitOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const isRejected = String(c.row.status) === 'rejected';
-  const [method, setMethod] = useState(String(c.row.payment_method ?? 'GCash'));
+  const defaultMethod = ONLINE_PAYMENT_METHODS.find((m) => String(c.row.payment_method ?? '').includes(m)) ?? 'GCash';
+  const [method, setMethod] = useState(defaultMethod);
   const [amount, setAmount] = useState(String(c.row.amount ?? ''));
   const [paymentDate, setPaymentDate] = useState(todayISO());
   const [reference, setReference] = useState('');
@@ -4588,7 +4746,7 @@ function CustomerBillingAction({ c }: { c: RowActionCtx }) {
   const payable = ['pending', 'unpaid', 'overdue'].includes(String(c.row.status));
 
   const resetForm = () => {
-    setMethod(String(c.row.payment_method ?? 'GCash'));
+    setMethod(defaultMethod);
     setAmount(String(c.row.amount ?? ''));
     setPaymentDate(todayISO());
     setReference('');
@@ -4683,7 +4841,12 @@ function CustomerBillingAction({ c }: { c: RowActionCtx }) {
         <div className="form-grid">
           <div className="form-group">
             <label>Payment Method</label>
-            <input value={method} onChange={(e) => setMethod(e.target.value)} placeholder="GCash / Maya / Bank" />
+            <select value={method} onChange={(e) => setMethod(e.target.value)}>
+              {ONLINE_PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <small style={{ display: 'block', marginTop: 4, color: 'var(--muted)' }}>
+              Paying in cash? Pay at the office — staff will record it and issue an official receipt.
+            </small>
           </div>
           <div className="form-group">
             <label>Amount Paid (₱)</label>
@@ -4702,6 +4865,74 @@ function CustomerBillingAction({ c }: { c: RowActionCtx }) {
           <label>Screenshot / Proof of Payment</label>
           <ImageUpload value={proof} onChange={setProof} maxFiles={3} />
         </div>
+      </Modal>
+    </>
+  );
+}
+
+/** Staff record a walk-in cash payment against its Official Receipt — the bill is paid at once. */
+function RecordCashPaymentAction({ c }: { c: RowActionCtx }) {
+  const { notify } = useToast();
+  const { reload: reloadStats } = useStats();
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [orNumber, setOrNumber] = useState('');
+  const [paidOn, setPaidOn] = useState(todayISO());
+  const [saving, setSaving] = useState(false);
+  if (!['pending', 'unpaid', 'overdue', 'rejected'].includes(String(c.row.status)) || c.archived) return null;
+
+  const start = () => {
+    setAmount(String(c.row.amount ?? ''));
+    setOrNumber('');
+    setPaidOn(todayISO());
+    setOpen(true);
+  };
+  const save = async () => {
+    if (!(Number(amount) > 0)) return notify('Enter the amount received.', 'error');
+    if (!orNumber.trim()) return notify('Enter the Official Receipt (OR) number.', 'error');
+    if (!paidOn) return notify('Enter the payment date.', 'error');
+    setSaving(true);
+    try {
+      await resourceService.update('payments', c.row.id, {
+        payment_method: CASH_WALK_IN,
+        amount_paid: Number(amount),
+        payment_reference: orNumber.trim(),
+        payment_date: paidOn,
+        verification_notes: `Walk-in cash payment, OR #${orNumber.trim()}`,
+      });
+      await Promise.all([c.reload(), reloadStats()]);
+      notify(`Cash payment recorded. Bill ${String(c.row.ref_code ?? '')} is now Paid.`);
+      setOpen(false);
+    } catch (cause) {
+      notify(cause instanceof ApiError ? cause.message : 'Could not record the cash payment.', 'error');
+    } finally { setSaving(false); }
+  };
+  const short = Number(amount) > 0 && Number(amount) < Number(c.row.amount ?? 0);
+  return (
+    <>
+      <button className="btn-action" type="button" onClick={start}>Record Cash</button>
+      <Modal title={`Record Cash Payment — ${String(c.row.ref_code ?? '')}`} open={open} onClose={() => setOpen(false)} onSubmit={save} submitText="Mark as Paid" submitting={saving}>
+        <div className="billing-amount-card" style={{ marginBottom: 16 }}>
+          <span>Amount Due</span>
+          <strong>{money(c.row.amount)}</strong>
+          <small>{String(c.row.customer_name ?? '')} · Due {dateShort(c.row.due_date)}</small>
+        </div>
+        <div className="form-grid">
+          <div className="form-group">
+            <label>Amount Received (₱)</label>
+            <input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            {short && <small style={{ display: 'block', marginTop: 4, color: '#b45309' }}>Less than the amount due.</small>}
+          </div>
+          <div className="form-group">
+            <label>Payment Date</label>
+            <input type="date" max={todayISO()} value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
+          </div>
+        </div>
+        <div className="form-group">
+          <label>Official Receipt (OR) Number</label>
+          <input value={orNumber} onChange={(e) => setOrNumber(e.target.value)} placeholder="e.g. 0012345" />
+        </div>
+        <small style={{ color: 'var(--muted)' }}>No proof upload needed — the bill is marked Paid right away and its complaint is resolved.</small>
       </Modal>
     </>
   );
@@ -5125,6 +5356,8 @@ export function BillingModule({ filter, navigate }: ModuleProps) {
     { header: 'Service Ref', cell: (r) => String(r.job_order_ref || r.incident_ref || '—') },
     { header: 'Amount', cell: (r) => money(r.amount) },
     { header: 'Due Date', cell: (r) => dateShort(r.due_date) },
+    // How it was actually paid — the bill's method before payment is just the offered destination.
+    { header: 'Paid Via', cell: (r) => (['paid', 'for_verification'].includes(String(r.status)) ? String(r.payment_method || '—') : '—') },
     { header: 'Status', cell: (r) => ({ ...statusCell(r.status), text: billingStatusLabel(r.status) }) },
   ];
   const fields: ModuleField[] = [
@@ -5154,7 +5387,9 @@ export function BillingModule({ filter, navigate }: ModuleProps) {
         metric('bill3', 'For Verification', count(rows, (r) => r.status === 'for_verification'), 'shield', 'profit'),
         metric('bill4', 'Paid', count(rows, (r) => r.status === 'paid'), 'check-circle', 'invoices'),
       ]}
-      actions={(c) => customer ? <CustomerBillingAction c={c} /> : <><BillingReviewAction c={c} /><EditBtn c={c} /><ArchiveBtn c={c} /></>}
+      actions={(c) => customer
+        ? <CustomerBillingAction c={c} />
+        : <><BillingReviewAction c={c} />{['general-manager', 'commercial-department'].includes(user!.role) && <RecordCashPaymentAction c={c} />}<EditBtn c={c} /><ArchiveBtn c={c} /></>}
     />
   );
 }

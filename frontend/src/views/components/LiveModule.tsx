@@ -28,7 +28,8 @@ export interface ModuleField {
   label: string;
   kind?: 'text' | 'textarea' | 'number' | 'date' | 'time' | 'select' | 'images';
   options?: string[];
-  optionList?: { value: string; label: string }[];
+  /** Options with the same `group` render together under an <optgroup>. */
+  optionList?: { value: string; label: string; group?: string }[];
   placeholder?: string;
   default?: string;
   /** Render the field as a non-editable display (value is still submitted). */
@@ -49,6 +50,18 @@ export interface ModuleField {
   maxSizeBytes?: number;
   /** Must be filled (images: at least one) before the form can be submitted. */
   required?: boolean;
+}
+
+/** Split options into runs that share a `group` (ungrouped runs stay flat). */
+type SelectOption = { value: string; label: string; group?: string };
+function groupOptions(options: SelectOption[]): { group?: string; options: SelectOption[] }[] {
+  const runs: { group?: string; options: SelectOption[] }[] = [];
+  for (const option of options) {
+    const last = runs[runs.length - 1];
+    if (last && last.group === option.group) last.options.push(option);
+    else runs.push({ group: option.group, options: [option] });
+  }
+  return runs;
 }
 
 const isBlank = (v: unknown) => (Array.isArray(v) ? v.length === 0 : String(v ?? '').trim() === '');
@@ -600,11 +613,14 @@ export function LiveModule({
                   value={String(values[f.name] ?? '')}
                   onChange={(e) => setValues((p) => ({ ...p, [f.name]: e.target.value }))}
                 >
-                  {(f.optionList ?? (f.options ?? []).map((o) => ({ value: o, label: o }))).map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
+                  {groupOptions(f.optionList ?? (f.options ?? []).map((o) => ({ value: o, label: o }))).map(({ group, options }) => {
+                    const list = options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ));
+                    return group ? <optgroup key={group} label={group}>{list}</optgroup> : list;
+                  })}
                 </select>
               ) : f.suggestionsFromRows ? (
                 <AutocompleteInput

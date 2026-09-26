@@ -97,9 +97,9 @@ export const RESOURCES: Record<string, ResourceDef> = {
   materials: {
     table: 'materials',
     writeRoles: ['inventory-officer', 'technical-team'],
-    allowed: ['sku', 'name', 'category', 'description', 'quantity', 'unit', 'unit_price', 'supplier', 'supplier_id', 'source', 'min_level', 'status', 'archived', 'weight_kg', 'size', 'color'],
+    allowed: ['sku', 'name', 'category', 'description', 'quantity', 'unit', 'unit_price', 'supplier', 'supplier_id', 'source', 'min_level', 'safety_level', 'status', 'archived', 'weight_kg', 'size', 'color'],
     required: ['name'],
-    numeric: ['quantity', 'unit_price', 'min_level', 'weight_kg'],
+    numeric: ['quantity', 'unit_price', 'min_level', 'safety_level', 'weight_kg'],
     nullable: ['supplier_id'],
     autoKeys: [{ column: 'sku', prefix: 'SKU', digits: 5 }],
   },

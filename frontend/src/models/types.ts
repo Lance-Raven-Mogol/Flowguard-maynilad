@@ -58,6 +58,8 @@ export interface TableCell {
   status?: StatusTone;
   badge?: BadgeTone;
   swatch?: string;
+  /** 0–1 fill for a small progress bar under the (status) pill. */
+  meter?: number;
 }
 
 export interface TableRow {
