@@ -17,13 +17,7 @@ import { ImageUpload, LiveModule, StatusSelect, type ModuleColumn, type ModuleFi
 import { DataTable } from '../views/components/DataTable';
 import { Modal } from '../views/components/Modal';
 import { ActionButton, PanelHead, QRLabelModal } from '../views/components/panels';
-import { BARANGAYS } from '../views/components/BarangayCombobox';
 import { StockCountPanel } from '../views/inventory/StockCountPanel';
-
-/** Flat list of all barangay values for autocomplete suggestions. */
-const BARANGAY_SUGGESTIONS = BARANGAYS.flatMap(({ municipality, barangays }) =>
-  barangays.map((b) => `${b}, ${municipality}`),
-);
 
 const roleLabel = (role: unknown): string => ROLES.find((r) => r.value === role)?.label ?? String(role ?? '');
 
@@ -747,7 +741,7 @@ function AssignJobOrderButton({ c }: { c: RowActionCtx }) {
 const INCIDENT_STATUS = [
   { value: 'under_verification', label: 'Pending' },
   { value: 'in_progress', label: 'Ongoing' },
-  { value: 'for_estimation', label: 'Estimating' },
+  { value: 'for_estimation', label: 'Priced' },
   { value: 'for_billing', label: 'Billing' },
   { value: 'resolved', label: 'Resolved' },
   { value: 'cancelled', label: 'Cancelled' },
@@ -910,6 +904,181 @@ function BillToCustomerSelect({
   );
 }
 
+/* --------------------------------------------- Itemized charges (#2 / #16) */
+interface ChargeLine {
+  kind: 'material' | 'labor' | 'fee';
+  description: string;
+  material_sku: string;
+  quantity: number;
+  unit: string;
+  unit_price: number;
+  amount: number;
+}
+const CHARGE_KIND_LABEL: Record<ChargeLine['kind'], string> = { material: 'Material', labor: 'Labor', fee: 'Other fee' };
+const noChargeLabel = 'No charge — covered by Maynilad';
+const chargeLines = (row: EntityRow): ChargeLine[] => (Array.isArray(row.charges) ? (row.charges as ChargeLine[]) : []);
+
+/** Read-only breakdown — complaint details, the bill, and its printed statement. */
+function ChargesTable({ lines, total }: { lines: ChargeLine[]; total: unknown }) {
+  return (
+    <div className="mrf-items-table-wrap">
+      <table className="mrf-items-table charges-table">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Description</th>
+            <th className="num">Qty</th>
+            <th className="num">Unit Price</th>
+            <th className="num">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line, i) => (
+            <tr key={`${line.kind}-${i}`}>
+              <td>{CHARGE_KIND_LABEL[line.kind] ?? line.kind}</td>
+              <td>{line.description}{line.material_sku ? ` (${line.material_sku})` : ''}</td>
+              <td className="num">{line.kind === 'material' ? `${line.quantity} ${line.unit}` : '—'}</td>
+              <td className="num">{line.kind === 'material' ? money(line.unit_price) : '—'}</td>
+              <td className="num">{money(line.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th colSpan={4}>Total Price</th>
+            <th className="num">{money(total)}</th>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
+interface ChargeDraft {
+  key: string;
+  kind: ChargeLine['kind'];
+  sku: string;
+  quantity: string;
+  description: string;
+  amount: string;
+}
+const newChargeDraft = (kind: ChargeLine['kind']): ChargeDraft => ({
+  key: Math.random().toString(36).slice(2),
+  kind,
+  sku: '',
+  quantity: '1',
+  description: kind === 'labor' ? 'Labor' : '',
+  amount: '',
+});
+const chargeDraftsFrom = (row: EntityRow): ChargeDraft[] => {
+  const lines = chargeLines(row);
+  if (!lines.length) return [newChargeDraft('material'), newChargeDraft('labor')];
+  return lines.map((line) => ({
+    ...newChargeDraft(line.kind),
+    sku: line.material_sku,
+    quantity: String(line.quantity),
+    description: line.description,
+    amount: line.kind === 'material' ? '' : String(line.amount),
+  }));
+};
+
+/**
+ * Technical Team pricing: materials from inventory (unit price × qty), labor,
+ * and other fees, totalled live. This total is the price itself — the
+ * Commercial Department bills it or waives it (no charge).
+ */
+function ChargesEditor({
+  drafts,
+  onDrafts,
+}: {
+  drafts: ChargeDraft[];
+  onDrafts: (drafts: ChargeDraft[]) => void;
+}) {
+  const { stats } = useStats();
+  const priced = stats.materials.filter((m) => !m.archived && Number(m.unit_price ?? 0) > 0);
+  const materialOf = (sku: string) => priced.find((m) => String(m.sku) === sku);
+  const lineAmount = (d: ChargeDraft) =>
+    d.kind === 'material'
+      ? Number(materialOf(d.sku)?.unit_price ?? 0) * (Number(d.quantity) || 0)
+      : Number(d.amount) || 0;
+  const total = drafts.reduce((sum, d) => sum + lineAmount(d), 0);
+  const update = (key: string, patch: Partial<ChargeDraft>) =>
+    onDrafts(drafts.map((d) => (d.key === key ? { ...d, ...patch } : d)));
+  return (
+    <div className="charges-editor">
+      <p className="detail-section-title">Price Breakdown</p>
+      {drafts.map((d) => (
+        <div className="charge-row" key={d.key}>
+          <span className="charge-kind">{CHARGE_KIND_LABEL[d.kind]}</span>
+          {d.kind === 'material' ? (
+            <>
+              <select value={d.sku} onChange={(e) => update(d.key, { sku: e.target.value })} aria-label="Material">
+                <option value="">Select material…</option>
+                {priced.map((m) => (
+                  <option key={String(m.id)} value={String(m.sku)}>
+                    {`${String(m.name)} — ${money(m.unit_price)} / ${String(m.unit ?? 'unit')}`}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="charge-qty"
+                type="number"
+                min={1}
+                step={1}
+                aria-label="Quantity"
+                value={d.quantity}
+                onChange={(e) => update(d.key, { quantity: e.target.value })}
+              />
+            </>
+          ) : (
+            <>
+              <input
+                value={d.description}
+                aria-label="Description"
+                placeholder={d.kind === 'labor' ? 'e.g. Labor — 2 plumbers, half day' : 'e.g. Excavation permit'}
+                onChange={(e) => update(d.key, { description: e.target.value })}
+              />
+              <div className="peso-input charge-qty">
+                <span>₱</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  aria-label="Amount"
+                  placeholder="0.00"
+                  value={d.amount}
+                  onChange={(e) => { if (/^\d*(\.\d{0,2})?$/.test(e.target.value)) update(d.key, { amount: e.target.value }); }}
+                />
+              </div>
+            </>
+          )}
+          <strong className="charge-amount">{money(lineAmount(d))}</strong>
+          <button
+            type="button"
+            className="mrf-item-remove"
+            aria-label="Remove charge"
+            onClick={() => onDrafts(drafts.filter((x) => x.key !== d.key))}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+      <div className="charges-add">
+        <button type="button" className="btn-action" onClick={() => onDrafts([...drafts, newChargeDraft('material')])}>+ Material</button>
+        <button type="button" className="btn-action" onClick={() => onDrafts([...drafts, newChargeDraft('labor')])}>+ Labor</button>
+        <button type="button" className="btn-action" onClick={() => onDrafts([...drafts, newChargeDraft('fee')])}>+ Other fee</button>
+      </div>
+      <div className="charges-total">
+        <span>Total Price</span>
+        <strong>{money(total)}</strong>
+      </div>
+      <small style={{ color: 'var(--muted)' }}>
+        Material prices come from Inventory. This is the full price, not an estimate — the Commercial Department bills it, or marks the complaint as no charge.
+        {priced.length === 0 && ' No inventory item has a unit price yet — set prices in the Material List first.'}
+      </small>
+    </div>
+  );
+}
+
 /** Read-only detail body for a complaint/incident, incl. customer photos + remarks. */
 function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRemarks?: boolean }) {
   const hasEstimate = row.estimated_cost !== null && row.estimated_cost !== undefined && Number(row.estimated_cost) > 0;
@@ -931,8 +1100,16 @@ function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRema
           </DetailRow>
         )}
         <DetailRow label="Filed On">{dateShort(row.created_at)}</DetailRow>
-        {hasEstimate && <DetailRow label="Estimated Cost">{money(row.estimated_cost)}</DetailRow>}
+        {hasEstimate && <DetailRow label="Price">{money(row.estimated_cost)}</DetailRow>}
+        {row.billable === false && <DetailRow label="Charge">{noChargeLabel}</DetailRow>}
       </dl>
+      {chargeLines(row).length > 0 && (
+        <>
+          <p className="detail-section-title">Price Breakdown</p>
+          <ChargesTable lines={chargeLines(row)} total={row.estimated_cost} />
+          {row.billable === false && <p className="charges-waived">{noChargeLabel} — the customer pays nothing.</p>}
+        </>
+      )}
       <div className="complaint-narratives">
         <section className="complaint-note-card">
           <span>Description</span>
@@ -973,6 +1150,11 @@ function IssueBillInline({
   const [amount, setAmount] = useState(
     Number(incident.estimated_cost ?? 0) > 0 ? String(incident.estimated_cost) : '',
   );
+  // Itemized complaints bill the Technical Team's exact price (full payment).
+  const itemized = chargeLines(incident).length > 0;
+  // Commercial decides: bill the price, or no charge (covered by Maynilad).
+  const [noCharge, setNoCharge] = useState(incidentCategory(incident.type).free === true);
+  const category = incidentCategory(incident.type);
   const [dueDate, setDueDate] = useState('');
   const [description, setDescription] = useState(String(incident.description ?? ''));
   const [profiles, setProfiles] = useState<EntityRow[]>([]);
@@ -1014,6 +1196,19 @@ function IssueBillInline({
   const selectedProfiles = profiles.filter((p) => profileIds.includes(String(p.id)));
 
   const submit = async () => {
+    if (noCharge) {
+      if (!window.confirm(`Mark ${String(incident.ref_code ?? 'this complaint')} as no charge? It will be Resolved with no bill.`)) return;
+      setSaving(true);
+      try {
+        await resourceService.update('incidents', String(incident.id), { billable: false, status: 'resolved' });
+        notify('Marked as no charge. Complaint resolved — no bill issued.');
+        setOpen(false);
+        await onIssued();
+      } catch (cause) {
+        notify(cause instanceof ApiError ? cause.message : 'Could not mark as no charge.', 'error');
+      } finally { setSaving(false); }
+      return;
+    }
     if (!customer?.email) { notify('No registered email found for this customer.', 'error'); return; }
     if (!(Number(amount) > 0)) { notify('Enter the billing amount.', 'error'); return; }
     if (!dueDate) { notify('Set a due date.', 'error'); return; }
@@ -1030,6 +1225,7 @@ function IssueBillInline({
         job_order_ref: '',
         service_description: description,
         amount: Number(amount),
+        charges: chargeLines(incident),
         due_date: dueDate,
         payment_method: selectedProfiles.map((p) => String(p.payment_method)).join(' / '),
         account_name: selectedProfiles.map((p) => String(p.account_name)).join(' / '),
@@ -1059,16 +1255,16 @@ function IssueBillInline({
   return (
     <>
       <div style={{ marginTop: 18 }}>
-        <ActionButton label="Issue Bill" icon="file-text" onClick={openForm} />
+        <ActionButton label="Bill Customer" icon="file-text" onClick={openForm} />
       </div>
       {open && (
         <Modal
-          title={`Issue Bill — ${incident.ref_code}`}
+          title={`Billing — ${incident.ref_code}`}
           open
           wide
           onClose={() => setOpen(false)}
           onSubmit={submit}
-          submitText="Issue Bill"
+          submitText={noCharge ? 'Mark as No Charge' : 'Issue Bill'}
           submitting={saving}
         >
           {loading ? <p className="billing-helper">Loading payment options…</p> : (
@@ -1085,24 +1281,46 @@ function IssueBillInline({
                   ? <small style={{ color: 'var(--muted)', display: 'block', marginTop: 4 }}>{customer.email}</small>
                   : <small style={{ color: '#e25577', display: 'block', marginTop: 4 }}>No registered account email found.</small>}
               </div>
-              {Number(incident.estimated_cost ?? 0) > 0 && (
+              {itemized && (
                 <div className="form-group">
-                  <label>Technical Estimate</label>
-                  <input value={money(incident.estimated_cost)} readOnly />
+                  <label>Price Breakdown (from the Technical Team)</label>
+                  <ChargesTable lines={chargeLines(incident)} total={incident.estimated_cost} />
                 </div>
               )}
+              <div className="form-group">
+                <label>Charge</label>
+                <div className="charge-choice" role="radiogroup" aria-label="Charge">
+                  <label className={!noCharge ? 'is-active' : ''}>
+                    <input type="radio" name={`charge-${String(incident.id)}`} checked={!noCharge} onChange={() => setNoCharge(false)} />
+                    <span><strong>With charge</strong><small>Bill the customer {money(incident.estimated_cost)}</small></span>
+                  </label>
+                  <label className={noCharge ? 'is-active' : ''}>
+                    <input type="radio" name={`charge-${String(incident.id)}`} checked={noCharge} onChange={() => setNoCharge(true)} />
+                    <span><strong>No charge</strong><small>Covered by Maynilad — resolved with no bill</small></span>
+                  </label>
+                </div>
+                <small style={{ color: 'var(--muted)', display: 'block', marginTop: 6 }}>
+                  {category.free === true
+                    ? `${category.label} concerns are normally free.`
+                    : category.free === false
+                    ? `${category.label} is normally charged to the customer.`
+                    : 'Leaks: free for public lines, charged for private lines.'}
+                </small>
+              </div>
+              {!noCharge && (<>
               <div className="form-group">
                 <label>Service Description</label>
                 <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
               </div>
               <div className="form-grid">
                 <div className="form-group">
-                  <label>Final Amount</label>
+                  <label>Total Amount Due</label>
                   <div className="peso-input">
                     <span>₱</span>
                     <input
                       type="text"
                       inputMode="decimal"
+                      readOnly={itemized}
                       value={amount}
                       onChange={(e) => { const v = e.target.value; if (/^\d*(\.\d{0,2})?$/.test(v)) setAmount(v); }}
                       onKeyDown={(e) => { if (['-', '+', 'e', 'E'].includes(e.key)) e.preventDefault(); }}
@@ -1154,6 +1372,7 @@ function IssueBillInline({
                     </div>
                   )}
               </div>
+              </>)}
             </>
           )}
         </Modal>
@@ -1194,7 +1413,8 @@ function IncidentViewButton({
   const [customers, setCustomers] = useState<BillingCustomerOption[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
   const [urgency, setUrgency] = useState('');
-  const [estimatedCost, setEstimatedCost] = useState('');
+  const [chargeDrafts, setChargeDrafts] = useState<ChargeDraft[]>([]);
+  const freeConcern = incidentCategory(c.row.type).free === true;
   const [saving, setSaving] = useState(false);
   const editable = canEditRemarks && !c.archived;
   const urgencyEditable = canEditUrgency && !c.archived;
@@ -1225,9 +1445,7 @@ function IncidentViewButton({
     setSiteAction(String(c.row.site_action ?? ''));
     setBillToCustomerId(String(c.row.bill_to_customer_id ?? ''));
     setUrgency(String(c.row.urgency ?? ''));
-    setEstimatedCost(
-      Number(c.row.estimated_cost ?? 0) > 0 ? String(c.row.estimated_cost) : '',
-    );
+    setChargeDrafts(chargeDraftsFrom(c.row));
     setOpen(true);
     if (editable && hasSavedSitePlan) {
       setCustomersLoading(true);
@@ -1262,13 +1480,14 @@ function IncidentViewButton({
           // billing owner and status are handled only after this save.
           patch.site_action = siteAction.trim();
         } else {
-          if (!billToCustomerId) {
+          // Free concerns (water quality / supply) don't need a billing owner.
+          if (!billToCustomerId && !freeConcern) {
             notify('Select the customer account that should receive the bill.', 'error');
             setSaving(false);
             return;
           }
           patch.remarks = remarks.trim();
-          patch.bill_to_customer_id = billToCustomerId;
+          if (billToCustomerId) patch.bill_to_customer_id = billToCustomerId;
           // Zone specialist: a newly saved non-empty remark advances status.
           const remarksChanged = remarks.trim() !== String(c.row.remarks ?? '').trim();
           if (c.row.status === 'under_verification' && remarks.trim() && remarksChanged) {
@@ -1284,18 +1503,30 @@ function IncidentViewButton({
         patch.urgency = urgency;
       }
 
-      // Technical team: saving an estimate auto-advances to for_estimation.
+      // Technical team: price with breakdown → Priced.
       if (estimateEditable) {
-        const cost = Number(estimatedCost);
-        if (estimatedCost.trim() !== '' && (isNaN(cost) || cost <= 0)) {
-          notify('Enter a valid estimated cost greater than 0.', 'error');
+        if (chargeDrafts.length === 0) {
+          notify('Add at least one line to the price breakdown.', 'error');
           setSaving(false);
           return;
         }
-        if (cost > 0) {
-          patch.estimated_cost = cost;
-          patch.status = 'for_estimation';
+        for (const d of chargeDrafts) {
+          const qty = Number(d.quantity);
+          const problem = d.kind === 'material'
+            ? !d.sku ? 'Select a material for every material line.'
+              : !Number.isInteger(qty) || qty <= 0 ? 'Enter a whole-number quantity for every material.' : ''
+            : !d.description.trim() ? 'Describe every labor / fee line.'
+              : !(Number(d.amount) > 0) ? `Enter an amount for "${d.description.trim()}".` : '';
+          if (problem) {
+            notify(problem, 'error');
+            setSaving(false);
+            return;
+          }
         }
+        patch.charges = chargeDrafts.map((d) => d.kind === 'material'
+          ? { kind: 'material', material_sku: d.sku, quantity: Number(d.quantity) }
+          : { kind: d.kind, description: d.description.trim(), amount: Number(d.amount) });
+        patch.status = 'for_estimation';
       }
 
       if (Object.keys(patch).length > 0) await c.update(patch);
@@ -1321,7 +1552,7 @@ function IncidentViewButton({
           wide
           onClose={() => setOpen(false)}
           onSubmit={hasEdits ? save : undefined}
-          submitText={estimateEditable ? 'Submit Estimate' : editable && !hasSavedSitePlan ? 'Save Site Visit Plan' : 'Save Changes'}
+          submitText={estimateEditable ? 'Submit Price' : editable && !hasSavedSitePlan ? 'Save Site Visit Plan' : 'Save Changes'}
           submitting={saving}
         >
           <IncidentDetail row={c.row} hideRemarks={editable} />
@@ -1394,7 +1625,7 @@ function IncidentViewButton({
                     />
                   </div>
                   <div className="form-group bill-to-reveal" style={{ marginTop: 18, marginBottom: 0 }}>
-                    <label>Bill To</label>
+                    <label>Bill To{freeConcern && <span className="address-optional"> (optional — this concern is normally free)</span>}</label>
                     <BillToCustomerSelect
                       customers={customers}
                       value={billToCustomerId}
@@ -1406,34 +1637,15 @@ function IncidentViewButton({
               )}
             </>
           )}
-          {/* Technical Team: estimation input — only visible when in_progress */}
+          {/* Technical Team: itemized charges — only while the complaint is Ongoing */}
           {estimateEditable && (
-            <div className="form-group" style={{ marginTop: 18, marginBottom: 0 }}>
-              <label>Estimated Cost</label>
-              <div className="peso-input">
-                <span>₱</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={estimatedCost}
-                  onChange={(e) => { const v = e.target.value; if (/^\d*(\.\d{0,2})?$/.test(v)) setEstimatedCost(v); }}
-                  onKeyDown={(e) => { if (['-', '+', 'e', 'E'].includes(e.key)) e.preventDefault(); }}
-                  placeholder="0.00"
-                />
-              </div>
-              <small style={{ color: 'var(--muted)', display: 'block', marginTop: 4 }}>
-                Saving an estimate will automatically move this complaint to Estimating.
-              </small>
-            </div>
+            <ChargesEditor drafts={chargeDrafts} onDrafts={setChargeDrafts} />
           )}
-          {/* Technical Team: estimate already submitted or wrong status hint */}
           {canEstimate && !estimateEditable && !c.archived && (
             <p style={{ marginTop: 14, color: 'var(--muted)', fontSize: 13 }}>
-              {c.row.status === 'in_progress'
-                ? 'Set an estimated cost above to submit for estimation.'
-                : Number(c.row.estimated_cost ?? 0) > 0
-                ? `Estimate of ${money(c.row.estimated_cost)} has been submitted.`
-                : 'Estimation can be entered once the complaint is Ongoing.'}
+              {Number(c.row.estimated_cost ?? 0) > 0
+                ? `Price of ${money(c.row.estimated_cost)} has been submitted.`
+                : 'The price can be entered once the complaint is Ongoing.'}
             </p>
           )}
           {/* Commercial Department: Issue Bill button for for_estimation incidents */}
@@ -1442,7 +1654,7 @@ function IncidentViewButton({
           )}
           {canIssueBill && c.row.status !== 'for_estimation' && c.row.status !== 'for_billing' && c.row.status !== 'resolved' && (
             <p style={{ marginTop: 14, color: 'var(--muted)', fontSize: 13 }}>
-              The Issue Bill button will appear once the Technical Team submits their estimate.
+              Billing opens once the Technical Team submits the price.
             </p>
           )}
           {canDispatch && (
@@ -1478,6 +1690,12 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
     { header: 'Ref', cell: (r) => ({ text: String(r.ref_code), strong: true }) },
     { header: 'Category', cell: (r) => ({ text: incidentCategory(r.type).label, swatch: incidentCategory(r.type).color }) },
     { header: 'Concern', cell: (r) => incidentTypeLabel(r.type) },
+    {
+      header: 'Price',
+      cell: (r) => (r.billable === false
+        ? { text: 'No charge', status: 'paid' }
+        : Number(r.estimated_cost ?? 0) > 0 ? money(r.estimated_cost) : '—'),
+    },
     { header: 'Description', cell: (r) => String(r.description ?? '') },
     { header: 'Location', cell: (r) => String(r.location ?? '—') },
     { header: 'Urgency', cell: (r) => r.urgency ? badgeCell(titleCase(r.urgency), String(r.urgency) as BadgeTone) : { text: '—' } },
@@ -1487,7 +1705,7 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
   const fields: ModuleField[] = [
     { name: 'type', label: 'Concern', kind: 'select', optionList: INCIDENT_TYPE_OPTIONS, default: 'odor-water', hint: 'Pick the closest concern — it sets the complaint category.' },
     { name: 'description', label: 'Description', kind: 'textarea', placeholder: 'Describe the concern…' },
-    { name: 'location', label: 'Location', placeholder: 'e.g. Isok II Poblacion, Boac', default: user!.barangay ?? 'Isok II Poblacion, Boac', suggestionsFromRows: () => BARANGAY_SUGGESTIONS },
+    { name: 'location', label: 'Location', kind: 'address', default: user!.barangay ?? '', required: true, hint: 'Purok / street is free text; pick the barangay and municipality from the list.' },
     ...(canManageUrgency ? [{
       name: 'urgency',
       label: 'Urgency',
@@ -3900,7 +4118,7 @@ export function AssetsModule({ filter, title }: ModuleProps & { title?: string }
   const fields: ModuleField[] = [
     { name: 'name', label: 'Asset Name', placeholder: 'e.g. Distribution Main A' },
     { name: 'type', label: 'Type', placeholder: 'Pipe / Pump / Meter / Valve' },
-    { name: 'location', label: 'Location', placeholder: 'Brgy., Boac' },
+    { name: 'location', label: 'Location', kind: 'address' },
     { name: 'install_date', label: 'Installation Date', kind: 'date', allowPast: true },
     { name: 'expected_lifespan_years', label: 'Expected Lifespan (years)', kind: 'number', default: '10' },
     { name: 'last_maintenance', label: 'Last Maintenance', kind: 'date', allowPast: true },
@@ -4695,7 +4913,7 @@ const ONLINE_PAYMENT_METHODS = ['GCash', 'Maya', 'Bank Transfer'];
 const CASH_WALK_IN = 'Cash (Walk-in)';
 const isCashPayment = (row: EntityRow) => String(row.payment_method ?? '') === CASH_WALK_IN;
 
-function BillingDetails({ row, customer = false }: { row: EntityRow; customer?: boolean }) {
+export function BillingDetails({ row, customer = false }: { row: EntityRow; customer?: boolean }) {
   const cash = isCashPayment(row);
   return (
     <>
@@ -4724,6 +4942,7 @@ function BillingDetails({ row, customer = false }: { row: EntityRow; customer?: 
         {Boolean(row.recorded_by) && <DetailRow label="Recorded By">{String(row.recorded_by)}</DetailRow>}
         {Boolean(row.verification_notes) && <DetailRow label="Verification Notes">{String(row.verification_notes)}</DetailRow>}
       </dl>
+      {chargeLines(row).length > 0 && <><p className="detail-section-title">Statement of Account</p><ChargesTable lines={chargeLines(row)} total={row.amount} /></>}
       {!cash && Array.isArray(row.payment_qr) && row.payment_qr.length > 0 && <><p className="detail-section-title">Scan to Pay</p><ImageGallery images={row.payment_qr} /></>}
       {Array.isArray(row.payment_proof) && row.payment_proof.length > 0 && <><p className="detail-section-title">Payment Proof</p><ImageGallery images={row.payment_proof} /></>}
     </>
@@ -4789,7 +5008,7 @@ function CustomerBillingAction({ c }: { c: RowActionCtx }) {
       <Modal
         title={`Bill ${c.row.ref_code}`}
         open={open}
-        {...gmPrint}
+        printable printedBy={gmPrint.printedBy}
         wide
         onClose={() => setOpen(false)}
         closeText="Close"
@@ -4980,7 +5199,7 @@ function BillingReviewAction({ c }: { c: RowActionCtx }) {
   };
   return <>
     <button className="btn-action" type="button" onClick={() => setOpen(true)}>{reviewable ? 'Review' : 'View'}</button>
-    <Modal title={`${reviewable ? 'Review' : 'Payment'} ${c.row.ref_code}`} open={open} wide onClose={() => setOpen(false)} {...gmPrint}>
+    <Modal title={`${reviewable ? 'Review' : 'Payment'} ${c.row.ref_code}`} open={open} wide onClose={() => setOpen(false)} printable printedBy={gmPrint.printedBy}>
       <BillingDetails row={c.row} />
       {reviewable && <div className="payment-review-controls">
         <div className="form-group"><label>Verification Notes / Rejection Reason</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Required when rejecting" /></div>
@@ -5099,10 +5318,12 @@ function BillingControls({
   onCreated,
   profiles,
   onPaymentOptions,
+  onTransactions,
 }: {
   onCreated: () => Promise<void>;
   profiles: EntityRow[];
   onPaymentOptions?: () => void;
+  onTransactions?: () => void;
 }) {
   const { notify } = useToast();
   const [issueOpen, setIssueOpen] = useState(false);
@@ -5173,7 +5394,7 @@ function BillingControls({
     setWorkKey(key);
     const work = works.find((item) => item.key === key);
     setDescription(String(work?.incident.description ?? ''));
-    setAmount('');
+    setAmount(Number(work?.incident.estimated_cost ?? 0) > 0 ? String(work?.incident.estimated_cost) : '');
   };
 
   const toggleProfile = (id: string) =>
@@ -5205,6 +5426,7 @@ function BillingControls({
         incident_ref: String(selectedWork.incident.ref_code ?? ''),
         job_order_ref: '',
         service_description: description,
+        charges: selectedWork.incident ? chargeLines(selectedWork.incident) : [],
         notes: '',
         amount: Number(amount),
         due_date: dueDate,
@@ -5222,6 +5444,9 @@ function BillingControls({
 
   return <>
     <div className="panel-head-actions">
+      {onTransactions && (
+        <ActionButton label="Transaction History" icon="history" variant="secondary" onClick={onTransactions} />
+      )}
       {onPaymentOptions && (
         <ActionButton label="Payment Options" icon="wallet" variant="secondary" onClick={onPaymentOptions} />
       )}
@@ -5277,7 +5502,7 @@ function BillingControls({
         )}
 
         <div className="form-grid">
-          <div className="form-group"><label>Final Amount</label><div className="peso-input"><span>₱</span><input type="text" inputMode="decimal" value={amount} onChange={(e) => { const next = e.target.value; if (/^\d*(\.\d{0,2})?$/.test(next)) setAmount(next); }} onKeyDown={(e) => { if (['-', '+', 'e', 'E'].includes(e.key)) e.preventDefault(); }} placeholder="0.00" /></div></div>
+          <div className="form-group"><label>Total Amount Due</label><div className="peso-input"><span>₱</span><input type="text" inputMode="decimal" readOnly={Boolean(selectedWork && chargeLines(selectedWork.incident).length)} value={amount} onChange={(e) => { const next = e.target.value; if (/^\d*(\.\d{0,2})?$/.test(next)) setAmount(next); }} onKeyDown={(e) => { if (['-', '+', 'e', 'E'].includes(e.key)) e.preventDefault(); }} placeholder="0.00" /></div></div>
           <div className="form-group"><label>Due Date</label><input type="date" min={todayISO()} value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
         </div>
 
@@ -5330,6 +5555,14 @@ function BillingControls({
 
 
 
+/** Paid bills stay in Billing for a week, then live only in Transaction History. */
+const BILL_HISTORY_AFTER_DAYS = 7;
+const movedToHistory = (bill: EntityRow): boolean => {
+  if (String(bill.status) !== 'paid') return false;
+  const done = new Date(String(bill.paid_date || bill.payment_date || bill.created_at || ''));
+  return !Number.isNaN(done.getTime()) && Date.now() - done.getTime() > BILL_HISTORY_AFTER_DAYS * 86_400_000;
+};
+
 export function BillingModule({ filter, navigate }: ModuleProps) {
   const { user } = useAuth();
   const customer = user!.role === 'customer';
@@ -5380,7 +5613,8 @@ export function BillingModule({ filter, navigate }: ModuleProps) {
       entity="payments" title={customer ? 'My Billing' : 'Billing'} createLabel="Issue Final Bill"
       columns={columns} fields={customer ? [] : fields} canWrite={!customer} filter={filter} archivable={!customer}
       tableClassName="billing-table"
-      renderCreate={!customer ? ({ reload }) => <BillingControls onCreated={reload} profiles={profiles} onPaymentOptions={navigate ? () => navigate('payment-options') : undefined} /> : undefined}
+      rowFilter={customer ? undefined : (r) => !movedToHistory(r)}
+      renderCreate={!customer ? ({ reload }) => <BillingControls onCreated={reload} profiles={profiles} onPaymentOptions={navigate ? () => navigate('payment-options') : undefined} onTransactions={navigate ? () => navigate('transactions') : undefined} /> : undefined}
       metrics={(rows) => [
         metric('bill1', customer ? 'My Bills' : 'Total Bills', String(rows.length), 'credit-card', 'customers'),
         metric('bill2', 'Unpaid', count(rows, (r) => ['pending', 'unpaid'].includes(String(r.status))), 'clock', 'revenue'),

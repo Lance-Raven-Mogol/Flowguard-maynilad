@@ -10,6 +10,7 @@ import { FaqAccordion, PanelHead } from '../views/components/panels';
 import { DashboardOverview } from '../views/dashboard/DashboardOverview';
 import { AccountSettings } from '../views/dashboard/AccountSettings';
 import { TeamScheduleModule } from '../views/technical/TeamScheduleModule';
+import { TransactionHistory } from '../views/billing/TransactionHistory';
 import {
   AdvisoriesModule,
   AssetsModule,
@@ -77,6 +78,15 @@ const faqView = (id: string, label: string, icon: string, title: string, items: 
   ),
 });
 
+/** Hidden view for every billing transaction — opened from the Billing page. */
+const transactionsView = (billingViewId: string): ViewDef => ({
+  id: 'transactions',
+  label: 'Transaction History',
+  icon: 'history',
+  group: 'hidden',
+  render: ({ filter, navigate }) => <TransactionHistory filter={filter} onBack={() => navigate(billingViewId)} />,
+});
+
 /** Hidden view for the Payment Options page — navigated to via button in Billing. */
 const paymentOptionsView: ViewDef = {
   id: 'payment-options',
@@ -113,7 +123,7 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       },
       faqView('help', 'Help Center', 'circle-help', 'Help & Support Center', [
         { q: 'How do I file a complaint?', a: "Go to 'Complaints' and click 'File Complaint'. Describe the concern, set the location and urgency, then submit. A zone specialist will be notified to verify it." },
-        { q: 'How do I track my complaint?', a: "Open 'Complaints' — each row shows a live status: Pending, Ongoing, Estimating, Billing, or Resolved." },
+        { q: 'How do I track my complaint?', a: "Open 'Complaints' — each row shows a live status: Pending, Ongoing, Priced, Billing, or Resolved. Open a complaint to see its price breakdown; if it is covered by Maynilad it is marked No charge and resolved with no bill." },
         { q: 'Where do I see service interruptions?', a: "Check 'Service Advisories' for published maintenance, interruption, and emergency notices for your area." },
       ]),
       settings(),
@@ -157,6 +167,7 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter, navigate }) => <BillingModule filter={filter} navigate={navigate} />,
       },
       paymentOptionsView,
+      transactionsView('payments'),
       {
         id: 'assets', label: 'Asset Lifecycle', icon: 'box', group: 'main',
         render: ({ filter }) => <AssetsModule filter={filter} />,
@@ -257,7 +268,7 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       },
       faqView('guidelines', 'Zone Guidelines', 'book-open', 'Zone Investigation Guidelines', [
         { q: 'Standard safety protocol for site inspection', a: 'Wear high-visibility vests and protective gear. Coordinate with the barangay office before entering private property.' },
-        { q: 'How do I verify an incident?', a: "Open 'Investigations', review the reported concern, and use the status dropdown to set it Ongoing, Estimating, Billing, or Resolved after inspection." },
+        { q: 'How do I verify an incident?', a: "Open 'Investigations', review the reported concern, and use the status dropdown to set it Ongoing, Priced, Billing, or Resolved after inspection." },
         { q: 'Recording asset condition', a: "In 'Asset Inspections', update an asset's condition (Good / Needs Maintenance / Needs Replacement / Dispose). The health score recalculates automatically." },
       ]),
       settings(),
@@ -349,6 +360,7 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter, navigate }) => <BillingModule filter={filter} navigate={navigate} />,
       },
       paymentOptionsView,
+      transactionsView('billing'),
       {
         id: 'advisories', label: 'Service Advisories', icon: 'megaphone', group: 'main',
         render: ({ filter }) => <AdvisoriesModule filter={filter} readOnly title="Service Advisories" />,

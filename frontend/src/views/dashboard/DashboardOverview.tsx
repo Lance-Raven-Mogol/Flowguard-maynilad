@@ -24,7 +24,7 @@ const title = (v: unknown) => String(v ?? '').replace(/[_-]/g, ' ').replace(/\b\
 const STATUS_WORD: Record<string, string> = {
   under_verification: 'Pending',
   in_progress: 'Ongoing',
-  for_estimation: 'Estimating',
+  for_estimation: 'Priced',
   for_billing: 'Billing',
   for_verification: 'Verifying',
   in_stock: 'Available',
@@ -48,7 +48,7 @@ function recent(columns: string[], rows: TableCell[][]): ResourceTable {
 const incidentLegend = (rows: EntityRow[]): LegendItem[] => [
   { label: 'Pending', value: String(n(rows, (i) => i.status === 'under_verification')), dot: 'dark' },
   { label: 'Ongoing', value: String(n(rows, (i) => i.status === 'in_progress')), dot: 'blue' },
-  { label: 'Estimating', value: String(n(rows, (i) => i.status === 'for_estimation')), dot: 'cyan' },
+  { label: 'Priced', value: String(n(rows, (i) => i.status === 'for_estimation')), dot: 'cyan' },
   { label: 'Billing', value: String(n(rows, (i) => i.status === 'for_billing')), dot: 'amber' },
   { label: 'Resolved', value: String(n(rows, (i) => i.status === 'resolved')), dot: 'green' },
   { label: 'Declined', value: String(n(rows, (i) => i.status === 'declined')), dot: 'red' },

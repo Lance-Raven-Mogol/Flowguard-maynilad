@@ -21,12 +21,14 @@ import { MetricsGrid } from './MetricsGrid';
 import { DataTable } from './DataTable';
 import { PanelHead, ActionButton } from './panels';
 import { Modal } from './Modal';
+import { AddressInput } from './BarangayCombobox';
 import { printTable } from './print';
 
 export interface ModuleField {
   name: string;
   label: string;
-  kind?: 'text' | 'textarea' | 'number' | 'date' | 'time' | 'select' | 'images';
+  /** 'address' = free-text Purok / Street + barangay & municipality picker, saved as one string. */
+  kind?: 'text' | 'textarea' | 'number' | 'date' | 'time' | 'select' | 'images' | 'address';
   options?: string[];
   /** Options with the same `group` render together under an <optgroup>. */
   optionList?: { value: string; label: string; group?: string }[];
@@ -594,6 +596,12 @@ export function LiveModule({
                   onChange={(imgs) => setValues((p) => ({ ...p, [f.name]: imgs }))}
                   maxFiles={f.maxFiles}
                   maxSizeBytes={f.maxSizeBytes}
+                />
+              ) : f.kind === 'address' && !f.readOnly ? (
+                <AddressInput
+                  value={String(values[f.name] ?? '')}
+                  onChange={(address) => setValues((p) => ({ ...p, [f.name]: address }))}
+                  variant="dashboard"
                 />
               ) : f.kind === 'textarea' ? (
                 <textarea

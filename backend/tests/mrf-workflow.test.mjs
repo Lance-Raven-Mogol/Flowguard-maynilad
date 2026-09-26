@@ -161,3 +161,63 @@ test('walk-in cash: staff record it with an OR number; bill paid and complaint r
   assert.equal(table('incidents').find((i) => i.id === 'i1').status, 'resolved');
   await assert.rejects(resourceService.update('payments', commercial, 'p1', { ...cash, payment_reference: 'OR-2' }), /already paid/);
 });
+
+test('technical team prices with a breakdown; the bill is exactly that total', async () => {
+  seed();
+  const tech = user('technical-team', 'Tess Tech');
+  const commercial = user('commercial-department', 'Cora Commercial');
+  table('materials').find((m) => m.id === 'm1').unit_price = 150;
+  table('app_users').push({ id: 'c1', role: 'customer', full_name: 'Cruz Customer', email: 'c@x.com' });
+  table('incidents').push({ id: 'i1', ref_code: 'INC-0001', type: 'leak', status: 'in_progress', bill_to_customer_id: 'c1' });
+  const charges = [
+    { kind: 'material', material_sku: 'SKU-00001', quantity: 2, unit_price: 1 }, // price from inventory, not the client
+    { kind: 'labor', description: 'Labor — 2 plumbers', amount: 800 },
+    { kind: 'fee', description: 'Excavation permit', amount: 250.5 },
+  ];
+
+  await assert.rejects(resourceService.update('incidents', tech, 'i1', { charges: [] }), /at least one charge/);
+  await assert.rejects(
+    resourceService.update('incidents', tech, 'i1', { charges: [{ kind: 'material', material_sku: 'SKU-00002', quantity: 1 }] }),
+    /no unit price/,
+  );
+  // The tech team no longer decides "no charge".
+  await resourceService.update('incidents', tech, 'i1', { billable: false });
+  assert.equal(table('incidents').find((i) => i.id === 'i1').status, 'in_progress');
+
+  await resourceService.update('incidents', tech, 'i1', { charges, status: 'for_estimation' });
+  const incident = table('incidents').find((i) => i.id === 'i1');
+  assert.equal(incident.status, 'for_estimation');
+  assert.equal(incident.estimated_cost, 1350.5);
+  assert.deepEqual(incident.charges.map((c) => c.amount), [300, 800, 250.5]);
+  await assert.rejects(resourceService.update('incidents', tech, 'i1', { charges }), /only be set while the complaint is Ongoing/);
+
+  const bill = await resourceService.create('payments', commercial, {
+    customer_name: 'x', customer_email: 'x@x.com', amount: 1, incident_ref: 'INC-0001', due_date: '2026-10-01',
+  });
+  assert.equal(bill.amount, 1350.5, 'bill amount is locked to the price');
+  assert.equal(bill.charges.length, 3);
+});
+
+test('no charge: commercial department resolves a priced complaint with no bill', async () => {
+  seed();
+  const tech = user('technical-team', 'Tess Tech');
+  const commercial = user('commercial-department', 'Cora Commercial');
+  table('materials').find((m) => m.id === 'm1').unit_price = 150;
+  table('incidents').push({ id: 'i2', ref_code: 'INC-0002', type: 'odor-water', status: 'in_progress' });
+
+  await assert.rejects(resourceService.update('incidents', commercial, 'i2', { billable: false, status: 'resolved' }), /Priced and not yet billed/);
+  await resourceService.update('incidents', tech, 'i2', { charges: [{ kind: 'material', material_sku: 'SKU-00001', quantity: 1 }], status: 'for_estimation' });
+  await resourceService.update('incidents', commercial, 'i2', { billable: false, status: 'resolved' });
+  const incident = table('incidents').find((i) => i.id === 'i2');
+  assert.equal(incident.status, 'resolved');
+  assert.equal(incident.billable, false);
+  assert.equal(incident.estimated_cost, 150, 'the price stays on record');
+  await assert.rejects(
+    resourceService.create('payments', commercial, { customer_name: 'x', customer_email: 'x@x.com', amount: 100, incident_ref: 'INC-0002' }),
+    /covered by the utility/,
+  );
+  // Customers can't flip a complaint to no charge.
+  table('incidents').push({ id: 'i3', ref_code: 'INC-0003', type: 'leak', status: 'for_estimation', reported_by_id: 'u-customer' });
+  await resourceService.update('incidents', user('customer', 'Cruz Customer'), 'i3', { billable: false, description: 'x' });
+  assert.notEqual(table('incidents').find((i) => i.id === 'i3').billable, false);
+});

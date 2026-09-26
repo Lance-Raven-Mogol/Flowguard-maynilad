@@ -47,13 +47,16 @@ export const RESOURCES: Record<string, ResourceDef> = {
       'reported_by', 'reported_by_id', 'remarks', 'site_action',
       'bill_to_customer_id', 'bill_to_customer_name', 'bill_to_serial_number',
       'images', 'archived', 'estimated_cost',
+      // Technical Team charges: [{ kind, description, material_sku, quantity, unit, unit_price, amount }]
+      // and whether the customer pays at all (false = covered by the utility).
+      'charges', 'billable',
     ],
     required: ['description'],
     numeric: ['estimated_cost'],
     nullable: ['estimated_cost'],
     // Zone-specialist remarks have no fallback column — they must be stored, or
     // the save is a lie. Fail loudly (prompt a migration) rather than silently.
-    critical: ['remarks', 'site_action', 'bill_to_customer_id', 'estimated_cost'],
+    critical: ['remarks', 'site_action', 'bill_to_customer_id', 'estimated_cost', 'charges', 'billable'],
     autoKeys: [{ column: 'ref_code', prefix: 'INC', digits: 4 }],
     touch: 'updated_at',
     // Valid incident statuses (informational — enforced in DB check constraint):
@@ -174,6 +177,8 @@ export const RESOURCES: Record<string, ResourceDef> = {
       'amount', 'due_date', 'paid_date', 'status', 'notes', 'archived',
       'payment_method', 'account_name', 'account_number', 'payment_qr',
       'amount_paid', 'payment_date', 'payment_reference', 'payment_proof', 'verification_notes',
+      // Line items copied from the incident's charges — the bill's breakdown.
+      'charges',
     ],
     required: ['customer_name', 'customer_email', 'amount'],
     numeric: ['amount', 'amount_paid'],

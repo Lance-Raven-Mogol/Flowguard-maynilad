@@ -500,3 +500,8 @@ alter table public.materials add column if not exists safety_level integer not n
 
 -- #3 Walk-in cash payments recorded at the office.
 alter table public.payments add column if not exists recorded_by text;
+
+-- ---------------------- Itemized charges + no-charge complaints (2026-09-26) ----
+alter table public.incidents add column if not exists charges  jsonb   not null default '[]'::jsonb;
+alter table public.incidents add column if not exists billable boolean not null default true;
+alter table public.payments  add column if not exists charges  jsonb   not null default '[]'::jsonb;

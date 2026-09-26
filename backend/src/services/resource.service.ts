@@ -53,6 +53,58 @@ function materialStockStatus(quantity: unknown, minLevel: unknown, requestedStat
   return 'in_stock';
 }
 
+/* ------------------------------------------------ Complaint charges (#2/#16) */
+/** Concerns normally covered by the utility — no Bill To needed at verification. */
+const FREE_INCIDENT_TYPES = new Set(['odor-water', 'dirty-water', 'low-pressure', 'no-water']);
+const MAX_CHARGE_LINES = 30;
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+interface ChargeLine {
+  kind: 'material' | 'labor' | 'fee';
+  description: string;
+  material_sku: string;
+  quantity: number;
+  unit: string;
+  unit_price: number;
+  amount: number;
+}
+
+/**
+ * Validate the Technical Team's itemized charges. Material lines are priced
+ * from inventory (never trusted from the client); labor and fees carry their
+ * own amount. Returns the lines and the total amount due.
+ */
+async function normalizeCharges(raw: unknown): Promise<{ charges: ChargeLine[]; total: number }> {
+  if (!Array.isArray(raw) || raw.length === 0) throw badRequest('Add at least one charge (materials, labor, or other fees).');
+  if (raw.length > MAX_CHARGE_LINES) throw badRequest(`A complaint can have at most ${MAX_CHARGE_LINES} charge lines.`);
+  const charges: ChargeLine[] = [];
+  for (const entry of raw as Row[]) {
+    const kind = String(entry.kind ?? '');
+    if (kind === 'material') {
+      const sku = String(entry.material_sku ?? '').trim();
+      const material = sku ? await materialBySku(sku) : undefined;
+      if (!material || material.archived) throw badRequest(`No active inventory item found for SKU "${sku}".`);
+      const qty = Number(entry.quantity);
+      if (!Number.isInteger(qty) || qty <= 0) throw badRequest(`Enter a whole-number quantity for "${material.name}".`);
+      const price = Number(material.unit_price ?? 0);
+      if (!(price > 0)) throw badRequest(`"${material.name}" has no unit price in inventory — set it in the Material List first.`);
+      charges.push({
+        kind: 'material', description: String(material.name ?? sku), material_sku: sku,
+        quantity: qty, unit: String(material.unit ?? 'units'), unit_price: price, amount: round2(qty * price),
+      });
+    } else if (kind === 'labor' || kind === 'fee') {
+      const description = String(entry.description ?? '').trim();
+      const amount = round2(Number(entry.amount));
+      if (!description) throw badRequest(`Describe each ${kind === 'labor' ? 'labor' : 'fee'} charge.`);
+      if (!(amount > 0)) throw badRequest(`Enter an amount greater than 0 for "${description}".`);
+      charges.push({ kind, description, material_sku: '', quantity: 1, unit: '', unit_price: amount, amount });
+    } else {
+      throw badRequest('Each charge must be a material, labor, or fee.');
+    }
+  }
+  return { charges, total: round2(charges.reduce((sum, line) => sum + line.amount, 0)) };
+}
+
 /** Payment method stored for cash paid in person at the office. */
 const CASH_WALK_IN = 'Cash (Walk-in)';
 
@@ -671,6 +723,14 @@ export const resourceService = {
       if (incidentRef) {
         const incident = (await repo.findRowsBy('incidents', 'ref_code', incidentRef))[0];
         if (!incident) throw badRequest(`Incident "${incidentRef}" was not found.`);
+        if (incident.billable === false) {
+          throw conflict('This complaint is covered by the utility (no charge) — no bill is issued.');
+        }
+        // Full payment: the bill is exactly the Technical Team's itemized total.
+        if (Array.isArray(incident.charges) && incident.charges.length > 0 && Number(incident.estimated_cost) > 0) {
+          values.amount = Number(incident.estimated_cost);
+          values.charges = incident.charges;
+        }
         const billToId = String(incident.bill_to_customer_id ?? '').trim();
         if (billToId) {
           const owner = await repo.getRowById('app_users', billToId);
@@ -803,7 +863,8 @@ export const resourceService = {
         }
       }
     }
-    if (entity === 'payments' && user.role === 'general-manager' && values.status === 'paid') {
+    // When a bill is settled — drives when it moves from Billing to Transaction History.
+    if (entity === 'payments' && !isCustomerPayment && values.status === 'paid' && !values.paid_date) {
       values.paid_date = new Date().toISOString().slice(0, 10);
     }
 
@@ -1023,12 +1084,50 @@ export const resourceService = {
       }
     }
 
+    // Price: the Technical Team (or GM) prices an Ongoing complaint with a
+    // breakdown; the total is always computed here from the lines.
+    // Charge decision: at billing, the Commercial Department (or GM) either
+    // bills that price or marks the complaint as no charge (→ Resolved).
+    if (entity === 'incidents') {
+      if (!['technical-team', 'general-manager'].includes(user.role)) {
+        delete values.charges;
+        delete values.estimated_cost;
+      }
+      if (!['commercial-department', 'general-manager'].includes(user.role)) delete values.billable;
+      if ('estimated_cost' in values && !('charges' in values)) delete values.estimated_cost;
+    }
+    if (entity === 'incidents' && ('charges' in values || 'billable' in values)) {
+      const currentIncident = await repo.getRowById(def.table, id);
+      if (!currentIncident) throw notFound('Record not found.');
+      const isGm = user.role === 'general-manager';
+      if ('charges' in values) {
+        if (String(currentIncident.status) !== 'in_progress' && !isGm) {
+          throw conflict('The price can only be set while the complaint is Ongoing.');
+        }
+        const { charges, total } = await normalizeCharges(values.charges);
+        values.charges = charges;
+        values.estimated_cost = total;
+        if (String(currentIncident.status) === 'in_progress') values.status = 'for_estimation';
+      }
+      if ('billable' in values) {
+        if (values.billable === false) {
+          if (String(currentIncident.status) !== 'for_estimation' && !isGm) {
+            throw conflict('No charge can only be chosen when the complaint is Priced and not yet billed.');
+          }
+          values.status = 'resolved';
+        } else {
+          values.billable = true;
+        }
+      }
+    }
+
     // Role-based incident status transition guards.
     // The General Manager can always move to any status (management override).
     // Each role may only perform the transitions assigned to them:
     //   zone-specialist      : under_verification → in_progress (requires urgency set)
-    //   technical-team       : in_progress → for_estimation (requires estimated_cost)
+    //   technical-team       : in_progress → for_estimation (requires the price breakdown)
     //   commercial-department: for_estimation → for_billing (issue bill)
+    //                          for_estimation → resolved (no charge — billable = false)
     //                          for_billing → resolved (payment confirmed)
     if (entity === 'incidents' && user.role !== 'general-manager' && 'status' in values) {
       const currentIncident = await repo.getRowById(def.table, id);
@@ -1051,24 +1150,26 @@ export const resourceService = {
             throw badRequest('Save the Site Visit Plan before adding remarks.');
           }
           const billToId = String(values.bill_to_customer_id ?? currentIncident.bill_to_customer_id ?? '').trim();
-          if (!billToId) {
+          if (!billToId && !FREE_INCIDENT_TYPES.has(String(currentIncident.type ?? ''))) {
             throw badRequest('Select the customer account that should receive the bill before moving the complaint to In Progress.');
           }
           // Urgency is set by Commercial Department, not Zone Specialist — no check needed here.
         } else if (user.role === 'technical-team') {
-          // Technical team: only allowed to move in_progress → for_estimation (with cost).
+          // Technical team: only prices an Ongoing complaint (→ Priced).
           if (!(from === 'in_progress' && to === 'for_estimation')) {
-            throw forbidden('Technical Team can only move complaints from In Progress to For Estimation.');
+            throw forbidden('Technical Team can only price an Ongoing complaint.');
           }
           const cost = values.estimated_cost !== undefined ? Number(values.estimated_cost) : Number(currentIncident.estimated_cost ?? NaN);
           if (isNaN(cost) || cost <= 0) {
-            throw badRequest('Please provide a valid estimated cost before submitting for estimation.');
+            throw badRequest('Add the price breakdown before submitting.');
           }
         } else if (user.role === 'commercial-department') {
           // Commercial dept: for_estimation → for_billing, for_billing → resolved (payment confirmed),
           // or for_billing → declined (payment rejected, customer may resubmit).
           const validTransitions = [
             ['for_estimation', 'for_billing'],
+            // No charge chosen at billing — resolved without a bill.
+            ...(values.billable === false ? [['for_estimation', 'resolved']] : []),
             ['for_billing', 'resolved'],
             ['for_billing', 'declined'],
             // After a rejection the customer resubmits → commercial dept can re-verify to resolved.
@@ -1076,7 +1177,7 @@ export const resourceService = {
           ];
           const allowed = validTransitions.some(([f, t]) => f === from && t === to);
           if (!allowed) {
-            throw forbidden('Commercial Department can only move: For Estimation → For Billing, For Billing → Resolved / Declined, or Declined → Resolved.');
+            throw forbidden('Commercial Department can only move: Priced → Billing (or No Charge → Resolved), Billing → Resolved / Declined, or Declined → Resolved.');
           }
         } else {
           // All other write roles (customer, zone-specialist already handled above)

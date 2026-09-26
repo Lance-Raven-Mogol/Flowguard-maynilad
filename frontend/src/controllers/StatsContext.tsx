@@ -211,7 +211,7 @@ const needsRestock = (m: EntityRow): boolean => {
 const INCIDENT_STATUS_WORD: Record<string, string> = {
   under_verification: 'Pending',
   in_progress: 'Ongoing',
-  for_estimation: 'Estimating',
+  for_estimation: 'Priced',
   for_billing: 'Billing',
 };
 const incidentStatusLabel = (status: unknown): string =>

@@ -1,6 +1,9 @@
 # FlowGuard — Capstone Panel Reminders (Status Check)
 > Checked against the codebase: 2026-09-26 (commit `4aec3de`)
 > Updated: 2026-09-26 — #1 tapos na (email OTP); bagong MRF flow + multi-material MRF (tingnan sa ibaba); #5 at #14 na-update
+> Updated: 2026-09-26 — Billing → Transaction History (Commercial + GM): lahat ng billing transactions, may filters, totals, CSV, Print (#9)
+> Updated: 2026-09-26 — #2 + #16 tapos na (Technical Team: presyo + breakdown; Commercial: With charge / No charge); #18 tapos (iisang flow lang). ⚠️ Bagong migration: `backend/supabase/charges-migration.sql`
+> Updated: 2026-09-26 — #17 Purok tapos na (free-text purok + barangay/municipality picker sa lahat ng address)
 > Updated: 2026-09-26 — Lahat ng yellow tapos na: #3, #4, #6, #7, #10 (tingnan sa ibaba). ⚠️ May bagong DB migration: `backend/supabase/capstone-yellow-migration.sql`
 > Updated: 2026-09-26 — Complaint statuses: isang salita na lang (Pending, Ongoing, Estimating, Billing, Resolved, Cancelled, Declined)
 > Updated: 2026-09-26 — Quick wins tapos na: #5 (Stock column), #11 (GM print), #12 (tinanggal ang customer Requests), #13 (required photo)
@@ -12,23 +15,23 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
 | # | Reminder | Status |
 |---|---|---|
 | 1 | Ibalik ang authentication code sa Gmail | ✅ |
-| 2 | Paid vs. free complaints (sakop ng organization) | ❌ |
+| 2 | Paid vs. free complaints (sakop ng organization) | ✅ |
 | 3 | Traditional payment (walk-in / cash) | ✅ |
 | 4 | Categorize ang complaints | ✅ |
 | 5 | MRF — column para sa natitirang stock | ✅ |
 | 6 | Inventory — bawal ma-0, warning levels | ✅ |
 | 7 | Warning kapag 10 na lang ang stock | ✅ |
 | 8 | FIFO (first in, first out) | ❌ |
-| 9 | Report ng lahat ng transactions | ❌ |
+| 9 | Report ng lahat ng transactions | 🟡 |
 | 10 | Barcode scanner para match ang actual vs. system | ✅ |
 | 11 | GM — print function | ✅ |
 | 12 | Customer — alisin ang Request function | ✅ |
 | 13 | Photo required sa complaint | ✅ |
 | 14 | Identity kung sino ang nag-out ng item | ✅ |
 | 15 | Audit logs sa Admin | ✅ |
-| 16 | Tech dept — full payment + breakdown/receipt, hindi estimate | ❌ |
-| 17 | Purok sa location | ❌ |
-| 18 | Water-quality complaints (mabaho, madumi, mahina) — libre | ❌ |
+| 16 | Tech dept — full payment + breakdown/receipt, hindi estimate | ✅ |
+| 17 | Purok sa location | ✅ |
+| 18 | Water-quality complaints (mabaho, madumi, mahina) — libre | ✅ |
 | 19 | Zone specialist site visit — dropdowns | ❌ |
 | 20 | In-house / contractor — specific names | ✅ (i-confirm lang) |
 
@@ -61,13 +64,15 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
 - **Tests:** `backend/tests/mrf-workflow.test.mjs`. Patakbuhin gamit ang `node --experimental-test-module-mocks --test tests/mrf-workflow.test.mjs`.
 - ⚠️ **Kailangan ng DB migration:** patakbuhin ang `backend/supabase/mrf-workflow-migration.sql` sa Supabase SQL Editor.
 
-## ❌ 2. Paid vs. free complaints
-- **Ngayon:** Lahat ng incident ay dumadaan sa `for_estimation` → `for_billing`, at laging hinihingi ng zone specialist ang `bill_to_customer_id` (`modules.tsx:1163`). Walang konsepto ng "libre / sakop ng Maynilad".
-- **Gagawin:**
-  - Mag-add ng `billable` (boolean) o `coverage` (`customer` | `organization`) sa `incidents`, naka-derive mula sa complaint category (tingnan ang #4 at #18).
-  - Kapag organization-covered: huwag nang hingin ang Bill To, laktawan ang `for_estimation` / `for_billing`, at dumiretso sa `resolved` pagkatapos ma-complete ang JO.
-  - Ipakita ang "Walang bayad / Covered by Maynilad" na badge sa incident list at details.
-  - Idokumento sa paper kung aling complaints ang may bayad at alin ang wala.
+## ✅ 2. Paid vs. free complaints (DONE 2026-09-26)
+- Ang **Commercial Department** ang pumipili kapag magbi-bill na (**Bill Customer** sa complaint na *Priced*):
+  - **With charge**: ibi-bill ang eksaktong presyo ng Technical Team (tingnan ang #16).
+  - **No charge — covered by Maynilad**: `billable = false`, walang bill, at dumidiretso sa **Resolved** ang complaint. Pagkatapos nito, pwede nang gumawa ng Job Order gaya ng dati.
+  - Naka-default sa *No charge* ang Water Quality / Water Supply. May hint para sa Leak (libre kapag public line, may bayad kapag private line).
+- **Bill To:** optional sa Zone Specialist para sa libreng concerns.
+- Sa Incidents table, **Price** column: *No charge* (green), ang presyo, o —. Kahit libre, naka-record pa rin ang presyo at breakdown.
+- **Server-side:** Commercial / GM lang ang pwedeng pumili ng no charge, at kapag *Priced* pa lang ang complaint (wala pang bill). Hindi rin pwedeng mag-bill ng complaint na no charge.
+- **Para sa paper:** libre ang Water Quality at Water Supply, may bayad ang Service Request, at depende sa linya ang Leak (tingnan ang #4).
 
 ## ✅ 3. Traditional payment (walk-in / cash) (DONE 2026-09-26)
 - **Record Cash** button sa Billing (Commercial Dept / GM) para sa bills na Unpaid / Overdue / Rejected. Ilalagay ang **amount received, OR number, at payment date**. Walang upload ng proof. Magiging **Paid** agad ang bill, `Cash (Walk-in)` ang payment method, at naka-save kung sino ang nag-record (`recorded_by`). Kapag may linked complaint na nasa *Billing* (o *Declined*), magiging **Resolved** ito.
@@ -116,12 +121,19 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
   - Ang `materials.quantity` ay sum ng `qty_remaining` ng lahat ng batch.
   - UI: "Batches" section sa material details (oldest first, naka-highlight ang "Next to use").
 
-## ❌ 9. Report ng lahat ng transactions
-- **Meron na:** Audit Log (read-only, may stock_movement entries). Pero log lang ito, hindi report.
-- **Gagawin:** Bagong **Reports** view (GM, at Inventory Officer para sa stock):
-  - Filters: date range, type (Stock In/Out, Payments, Job Orders, Complaints), user.
-  - Summary totals (e.g. total collected, total stock out per item).
-  - **Export CSV** + **Print** (tingnan ang #11).
+## 🟡 9. Report ng lahat ng transactions
+- **Tapos na (2026-09-26): Billing → Transaction History** (Commercial Dept + GM). May **Transaction History** button sa Billing, na nagbubukas ng ledger ng lahat ng billing transactions:
+  - Bill Issued, Payment Submitted, Payment Verified, **Cash Payment** (walk-in, may OR #), Payment Rejected, **No Charge** (waived na complaint + halaga), Marked Overdue, Archived / Restored, Bill Updated
+  - Columns: Date & Time, Transaction, Bill Ref, Service Ref (INC/JO), Customer, Amount, Method, Reference / OR, By
+  - **Filters:** date range (From / To) at type, pati ang search sa topbar
+  - **Totals:** Transactions, Total Billed, Total Collected (verified + cash), Waived (No Charge)
+  - **Export CSV** (bukas sa Excel) + **Print** (parehong filtered view)
+  - Galing sa audit log, kaya kasama pa rin ang history kahit na-edit o na-archive ang bill. Walang DB migration.
+  - File: `frontend/src/views/billing/TransactionHistory.tsx`
+  - **Paid bills → History pagkatapos ng 1 linggo:** mawawala na sa Billing list (Commercial / GM) ang bill na 7 araw nang *Paid* (batay sa `paid_date`), pero makikita pa rin ito sa Transaction History. May **View** button sa bawat transaction para buksan at i-print ang bill.
+  - Kasabay nito, nire-record na ang `paid_date` kahit Commercial Dept ang nag-verify (dati GM lang).
+  - Hindi ito apektado sa customer: kita pa rin nila lahat ng bill nila.
+- **Kulang pa (kung hihingin):** stock report para sa Inventory Officer (Stock In / Out per item, may date range + CSV). Sa ngayon, nasa **Inventory → Inventory History** ito pero walang print o CSV.
 
 ## ✅ 10. Barcode / QR scanner + Stock Count (DONE 2026-09-26)
 - Bagong tab na **Inventory → Stock Count (Scan)** (IO / GM):
@@ -162,21 +174,38 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
 - May **Audit Log** view na ang General Manager (`roleViews.tsx`, `AuditLogsModule` sa `modules.tsx:4292`). Awtomatikong nagla-log ang backend ng create/update/stock movements.
 - *Optional:* Kung may hiwalay na "Admin" role ang panel, i-clarify na GM ang admin ng system. Pwede ring dagdagan ng filters (user, action, date).
 
-## ❌ 16. Tech dept — full payment + breakdown (hindi estimate)
-- **Ngayon:** Nag-i-input ang tech team ng iisang `estimated_cost`, tapos `for_estimation` ang status (`modules.tsx:1183-1195`). Walang breakdown kung saan galing ang halaga.
-- **Gagawin:**
-  - Palitan ng **itemized charges**: materials (galing sa MRFs ng JO; may listahan na sa `modules.tsx:1946`), labor, at iba pang fees. Auto-compute ang total.
-  - I-rename ang "Estimated Cost" bilang **"Total Amount Due"** at ang status `for_estimation` bilang **"For Payment"** (display label lang kung ayaw galawin ang DB).
-  - Ipakita ang breakdown sa bill at sa customer. Mag-generate ng printable **receipt / statement of account** na may line items.
+## ✅ 16. Tech dept — full payment + breakdown (DONE 2026-09-26)
+- Tinanggal ang "Estimated Cost". Ang inilalagay ng **Technical Team** ay ang mismong **presyo**, may **Price Breakdown** (habang *Ongoing* ang complaint):
+  - **Material**: pinipili sa Inventory. Ang presyo ay galing sa *unit price* ng item (hindi pwedeng baguhin), × quantity.
+  - **Labor** at **Other fee**: may description + amount.
+  - Live ang **Total Price**. Pagka-submit (**Submit Price**), magiging **Priced** ang status (dating "Estimating").
+- Ang server ang nagko-compute ng presyo at total mula sa inventory, kaya hindi ito pwedeng dayain mula sa browser.
+- **Bill = eksaktong presyo** (full payment): naka-lock ang amount sa Bill Customer (Commercial) at Issue Final Bill (GM). Kinokopya sa bill ang breakdown (`payments.charges`).
+- **Kita sa customer:** makikita ang breakdown sa complaint (**Price Breakdown**) at sa bill (**Statement of Account**). Pwede nang i-print ng lahat ang bill (customer, Commercial, GM).
+- Walang presyo ang materials hangga't walang *Unit Price* sa Material List. Siguraduhing may presyo ang mga items bago ang demo.
+- Hindi ginalaw ang lumang complaints na may estimate lang. Pwede pa ring baguhin ang amount ng bill nila.
+- **Tests:** "technical team prices with a breakdown", "no charge: commercial department".
+- ⚠️ **DB:** patakbuhin ang `backend/supabase/charges-migration.sql` (o ang buong `schema.sql`).
 
-## ❌ 17. Purok sa location
-- **Ngayon:** Barangay + free-text location lang (`modules.tsx:1385`).
-- **Gagawin:** Mag-add ng `purok` field (dropdown, e.g. Purok 1–7, o free text kung iba-iba bawat barangay) sa incidents at sa customer profile/signup. Format ng display: `Purok 3, Santol, Boac`. Idagdag sa `resources.ts` allowed + `schema.sql` migration.
+## ✅ 17. Purok sa location (DONE 2026-09-26)
+- **Free text ang Purok / Street / House No.**, at **pinipili sa listahan** ang barangay + municipality (lahat ng 6 na municipality ng Marinduque, `BARANGAYS` sa `BarangayCombobox.tsx`). Naka-save ito bilang isang string: `Purok 3, Mercado, Boac`.
+- Pare-parehong `AddressInput` na ang gamit sa:
+  - **Signup** at **Account Settings** (dati na)
+  - **File Complaint → Location**: required na, at auto-fill mula sa address ng account
+  - **Asset Registry → Location**
+- Bagong `kind: 'address'` sa `LiveModule` fields, para magamit sa kahit anong form.
+- Walang DB migration (text pa rin ang `location` / `barangay`).
+- *Hindi ginalaw:* Supplier address (pwedeng taga-labas ng Marinduque) at Advisory "Affected Area" (pwedeng maraming barangay), kaya free text pa rin ang dalawa.
 
-## ❌ 18. Water-quality complaints — libre, may sariling flow
-- **Idadagdag sa types:** Mabaho ang tubig, Madumi ang tubig, Mahina ang tubig, etc. (tingnan ang #4).
-- **Flow (walang bayad):** Customer files → **Commercial Dept** receives → **Zone Specialist** verifies → back to **Commercial Dept** to create the JO → **Tech Dept** assigns team → completed → **Resolved** (walang billing).
-- **Gagawin:** Gamitin ang `billable = false` (#2). Laktawan ang Bill To, estimate/charges, at billing steps. I-check kung pumapasok muna sa Commercial Dept ang complaint bago sa zone specialist (sa ngayon, diretso sa zone specialist ang notification ayon sa Help FAQ).
+## ✅ 18. Water-quality complaints — libre (DONE 2026-09-26)
+- **Iisa ang flow ng lahat ng complaint**, kasama ang water quality. Walang hiwalay na flow, at tugma na ito sa hinihingi:
+  1. **Customer** nag-file (Concern: Mabaho / Madumi / Mahina / Walang tubig, #4)
+  2. **Commercial Dept** unang tumatanggap. Sila lang ang nagse-set ng urgency, at pagkatapos lang noon ito nakikita ng Zone Specialist.
+  3. **Zone Specialist** nagve-verify (Site Visit Plan + remarks). Optional ang Bill To para sa libreng concerns.
+  4. **Technical Team** naglalagay ng presyo + breakdown → *Priced*
+  5. **Commercial Dept** pumipili ng **No charge**, na naka-default para sa water quality / supply → **Resolved**, walang bill (#2)
+  6. **Commercial Dept** gumagawa ng JO → **Tech Dept** nag-a-assign ng team → Completed
+- Walang code na kinailangang baguhin para sa routing. Ang kulang lang dati ay ang "libre", na nagawa na sa #2.
 
 ## ❌ 19. Zone specialist site visit — dropdowns
 - **Ngayon:** Isang textarea lang ang "Site Visit Plan" (`modules.tsx:1271-1278`, saved sa `site_action`).
@@ -195,7 +224,7 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
 
 ## Suggested order
 1. ~~Mabilis lang: #12, #13, #5, #14, #11~~ — tapos na lahat.
-2. Complaint flow: #4 → #18 → #2 → #16 (magkakaugnay, sabay-sabay dapat).
-3. Location/visit: #17, #19.
+2. ~~Complaint flow: #4 → #18 → #2 → #16~~ — tapos na lahat.
+3. Location/visit: ~~#17~~, #19.
 4. Inventory: ~~#6, #7~~ → #8 (FIFO) → ~~#10~~ → #9 (reports).
 5. ~~Payments: #3~~ — tapos na.
