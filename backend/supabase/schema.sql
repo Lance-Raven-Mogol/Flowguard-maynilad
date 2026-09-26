@@ -216,6 +216,12 @@ alter table public.incidents         add column if not exists remarks text;
 -- Separate on-site plan and the customer account designated to own/pay the bill.
 alter table public.incidents         add column if not exists site_action text;
 alter table public.incidents         add column if not exists site_action_updated_at timestamptz;
+-- Structured Site Visit Plan (#19): date + AM/PM, companions (names), materials to bring.
+alter table public.incidents         add column if not exists site_visit_date       date;
+alter table public.incidents         add column if not exists site_visit_period     text;
+alter table public.incidents         add column if not exists site_visit_companions jsonb not null default '[]'::jsonb;
+alter table public.incidents         add column if not exists site_visit_materials  jsonb not null default '[]'::jsonb;
+alter table public.incidents         add column if not exists site_visit_notes      text;
 alter table public.incidents         add column if not exists reported_by_id uuid;
 alter table public.incidents         add column if not exists bill_to_customer_id uuid;
 alter table public.incidents         add column if not exists bill_to_customer_name text;

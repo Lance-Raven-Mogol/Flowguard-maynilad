@@ -32,7 +32,7 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
 | 16 | Tech dept — full payment + breakdown/receipt, hindi estimate | ✅ |
 | 17 | Purok sa location | ✅ |
 | 18 | Water-quality complaints (mabaho, madumi, mahina) — libre | ✅ |
-| 19 | Zone specialist site visit — dropdowns | ❌ |
+| 19 | Zone specialist site visit — dropdowns | ✅ |
 | 20 | In-house / contractor — specific names | ✅ (i-confirm lang) |
 
 ---
@@ -207,14 +207,17 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
   6. **Commercial Dept** gumagawa ng JO → **Tech Dept** nag-a-assign ng team → Completed
 - Walang code na kinailangang baguhin para sa routing. Ang kulang lang dati ay ang "libre", na nagawa na sa #2.
 
-## ❌ 19. Zone specialist site visit — dropdowns
-- **Ngayon:** Isang textarea lang ang "Site Visit Plan" (`modules.tsx:1271-1278`, saved sa `site_action`).
-- **Gagawin:** Palitan ng structured form:
-  - **Visit date:** date picker/dropdown (+ AM/PM)
-  - **Kasama:** multi-select dropdown ng users (zone specialist / tech / in-house)
-  - **Materials na dadalhin:** multi-select mula sa inventory (may qty)
-  - (Optional) Notes textarea
-- Mga bagong columns: `site_visit_date`, `site_visit_period`, `site_visit_companions` (jsonb), `site_visit_materials` (jsonb). Pwede ring i-add sa Team Schedule para lumabas sa calendar.
+## ✅ 19. Zone specialist site visit — dropdowns (DONE 2026-09-27)
+- **Ginawa:** Pinalitan ng structured form ang textarea ng "Site Visit Plan":
+  - **Visit Date** (date picker, bawal ang nakaraang petsa) + **AM/PM**
+  - **Companions:** multi-select ng zone specialist / technical / in-house / contractor. Naka-"Busy" ang may JO sa araw at period na iyon.
+  - **Materials to Bring:** mula sa inventory, may qty, at nakikita ang stock
+  - **Notes** (optional)
+- **Hindi nagbago ang flow:** Save Site Visit Plan → naka-lock → saka lalabas ang Remarks + Bill To → In Progress → Tech Team.
+- Naka-save pa rin sa `site_action` ang readable na summary, kaya gumagana pa rin ang notifications, activity feed, at lock. Ang mga lumang plan na text lang ay ipinapakita pa rin bilang text.
+- **DB:** `site_visit_date`, `site_visit_period`, `site_visit_companions` (jsonb), `site_visit_materials` (jsonb), `site_visit_notes`. **I-run ang `backend/supabase/site-visit-migration.sql`** sa Supabase SQL editor.
+- **Backend:** Vina-validate ang date/period at SKU/qty, at kinukuha mula sa inventory ang pangalan at unit ng materials. Naka-lock ang lahat ng `site_visit_*` pagkatapos ma-save. `GET /users/team-members?include=zone-specialist` para sa companions.
+- *Hindi pa ginawa:* Hindi pa lumalabas ang site visit sa Team Schedule calendar.
 
 ## ✅ 20. In-house / contractor — specific names
 - May **Team Name**, **Team Leader** (dropdown ng actual users), at **Team Members** na ang JO assignment (`modules.tsx:515-600`). Ipinapakita ang mga ito sa table at details.
@@ -225,6 +228,6 @@ Legend: ✅ Tapos na · 🟡 Meron na pero kailangan i-adjust · ❌ Wala pa
 ## Suggested order
 1. ~~Mabilis lang: #12, #13, #5, #14, #11~~ — tapos na lahat.
 2. ~~Complaint flow: #4 → #18 → #2 → #16~~ — tapos na lahat.
-3. Location/visit: ~~#17~~, #19.
+3. ~~Location/visit: #17, #19~~ — tapos na.
 4. Inventory: ~~#6, #7~~ → #8 (FIFO) → ~~#10~~ → #9 (reports).
 5. ~~Payments: #3~~ — tapos na.

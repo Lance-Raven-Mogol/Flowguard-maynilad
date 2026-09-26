@@ -1079,6 +1079,171 @@ function ChargesEditor({
   );
 }
 
+/* ------------------------------------------------------------ Site Visit Plan (#19) */
+
+interface SiteVisitMaterialDraft { key: string; sku: string; quantity: string }
+interface SiteVisitDraft {
+  date: string;
+  period: 'AM' | 'PM';
+  companions: string[];
+  materials: SiteVisitMaterialDraft[];
+  notes: string;
+}
+interface SiteVisitMaterial { material_sku: string; name: string; quantity: number; unit: string }
+
+let siteVisitKeySeq = 0;
+const newSiteVisitMaterial = (): SiteVisitMaterialDraft => ({ key: `sv-${++siteVisitKeySeq}`, sku: '', quantity: '1' });
+const emptySiteVisit = (): SiteVisitDraft => ({ date: '', period: 'AM', companions: [], materials: [], notes: '' });
+
+const siteVisitCompanions = (row: EntityRow): string[] =>
+  Array.isArray(row.site_visit_companions) ? (row.site_visit_companions as unknown[]).map(String) : [];
+const siteVisitMaterials = (row: EntityRow): SiteVisitMaterial[] =>
+  Array.isArray(row.site_visit_materials) ? (row.site_visit_materials as SiteVisitMaterial[]) : [];
+
+/**
+ * Plain-text summary saved to `site_action`. Notifications, the activity feed
+ * and the "plan saved" lock all read that column, so it stays filled.
+ */
+function siteVisitSummary(d: SiteVisitDraft, materials: EntityRow[]): string {
+  const lines = [`Visit: ${dateShort(d.date)} (${d.period})`];
+  if (d.companions.length) lines.push(`With: ${d.companions.join(', ')}`);
+  const items = d.materials.map((m) => {
+    const mat = materials.find((x) => String(x.sku) === m.sku);
+    return `${String(mat?.name ?? m.sku)} ×${m.quantity}`;
+  });
+  if (items.length) lines.push(`Bring: ${items.join(', ')}`);
+  if (d.notes.trim()) lines.push(`Notes: ${d.notes.trim()}`);
+  return lines.join('\n');
+}
+
+/** Returns an error message, or '' when the draft can be saved. */
+function siteVisitProblem(d: SiteVisitDraft): string {
+  if (!d.date) return 'Select the date of the site visit.';
+  for (const m of d.materials) {
+    const qty = Number(m.quantity);
+    if (!m.sku) return 'Select a material for every material line, or remove the empty line.';
+    if (!Number.isInteger(qty) || qty <= 0) return 'Enter a whole-number quantity for every material.';
+  }
+  if (new Set(d.materials.map((m) => m.sku)).size !== d.materials.length) return 'A material is listed twice.';
+  return '';
+}
+
+/** Zone specialist: structured Site Visit Plan — date, companions, materials, notes. */
+function SiteVisitPlanEditor({ value, onChange }: { value: SiteVisitDraft; onChange: (next: SiteVisitDraft) => void }) {
+  const { stats } = useStats();
+  const { user } = useAuth();
+  const [people, setPeople] = useState<UserLite[]>([]);
+  useEffect(() => {
+    let alive = true;
+    api
+      .get<{ data: UserLite[] }>('/users/team-members?include=zone-specialist')
+      .then((r) => { if (alive) setPeople(r.data.filter((u) => u.fullName !== user?.fullName)); })
+      .catch(() => { /* companions stay empty; the plan can still be saved */ });
+    return () => { alive = false; };
+  }, [user?.fullName]);
+
+  const inventory = stats.materials.filter((m) => !m.archived);
+  const today = new Date().toISOString().slice(0, 10);
+  // Anyone already on a job order that day/period is shown as busy.
+  const companionPool = people.map((p) => ({
+    ...p,
+    availability: value.date && !isAvailableForJob(p, value.date, value.period, '', '') ? 'busy' as const : 'available' as const,
+  }));
+  const set = (patch: Partial<SiteVisitDraft>) => onChange({ ...value, ...patch });
+  const updateMaterial = (key: string, patch: Partial<SiteVisitMaterialDraft>) =>
+    set({ materials: value.materials.map((m) => (m.key === key ? { ...m, ...patch } : m)) });
+
+  return (
+    <div className="site-visit-editor">
+      <div className="site-visit-when">
+        <div className="form-group">
+          <label>Visit Date</label>
+          <input type="date" min={today} value={value.date} onChange={(e) => set({ date: e.target.value })} required />
+        </div>
+        <div className="form-group">
+          <label>Time</label>
+          <select value={value.period} onChange={(e) => set({ period: e.target.value === 'PM' ? 'PM' : 'AM' })}>
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+          </select>
+        </div>
+      </div>
+      <div className="form-group">
+        <label>Companions <span className="address-optional">(optional)</span></label>
+        <MembersMultiSelect
+          members={companionPool}
+          value={value.companions}
+          onChange={(companions) => set({ companions })}
+          placeholder="Select who comes along…"
+        />
+      </div>
+      <div className="form-group">
+        <label>Materials to Bring <span className="address-optional">(optional)</span></label>
+        {value.materials.map((m) => {
+          const picked = inventory.find((x) => String(x.sku) === m.sku);
+          return (
+            <div className="site-visit-material-row" key={m.key}>
+              <select value={m.sku} onChange={(e) => updateMaterial(m.key, { sku: e.target.value })} aria-label="Material">
+                <option value="">Select material…</option>
+                {inventory.map((x) => (
+                  <option key={String(x.id)} value={String(x.sku)}>
+                    {`${String(x.name)} — ${Number(x.quantity ?? 0)} ${String(x.unit ?? 'units')} in stock`}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                aria-label="Quantity"
+                value={m.quantity}
+                onChange={(e) => updateMaterial(m.key, { quantity: e.target.value })}
+              />
+              <span className="site-visit-unit">{picked ? String(picked.unit ?? 'units') : ''}</span>
+              <button
+                type="button"
+                className="mrf-item-remove"
+                aria-label="Remove material"
+                onClick={() => set({ materials: value.materials.filter((x) => x.key !== m.key) })}
+              >
+                ✕
+              </button>
+            </div>
+          );
+        })}
+        <button type="button" className="btn-action" onClick={() => set({ materials: [...value.materials, newSiteVisitMaterial()] })}>
+          + Material
+        </button>
+      </div>
+      <div className="form-group" style={{ marginBottom: 0 }}>
+        <label>Notes <span className="address-optional">(optional)</span></label>
+        <textarea value={value.notes} onChange={(e) => set({ notes: e.target.value })} placeholder="Planned work during the site visit…" />
+      </div>
+    </div>
+  );
+}
+
+/** Read-only Site Visit Plan. Legacy plans (text only) show their saved text. */
+function SiteVisitPlanView({ row }: { row: EntityRow }) {
+  if (!row.site_visit_date) {
+    return <p>{String(row.site_action ?? '') || 'No site action added yet.'}</p>;
+  }
+  const companions = siteVisitCompanions(row);
+  const materials = siteVisitMaterials(row);
+  return (
+    <dl className="detail-list site-visit-view">
+      <DetailRow label="Visit Date">{`${dateShort(row.site_visit_date)} · ${String(row.site_visit_period ?? 'AM')}`}</DetailRow>
+      <DetailRow label="Companions">{companions.join(', ') || 'Zone Specialist only'}</DetailRow>
+      <DetailRow label="Materials to Bring">
+        {materials.length
+          ? materials.map((m) => `${m.name} ×${m.quantity} ${m.unit}`).join(', ')
+          : 'None'}
+      </DetailRow>
+      {String(row.site_visit_notes ?? '').trim() && <DetailRow label="Notes">{String(row.site_visit_notes)}</DetailRow>}
+    </dl>
+  );
+}
+
 /** Read-only detail body for a complaint/incident, incl. customer photos + remarks. */
 function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRemarks?: boolean }) {
   const hasEstimate = row.estimated_cost !== null && row.estimated_cost !== undefined && Number(row.estimated_cost) > 0;
@@ -1118,8 +1283,8 @@ function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRema
         {!hideRemarks && (
           <>
             <section className="complaint-note-card is-site-action">
-              <span>Site Visit Action / Work Plan</span>
-              <p>{String(row.site_action ?? '') || 'No site action added yet.'}</p>
+              <span>Site Visit Plan</span>
+              <SiteVisitPlanView row={row} />
             </section>
             <section className="complaint-note-card is-remarks">
               <span>Zone Specialist Remarks</span>
@@ -1408,7 +1573,7 @@ function IncidentViewButton({
   const [open, setOpen] = useState(false);
   const [showJobForm, setShowJobForm] = useState(false);
   const [remarks, setRemarks] = useState('');
-  const [siteAction, setSiteAction] = useState('');
+  const [siteVisit, setSiteVisit] = useState<SiteVisitDraft>(emptySiteVisit);
   const [billToCustomerId, setBillToCustomerId] = useState('');
   const [customers, setCustomers] = useState<BillingCustomerOption[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
@@ -1442,7 +1607,7 @@ function IncidentViewButton({
 
   const openModal = () => {
     setRemarks(String(c.row.remarks ?? ''));
-    setSiteAction(String(c.row.site_action ?? ''));
+    setSiteVisit(emptySiteVisit());
     setBillToCustomerId(String(c.row.bill_to_customer_id ?? ''));
     setUrgency(String(c.row.urgency ?? ''));
     setChargeDrafts(chargeDraftsFrom(c.row));
@@ -1471,14 +1636,20 @@ function IncidentViewButton({
 
       if (editable) {
         if (!hasSavedSitePlan) {
-          if (!siteAction.trim()) {
-            notify('Enter the Site Visit Plan first.', 'error');
+          const problem = siteVisitProblem(siteVisit);
+          if (problem) {
+            notify(problem, 'error');
             setSaving(false);
             return;
           }
           // First step: persist and permanently lock the site plan. Remarks,
           // billing owner and status are handled only after this save.
-          patch.site_action = siteAction.trim();
+          patch.site_action = siteVisitSummary(siteVisit, stats.materials);
+          patch.site_visit_date = siteVisit.date;
+          patch.site_visit_period = siteVisit.period;
+          patch.site_visit_companions = siteVisit.companions;
+          patch.site_visit_materials = siteVisit.materials.map((m) => ({ material_sku: m.sku, quantity: Number(m.quantity) }));
+          patch.site_visit_notes = siteVisit.notes.trim();
         } else {
           // Free concerns (water quality / supply) don't need a billing owner.
           if (!billToCustomerId && !freeConcern) {
@@ -1605,13 +1776,9 @@ function IncidentViewButton({
               <div className="form-group" style={{ marginTop: 18, marginBottom: 0 }}>
                 <label>Site Visit Plan</label>
                 {hasSavedSitePlan ? (
-                  <div className="locked-site-plan">{siteAction}</div>
+                  <div className="locked-site-plan"><SiteVisitPlanView row={c.row} /></div>
                 ) : (
-                  <textarea
-                    value={siteAction}
-                    onChange={(e) => setSiteAction(e.target.value)}
-                    placeholder="Planned work during the site visit…"
-                  />
+                  <SiteVisitPlanEditor value={siteVisit} onChange={setSiteVisit} />
                 )}
               </div>
               {hasSavedSitePlan && (
@@ -1857,8 +2024,8 @@ function JobOrderDetail({ row }: { row: EntityRow }) {
               <p>{String(incident.description ?? '') || '—'}</p>
             </section>
             <section className="complaint-note-card is-site-action">
-              <span>Site Visit Action / Work Plan</span>
-              <p>{String(incident.site_action ?? '') || 'No site action added yet.'}</p>
+              <span>Site Visit Plan</span>
+              <SiteVisitPlanView row={incident} />
             </section>
             <section className="complaint-note-card is-remarks">
               <span>Zone Specialist Remarks</span>

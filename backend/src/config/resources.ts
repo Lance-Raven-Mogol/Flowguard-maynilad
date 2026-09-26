@@ -45,6 +45,8 @@ export const RESOURCES: Record<string, ResourceDef> = {
     allowed: [
       'type', 'description', 'location', 'urgency', 'status',
       'reported_by', 'reported_by_id', 'remarks', 'site_action',
+      // Structured Site Visit Plan (#19); site_action keeps a readable summary.
+      'site_visit_date', 'site_visit_period', 'site_visit_companions', 'site_visit_materials', 'site_visit_notes',
       'bill_to_customer_id', 'bill_to_customer_name', 'bill_to_serial_number',
       'images', 'archived', 'estimated_cost',
       // Technical Team charges: [{ kind, description, material_sku, quantity, unit, unit_price, amount }]
@@ -56,7 +58,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
     nullable: ['estimated_cost'],
     // Zone-specialist remarks have no fallback column — they must be stored, or
     // the save is a lie. Fail loudly (prompt a migration) rather than silently.
-    critical: ['remarks', 'site_action', 'bill_to_customer_id', 'estimated_cost', 'charges', 'billable'],
+    critical: ['remarks', 'site_action', 'site_visit_date', 'site_visit_period', 'site_visit_companions', 'site_visit_materials', 'site_visit_notes', 'bill_to_customer_id', 'estimated_cost', 'charges', 'billable'],
     autoKeys: [{ column: 'ref_code', prefix: 'INC', digits: 4 }],
     touch: 'updated_at',
     // Valid incident statuses (informational — enforced in DB check constraint):

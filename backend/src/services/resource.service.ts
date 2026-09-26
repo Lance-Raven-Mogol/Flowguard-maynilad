@@ -105,6 +105,44 @@ async function normalizeCharges(raw: unknown): Promise<{ charges: ChargeLine[]; 
   return { charges, total: round2(charges.reduce((sum, line) => sum + line.amount, 0)) };
 }
 
+const SITE_VISIT_FIELDS = ['site_visit_date', 'site_visit_period', 'site_visit_companions', 'site_visit_materials', 'site_visit_notes'];
+const MAX_SITE_VISIT_ITEMS = 30;
+
+/**
+ * Validates the structured Site Visit Plan (#19): a visit date + AM/PM, the
+ * people coming along, and the inventory items to bring. Material names and
+ * units are taken from inventory, not trusted from the client.
+ */
+async function normalizeSiteVisit(values: Row): Promise<void> {
+  const date = String(values.site_visit_date ?? '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) {
+    throw badRequest('Select the date of the site visit.');
+  }
+  values.site_visit_date = date;
+  const period = String(values.site_visit_period ?? '');
+  if (period !== 'AM' && period !== 'PM') throw badRequest('Select AM or PM for the site visit.');
+
+  const companions = Array.isArray(values.site_visit_companions) ? values.site_visit_companions : [];
+  const names = [...new Set(companions.map((name) => String(name).trim()).filter(Boolean))];
+  if (names.length > MAX_SITE_VISIT_ITEMS) throw badRequest('Too many companions on the site visit.');
+  values.site_visit_companions = names;
+
+  const raw = Array.isArray(values.site_visit_materials) ? (values.site_visit_materials as Row[]) : [];
+  if (raw.length > MAX_SITE_VISIT_ITEMS) throw badRequest('Too many materials on the site visit.');
+  const materials: Row[] = [];
+  for (const entry of raw) {
+    const sku = String(entry.material_sku ?? '').trim();
+    const material = sku ? await materialBySku(sku) : undefined;
+    if (!material || material.archived) throw badRequest(`No active inventory item found for SKU "${sku}".`);
+    const qty = Number(entry.quantity);
+    if (!Number.isInteger(qty) || qty <= 0) throw badRequest(`Enter a whole-number quantity for "${material.name}".`);
+    if (materials.some((m) => m.material_sku === sku)) throw badRequest(`"${material.name}" is listed twice.`);
+    materials.push({ material_sku: sku, name: String(material.name ?? sku), quantity: qty, unit: String(material.unit ?? 'units') });
+  }
+  values.site_visit_materials = materials;
+  values.site_visit_notes = String(values.site_visit_notes ?? '').trim();
+}
+
 /** Payment method stored for cash paid in person at the office. */
 const CASH_WALK_IN = 'Cash (Walk-in)';
 
@@ -1049,21 +1087,31 @@ export const resourceService = {
     }
     if (
       entity === 'incidents' &&
-      ('remarks' in values || 'site_action' in values) &&
+      ('remarks' in values || 'site_action' in values || SITE_VISIT_FIELDS.some((f) => f in values)) &&
       user.role !== 'zone-specialist' &&
       user.role !== 'general-manager'
     ) {
       throw forbidden('Only the Zone Specialist can update the assessment and site visit plan.');
     }
-    if (entity === 'incidents' && 'site_action' in values) {
+    if (entity === 'incidents' && ('site_action' in values || SITE_VISIT_FIELDS.some((f) => f in values))) {
       const currentIncident = await repo.getRowById(def.table, id);
       if (!currentIncident) throw notFound('Record not found.');
       const previousPlan = String(currentIncident.site_action ?? '').trim();
-      const nextPlan = String(values.site_action ?? '').trim();
-      if (previousPlan && nextPlan !== previousPlan) {
-        throw conflict('The Site Visit Plan is locked after it has been saved.');
+      const nextPlan = String(values.site_action ?? previousPlan).trim();
+      if (previousPlan) {
+        // Locked: only a no-op resend of the same summary is tolerated.
+        if (nextPlan !== previousPlan || SITE_VISIT_FIELDS.some((f) => f in values)) {
+          throw conflict('The Site Visit Plan is locked after it has been saved.');
+        }
+      } else if (nextPlan) {
+        // First save. The structured fields are required for new plans — the
+        // plain-text-only form is gone; legacy rows simply keep their text.
+        await normalizeSiteVisit(values);
+        values.site_action = nextPlan;
+        values.site_action_updated_at = new Date().toISOString();
+      } else if (SITE_VISIT_FIELDS.some((f) => f in values)) {
+        throw badRequest('The Site Visit Plan summary is missing.');
       }
-      if (nextPlan !== previousPlan) values.site_action_updated_at = new Date().toISOString();
     }
     if (def.touch) values[def.touch] = new Date().toISOString();
     if (Object.keys(values).length === 0) throw badRequest('No valid fields to update.');

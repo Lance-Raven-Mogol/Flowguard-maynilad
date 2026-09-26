@@ -6606,3 +6606,15 @@ input:checked + .slider:before {
   .date-range { width: 100%; }
   .date-range input { flex: 1; width: auto; min-width: 0; }
 }
+
+/* ============================================================ Site Visit Plan (#19) */
+.site-visit-editor { display: grid; gap: 4px; padding: 14px; border: 1px solid #cde5f7; border-radius: 12px; background: #f6fbff; }
+.site-visit-when { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 10px; }
+.site-visit-material-row { display: grid; grid-template-columns: minmax(0, 1fr) 80px 56px 32px; gap: 8px; align-items: center; margin-bottom: 8px; }
+.site-visit-unit { font-size: 12px; color: var(--muted); }
+.locked-site-plan .site-visit-view, .complaint-note-card .site-visit-view { margin: 0; white-space: normal; }
+@media (max-width: 640px) {
+  .site-visit-material-row { grid-template-columns: minmax(0, 1fr) 70px 32px; }
+  .site-visit-material-row > select { grid-column: 1 / -1; }
+  .site-visit-unit { display: none; }
+}

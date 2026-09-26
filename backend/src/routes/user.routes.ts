@@ -50,6 +50,8 @@ userRoutes.get(
   asyncHandler(async (req, res) => {
     const all = await userRepo.listPublic();
     const teamRoles = new Set(['technical-team', 'contractor', 'inhouse-team']);
+    // The site-visit planner (#19) may also bring other zone specialists along.
+    if (req.query.include === 'zone-specialist') teamRoles.add('zone-specialist');
     const assignedJobs = (await resourceRepo.listRows('job_orders', {})).filter(
       (job) => ['in_progress', 'completed'].includes(String(job.status)) && job.scheduled_date,
     );
