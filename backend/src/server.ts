@@ -7,17 +7,17 @@ import { autoMigrate } from './models/autoMigrate.js';
 // ---------------------------------------------------------------------------
 // Keep-alive ping — prevents Render free-tier from spinning down after 15 min
 // of inactivity. Pings its own /api/health every 5 minutes while the server is
-// up. Render sets RENDER_EXTERNAL_URL to this service's public URL, so moving
-// to a new Render service needs no code change; off Render the ping is skipped.
+// up. Uses RENDER_EXTERNAL_URL (set by Render) and falls back to the deployed
+// service URL in production; in local dev the ping is skipped.
 // ---------------------------------------------------------------------------
-const PING_URL = process.env.RENDER_EXTERNAL_URL
-  ? `${process.env.RENDER_EXTERNAL_URL.replace(/\/$/, '')}/api/health`
-  : null;
+const RENDER_URL = 'https://flowguard-maynilad-xm36.onrender.com';
+const PING_BASE = process.env.RENDER_EXTERNAL_URL || (env.isProduction ? RENDER_URL : '');
+const PING_URL = PING_BASE ? `${PING_BASE.replace(/\/$/, '')}/api/health` : null;
 const PING_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 function startKeepAlivePing(): void {
   if (!PING_URL) {
-    console.log('[keep-alive] not on Render (RENDER_EXTERNAL_URL unset) — ping disabled');
+    console.log('[keep-alive] no ping URL (local dev) — ping disabled');
     return;
   }
   console.log(`[keep-alive] pinging ${PING_URL} every 5 min`);
