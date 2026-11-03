@@ -40,6 +40,11 @@ export interface User {
   otpEnabled?: boolean;
   jobLevel?: string | null;
   serialNumber?: string | null;
+  /** Customer declared as a senior citizen (staff check the ID at billing). */
+  isSenior?: boolean;
+  seniorIdNumber?: string | null;
+  /** When the customer agreed to the Terms and Conditions at signup. */
+  termsAcceptedAt?: string | null;
 }
 
 /** Safe projection of a user for API responses. */
@@ -56,6 +61,11 @@ export interface PublicUser {
   otpEnabled?: boolean;
   jobLevel?: string | null;
   serialNumber?: string | null;
+  /** Customer declared as a senior citizen (staff check the ID at billing). */
+  isSenior?: boolean;
+  seniorIdNumber?: string | null;
+  /** When the customer agreed to the Terms and Conditions at signup. */
+  termsAcceptedAt?: string | null;
 }
 
 /** Visual status pill variants reused across every table. */

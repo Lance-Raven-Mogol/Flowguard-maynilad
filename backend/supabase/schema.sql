@@ -511,3 +511,8 @@ alter table public.payments add column if not exists recorded_by text;
 alter table public.incidents add column if not exists charges  jsonb   not null default '[]'::jsonb;
 alter table public.incidents add column if not exists billable boolean not null default true;
 alter table public.payments  add column if not exists charges  jsonb   not null default '[]'::jsonb;
+
+-- ------------- Terms and Conditions + senior citizen discount (2026-11-03) ----
+alter table public.app_users add column if not exists is_senior         boolean not null default false;
+alter table public.app_users add column if not exists senior_id_number  text;
+alter table public.app_users add column if not exists terms_accepted_at timestamptz;

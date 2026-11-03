@@ -116,8 +116,22 @@ const isSpent = (entry: OtpEntry) => entry.attempts >= MAX_ATTEMPTS || entry.exp
 
 /** Pending self-registrations waiting for email verification. Key: email. */
 const pending = new Map<string, {
-  fullName: string; email: string; passwordHash: string; barangay: string; otp: OtpEntry;
+  fullName: string; email: string; passwordHash: string; barangay: string;
+  isSenior: boolean; seniorIdNumber: string | null; termsAcceptedAt: string; otp: OtpEntry;
 }>();
+
+/** Bump when the Terms and Conditions text changes (stored in the audit log). */
+const TERMS_VERSION = '2026-11-03';
+
+/** Senior Citizen ID: optional; trimmed and capped so it fits a single line. */
+function seniorFields(input: { isSenior?: unknown; seniorIdNumber?: unknown }): { isSenior: boolean; seniorIdNumber: string | null } {
+  const isSenior = input.isSenior === true;
+  const id = typeof input.seniorIdNumber === 'string' ? input.seniorIdNumber.trim() : '';
+  if (!isSenior) return { isSenior: false, seniorIdNumber: null };
+  if (!id) throw badRequest('Enter your Senior Citizen ID number.');
+  if (id.length > 40) throw badRequest('Senior Citizen ID number is too long.');
+  return { isSenior: true, seniorIdNumber: id };
+}
 
 /** Pending sign-ins waiting for the emailed code. Key: email (the loginToken). */
 const pendingLogins = new Map<string, { userId: string; otp: OtpEntry }>();
@@ -176,7 +190,10 @@ export const authService = {
    * Step 1 of signup: validate the form and email a verification code. The
    * account is only created once the code is confirmed.
    */
-  async initiateRegistration(input: { fullName?: string; email?: string; password?: string; barangay?: string }): Promise<{
+  async initiateRegistration(input: {
+    fullName?: string; email?: string; password?: string; barangay?: string;
+    acceptTerms?: boolean; isSenior?: boolean; seniorIdNumber?: string;
+  }): Promise<{
     email: string; message: string;
   }> {
     const fullName = input.fullName?.trim();
@@ -187,11 +204,16 @@ export const authService = {
     if (!fullName || fullName.length < 2) throw badRequest('Full name is required.');
     if (!email || !EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
     if (password.length < 6) throw badRequest('Password must be at least 6 characters.');
+    if (input.acceptTerms !== true) throw badRequest('Please read and accept the Terms and Conditions.');
+    const senior = seniorFields(input);
     if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
 
     const previous = pending.get(email);
     const otp = await issueCode(email, 'signup', OTP_TTL_MINUTES, previous?.otp);
-    pending.set(email, { fullName, email, passwordHash: bcrypt.hashSync(password, 10), barangay, otp });
+    pending.set(email, {
+      fullName, email, passwordHash: bcrypt.hashSync(password, 10), barangay, ...senior,
+      termsAcceptedAt: new Date().toISOString(), otp,
+    });
     return { email, message: `We sent a 6-digit code to ${email}.` };
   },
 
@@ -218,8 +240,14 @@ export const authService = {
       barangay: p.barangay,
       otpEnabled: true,
       serialNumber: await generateCustomerSerial(),
+      isSenior: p.isSenior,
+      seniorIdNumber: p.seniorIdNumber,
+      termsAcceptedAt: p.termsAcceptedAt,
     });
-    await audit('register', p.fullName, 'customer', user.id, p.email, { email: p.email, role: 'customer', barangay: p.barangay });
+    await audit('register', p.fullName, 'customer', user.id, p.email, {
+      email: p.email, role: 'customer', barangay: p.barangay, is_senior: p.isSenior,
+      terms_version: TERMS_VERSION, terms_accepted_at: p.termsAcceptedAt,
+    });
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
@@ -259,16 +287,18 @@ export const authService = {
     return { message: `A new code was sent to ${email}.` };
   },
 
-  async register(input: { fullName?: string; email?: string; password?: string }): Promise<AuthResult> {
+  async register(input: { fullName?: string; email?: string; password?: string; acceptTerms?: boolean }): Promise<AuthResult> {
     const fullName = input.fullName?.trim();
     const email = input.email?.trim().toLowerCase();
     const password = input.password ?? '';
     if (!fullName || fullName.length < 2) throw badRequest('Full name is required.');
     if (!email || !EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
     if (password.length < 6) throw badRequest('Password must be at least 6 characters.');
+    if (input.acceptTerms !== true) throw badRequest('Please read and accept the Terms and Conditions.');
     if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
-    const user = await userRepo.create({ fullName, email, role: 'customer', passwordHash: bcrypt.hashSync(password, 10), serialNumber: await generateCustomerSerial() });
-    await audit('register', fullName, 'customer', user.id, email, { email, role: 'customer' });
+    const termsAcceptedAt = new Date().toISOString();
+    const user = await userRepo.create({ fullName, email, role: 'customer', passwordHash: bcrypt.hashSync(password, 10), serialNumber: await generateCustomerSerial(), termsAcceptedAt });
+    await audit('register', fullName, 'customer', user.id, email, { email, role: 'customer', terms_version: TERMS_VERSION, terms_accepted_at: termsAcceptedAt });
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
@@ -348,7 +378,7 @@ export const authService = {
     await audit('reactivate', actorUser?.fullName, 'general-manager', userId, user.email, { target_name: user.fullName, target_role: user.role });
   },
 
-  async updateProfile(userId: string, input: { fullName?: string; email?: string; barangay?: string }): Promise<PublicUser> {
+  async updateProfile(userId: string, input: { fullName?: string; email?: string; barangay?: string; isSenior?: boolean; seniorIdNumber?: string }): Promise<PublicUser> {
     const fullName = input.fullName?.trim();
     const email = input.email?.trim().toLowerCase();
     const barangay = input.barangay?.trim() || undefined;
@@ -356,7 +386,9 @@ export const authService = {
     if (email !== undefined && !EMAIL_RE.test(email)) throw badRequest('A valid email is required.');
     if (email) { const existing = await userRepo.findByEmail(email); if (existing && existing.id !== userId) throw conflict('That email is already in use.'); }
     const before = await userRepo.findById(userId);
-    const updated = await userRepo.update(userId, { fullName, email, barangay });
+    // Senior status is a customer-only field; only touched when it is sent.
+    const senior = 'isSenior' in input && before?.role === 'customer' ? seniorFields(input) : {};
+    const updated = await userRepo.update(userId, { fullName, email, barangay, ...senior });
     if (!updated) throw unauthorized('Account no longer exists.');
     if (before && fullName && before.fullName !== fullName) await renameIncidentReporter(before.fullName, fullName);
     await audit('profile_update', updated.fullName, updated.role, userId, updated.email, { fields_changed: Object.keys(input) });

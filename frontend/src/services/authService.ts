@@ -13,11 +13,22 @@ export interface RegisterInput {
   password: string;
 }
 
+export interface ProfileInput {
+  fullName?: string;
+  email?: string;
+  barangay?: string;
+  isSenior?: boolean;
+  seniorIdNumber?: string;
+}
+
 export interface InitiateRegistrationInput {
   fullName: string;
   email: string;
   password: string;
   barangay?: string;
+  acceptTerms: boolean;
+  isSenior?: boolean;
+  seniorIdNumber?: string;
 }
 
 export interface LoginResult {
@@ -83,7 +94,7 @@ export const authService = {
     return res.user;
   },
 
-  async updateProfile(input: { fullName?: string; email?: string; barangay?: string }): Promise<User> {
+  async updateProfile(input: ProfileInput): Promise<User> {
     const res = await api.patch<{ user: User }>('/auth/profile', input);
     return res.user;
   },

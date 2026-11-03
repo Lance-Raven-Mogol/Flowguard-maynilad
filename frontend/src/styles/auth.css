@@ -793,3 +793,27 @@ html {
   opacity: 0.7;
   letter-spacing: 0;
 }
+
+/* Signup: senior citizen + Terms and Conditions checkboxes. */
+.signup-check {
+  width: auto;
+  align-items: flex-start;
+  margin: 2px 0;
+}
+.signup-check .checkbox-indicator {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.signup-check .remember-text {
+  line-height: 1.4;
+}
+.terms-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--a-blue);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}

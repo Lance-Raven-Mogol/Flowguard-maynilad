@@ -18,6 +18,7 @@ import { DataTable } from '../views/components/DataTable';
 import { Modal } from '../views/components/Modal';
 import { ActionButton, PanelHead, QRLabelModal } from '../views/components/panels';
 import { StockCountPanel } from '../views/inventory/StockCountPanel';
+import { SENIOR_DISCOUNT_PERCENT, SENIOR_DISCOUNT_RATE } from '../views/components/TermsAndConditions';
 
 const roleLabel = (role: unknown): string => ROLES.find((r) => r.value === role)?.label ?? String(role ?? '');
 
@@ -906,7 +907,7 @@ function BillToCustomerSelect({
 
 /* --------------------------------------------- Itemized charges (#2 / #16) */
 interface ChargeLine {
-  kind: 'material' | 'labor' | 'fee';
+  kind: 'material' | 'labor' | 'fee' | 'discount';
   description: string;
   material_sku: string;
   quantity: number;
@@ -914,7 +915,9 @@ interface ChargeLine {
   unit_price: number;
   amount: number;
 }
-const CHARGE_KIND_LABEL: Record<ChargeLine['kind'], string> = { material: 'Material', labor: 'Labor', fee: 'Other fee' };
+const CHARGE_KIND_LABEL: Record<ChargeLine['kind'], string> = { material: 'Material', labor: 'Labor', fee: 'Other fee', discount: 'Discount' };
+/** Discounts are stored as negative amounts; show them as "− ₱ x". */
+const signedMoney = (v: unknown): string => (Number(v) < 0 ? `− ${money(-Number(v))}` : money(v));
 const noChargeLabel = 'No charge — covered by Maynilad';
 const chargeLines = (row: EntityRow): ChargeLine[] => (Array.isArray(row.charges) ? (row.charges as ChargeLine[]) : []);
 
@@ -939,7 +942,7 @@ function ChargesTable({ lines, total }: { lines: ChargeLine[]; total: unknown })
               <td>{line.description}{line.material_sku ? ` (${line.material_sku})` : ''}</td>
               <td className="num">{line.kind === 'material' ? `${line.quantity} ${line.unit}` : '—'}</td>
               <td className="num">{line.kind === 'material' ? money(line.unit_price) : '—'}</td>
-              <td className="num">{money(line.amount)}</td>
+              <td className="num">{signedMoney(line.amount)}</td>
             </tr>
           ))}
         </tbody>
@@ -1302,6 +1305,53 @@ function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRema
  * Inline "Issue Bill" form shown inside the incident View modal for commercial-department.
  * Pre-fills the incident ref and shows the estimated cost for reference.
  */
+interface BillableUser {
+  id: string;
+  fullName: string;
+  email: string;
+  serialNumber?: string | null;
+  isSenior?: boolean;
+  seniorIdNumber?: string | null;
+}
+
+/**
+ * Senior citizen discount at billing (Terms and Conditions). Shown only for a
+ * customer registered as a senior; on by default, staff can turn it off when
+ * the ID can't be verified. The backend computes the actual discount line.
+ */
+function SeniorDiscountField({
+  customer,
+  baseAmount,
+  apply,
+  onApply,
+}: {
+  customer?: BillableUser;
+  baseAmount: number;
+  apply: boolean;
+  onApply: (apply: boolean) => void;
+}) {
+  if (customer?.isSenior !== true) return null;
+  const discount = Math.round(baseAmount * SENIOR_DISCOUNT_RATE * 100) / 100;
+  return (
+    <div className="form-group senior-discount-box">
+      <label className="senior-toggle">
+        <input type="checkbox" checked={apply} onChange={(e) => onApply(e.target.checked)} />
+        <span>Apply senior citizen discount ({SENIOR_DISCOUNT_PERCENT}%)</span>
+      </label>
+      <small style={{ color: 'var(--muted)', display: 'block', marginTop: 4 }}>
+        Registered senior citizen{customer.seniorIdNumber ? ` — SC ID ${customer.seniorIdNumber}` : ''}. Check the ID when the customer pays.
+      </small>
+      {apply && baseAmount > 0 && (
+        <dl className="senior-discount-sum">
+          <div><dt>Price</dt><dd>{money(baseAmount)}</dd></div>
+          <div><dt>Less senior discount</dt><dd>− {money(discount)}</dd></div>
+          <div><dt>Amount due</dt><dd><strong>{money(baseAmount - discount)}</strong></dd></div>
+        </dl>
+      )}
+    </div>
+  );
+}
+
 function IssueBillInline({
   incident,
   onIssued,
@@ -1324,7 +1374,9 @@ function IssueBillInline({
   const [description, setDescription] = useState(String(incident.description ?? ''));
   const [profiles, setProfiles] = useState<EntityRow[]>([]);
   const [profileIds, setProfileIds] = useState<string[]>([]);
-  const [users, setUsers] = useState<Array<{ id: string; fullName: string; email: string; serialNumber?: string | null }>>([]);
+  const [users, setUsers] = useState<BillableUser[]>([]);
+  // null = follow the customer's senior status; true/false = staff override.
+  const [seniorChoice, setSeniorChoice] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -1338,7 +1390,7 @@ function IssueBillInline({
     try {
       const [pms, userResp] = await Promise.all([
         resourceService.list('payment-methods'),
-        api.get<{ data: Array<{ id: string; fullName: string; email: string; serialNumber?: string | null }> }>('/users'),
+        api.get<{ data: BillableUser[] }>('/users'),
       ]);
       setProfiles(pms.filter((p) => !p.archived));
       setUsers(userResp.data);
@@ -1359,6 +1411,8 @@ function IssueBillInline({
     u.fullName.trim().toLowerCase() === customerName.trim().toLowerCase(),
   );
   const selectedProfiles = profiles.filter((p) => profileIds.includes(String(p.id)));
+  const applySenior = customer?.isSenior === true && (seniorChoice ?? true);
+  const baseAmount = Number(itemized ? incident.estimated_cost : amount) || 0;
 
   const submit = async () => {
     if (noCharge) {
@@ -1391,6 +1445,7 @@ function IssueBillInline({
         service_description: description,
         amount: Number(amount),
         charges: chargeLines(incident),
+        senior_discount: applySenior,
         due_date: dueDate,
         payment_method: selectedProfiles.map((p) => String(p.payment_method)).join(' / '),
         account_name: selectedProfiles.map((p) => String(p.account_name)).join(' / '),
@@ -1498,6 +1553,7 @@ function IssueBillInline({
                   <input type="date" min={todayISO()} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
                 </div>
               </div>
+              <SeniorDiscountField customer={customer} baseAmount={baseAmount} apply={applySenior} onApply={setSeniorChoice} />
               <div className="form-group">
                 <label>Payment Profile {profileIds.length > 0 && <span className="profile-count-badge">{profileIds.length} selected</span>}</label>
                 {profiles.length === 0
@@ -5465,12 +5521,8 @@ function PaymentProfileCard({ profile, onDeleted }: { profile: EntityRow; onDele
   );
 }
 
-interface BillingUser {
-  id: string;
-  fullName: string;
-  email: string;
+interface BillingUser extends BillableUser {
   role: string;
-  serialNumber?: string | null;
 }
 interface BillableWork {
   key: string;
@@ -5497,6 +5549,7 @@ function BillingControls({
   const [loading, setLoading] = useState(false);
   const [works, setWorks] = useState<BillableWork[]>([]);
   const [users, setUsers] = useState<BillingUser[]>([]);
+  const [seniorChoice, setSeniorChoice] = useState<boolean | null>(null);
   const [workKey, setWorkKey] = useState('');
   const [profileIds, setProfileIds] = useState<string[]>([]);
   const [amount, setAmount] = useState('');
@@ -5557,8 +5610,13 @@ function BillingControls({
     setExistingBills(allBills.filter((b) => String(b.incident_ref ?? '') === String(selectedWork.incident.ref_code)));
   }, [workKey, allBills]);
 
+  const applySenior = customer?.isSenior === true && (seniorChoice ?? true);
+  const itemizedWork = Boolean(selectedWork && chargeLines(selectedWork.incident).length);
+  const baseAmount = Number(itemizedWork ? selectedWork?.incident.estimated_cost : amount) || 0;
+
   const selectWork = (key: string) => {
     setWorkKey(key);
+    setSeniorChoice(null);
     const work = works.find((item) => item.key === key);
     setDescription(String(work?.incident.description ?? ''));
     setAmount(Number(work?.incident.estimated_cost ?? 0) > 0 ? String(work?.incident.estimated_cost) : '');
@@ -5596,6 +5654,7 @@ function BillingControls({
         charges: selectedWork.incident ? chargeLines(selectedWork.incident) : [],
         notes: '',
         amount: Number(amount),
+        senior_discount: applySenior,
         due_date: dueDate,
         ...paymentFields,
       });
@@ -5672,6 +5731,8 @@ function BillingControls({
           <div className="form-group"><label>Total Amount Due</label><div className="peso-input"><span>₱</span><input type="text" inputMode="decimal" readOnly={Boolean(selectedWork && chargeLines(selectedWork.incident).length)} value={amount} onChange={(e) => { const next = e.target.value; if (/^\d*(\.\d{0,2})?$/.test(next)) setAmount(next); }} onKeyDown={(e) => { if (['-', '+', 'e', 'E'].includes(e.key)) e.preventDefault(); }} placeholder="0.00" /></div></div>
           <div className="form-group"><label>Due Date</label><input type="date" min={todayISO()} value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
         </div>
+
+        <SeniorDiscountField customer={customer} baseAmount={baseAmount} apply={applySenior} onApply={setSeniorChoice} />
 
         {/* Payment profile multi-select — card-click style */}
         <div className="form-group">

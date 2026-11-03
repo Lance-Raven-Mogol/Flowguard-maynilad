@@ -13,6 +13,7 @@ import { avatarFor } from './Topbar';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { AddressInput } from '../components/BarangayCombobox';
 import { OtpCodeInput, ResendCodeButton } from '../auth/OtpCodeInput';
+import { SENIOR_DISCOUNT_PERCENT, TermsModal } from '../components/TermsAndConditions';
 
 export function AccountSettings() {
   const { user, updateProfile, changePassword, updateAvatar } = useAuth();
@@ -24,7 +25,12 @@ export function AccountSettings() {
 
   const [fullName, setFullName] = useState(user!.fullName);
   const [barangay, setBarangay] = useState(user!.barangay ?? 'Isok II Poblacion, Boac');
+  const [isSenior, setIsSenior] = useState(user!.isSenior ?? false);
+  const [seniorId, setSeniorId] = useState(user!.seniorIdNumber ?? '');
+  const [showTerms, setShowTerms] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const isCustomer = user!.role === 'customer';
+  const seniorChanged = isCustomer && (isSenior !== (user!.isSenior ?? false) || (isSenior && seniorId.trim() !== (user!.seniorIdNumber ?? '')));
 
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -69,7 +75,15 @@ export function AccountSettings() {
   const saveProfile = async () => {
     setSavingProfile(true);
     try {
-      await updateProfile({ fullName: fullName.trim(), barangay });
+      if (isCustomer && isSenior && !seniorId.trim()) {
+        notify('Enter your Senior Citizen ID number.', 'error');
+        return;
+      }
+      await updateProfile({
+        fullName: fullName.trim(),
+        barangay,
+        ...(seniorChanged ? { isSenior, seniorIdNumber: isSenior ? seniorId.trim() : '' } : {}),
+      });
       notify('Profile updated successfully!');
     } catch (err) {
       notify(err instanceof ApiError ? err.message : 'Could not update profile.', 'error');
@@ -183,6 +197,8 @@ export function AccountSettings() {
         </button>
       </header>
 
+      {showTerms && <TermsModal onClose={() => setShowTerms(false)} />}
+
       <div className="account-cols">
         <section className="panel account-section">
           <div className="account-section-head">
@@ -228,9 +244,31 @@ export function AccountSettings() {
                 variant="dashboard"
               />
             </div>
+            {isCustomer && (
+              <div className="form-group">
+                <label>Senior Citizen</label>
+                <label className="senior-toggle">
+                  <input type="checkbox" checked={isSenior} onChange={(e) => setIsSenior(e.target.checked)} />
+                  <span>I am a senior citizen ({SENIOR_DISCOUNT_PERCENT}% discount on bills)</span>
+                </label>
+                {isSenior && (
+                  <input
+                    value={seniorId}
+                    maxLength={40}
+                    placeholder="Senior Citizen ID No."
+                    onChange={(e) => setSeniorId(e.target.value)}
+                    style={{ marginTop: 8 }}
+                  />
+                )}
+                <small style={{ color: 'var(--muted)', display: 'block', marginTop: 4 }}>
+                  Show your Senior Citizen ID when you pay.{' '}
+                  <button type="button" className="link-btn" onClick={() => setShowTerms(true)}>Terms and Conditions</button>
+                </small>
+              </div>
+            )}
           </div>
           <div className="account-actions">
-            <button className="btn-primary" disabled={savingProfile || (fullName.trim() === user!.fullName && barangay === user!.barangay) || fullName.trim().length < 2} onClick={saveProfile}>
+            <button className="btn-primary" disabled={savingProfile || (fullName.trim() === user!.fullName && barangay === user!.barangay && !seniorChanged) || fullName.trim().length < 2} onClick={saveProfile}>
               {savingProfile ? 'Saving…' : 'Save Changes'}
             </button>
           </div>

@@ -37,6 +37,9 @@ export interface User {
   otpEnabled?: boolean;
   jobLevel?: string | null;
   serialNumber?: string | null;
+  isSenior?: boolean;
+  seniorIdNumber?: string | null;
+  termsAcceptedAt?: string | null;
 }
 
 export type StatusTone = 'paid' | 'pending' | 'overdue';
