@@ -60,7 +60,7 @@ const MAX_CHARGE_LINES = 30;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 interface ChargeLine {
-  kind: 'material' | 'labor' | 'fee';
+  kind: 'material' | 'labor' | 'fee' | 'discount';
   description: string;
   material_sku: string;
   quantity: number;
@@ -103,6 +103,35 @@ async function normalizeCharges(raw: unknown): Promise<{ charges: ChargeLine[]; 
     }
   }
   return { charges, total: round2(charges.reduce((sum, line) => sum + line.amount, 0)) };
+}
+
+/** Senior citizen discount on a customer's bill (Terms and Conditions). */
+const SENIOR_DISCOUNT_RATE = 0.2;
+
+/**
+ * Apply the senior citizen discount to a new bill: a negative "discount" line
+ * is appended to the breakdown and the amount due is reduced. Only for a bill
+ * owner whose account is marked as a senior citizen.
+ */
+async function applySeniorDiscount(values: Row): Promise<void> {
+  const owner = values.customer_id ? await repo.getRowById('app_users', String(values.customer_id)) : null;
+  if (!owner || owner.role !== 'customer' || owner.is_senior !== true) {
+    throw badRequest('The senior citizen discount is only for customers registered as senior citizens.');
+  }
+  const base = round2(Number(values.amount));
+  if (!(base > 0)) return;
+  const discount = round2(base * SENIOR_DISCOUNT_RATE);
+  const lines: ChargeLine[] = Array.isArray(values.charges) && values.charges.length > 0
+    ? [...(values.charges as ChargeLine[])]
+    : [{ kind: 'fee', description: String(values.service_description || 'Service charge'), material_sku: '', quantity: 1, unit: '', unit_price: base, amount: base }];
+  const idNo = String(owner.senior_id_number ?? '').trim();
+  lines.push({
+    kind: 'discount',
+    description: `Senior citizen discount (${SENIOR_DISCOUNT_RATE * 100}%)${idNo ? ` — SC ID ${idNo}` : ''}`,
+    material_sku: '', quantity: 1, unit: '', unit_price: -discount, amount: -discount,
+  });
+  values.charges = lines;
+  values.amount = round2(base - discount);
 }
 
 const SITE_VISIT_FIELDS = ['site_visit_date', 'site_visit_period', 'site_visit_companions', 'site_visit_materials', 'site_visit_notes'];
@@ -782,6 +811,8 @@ export const resourceService = {
         }
       }
       // Item-request-backed or manual bills (no job_order_ref) skip the above chain.
+
+      if (body.senior_discount === true) await applySeniorDiscount(values);
 
       values.status = 'unpaid';
     }

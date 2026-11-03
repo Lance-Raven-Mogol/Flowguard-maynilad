@@ -112,7 +112,19 @@ test('signup creates the account only after the emailed code', async () => {
   userRepo.findByEmail = async () => undefined;
   userRepo.create = async (input) => (created = { id: 'new', createdAt: new Date().toISOString(), ...input });
 
-  const res = await authService.initiateRegistration({ fullName: 'New User', email: 'new@example.com', password: 'secret1' });
+  await assert.rejects(
+    authService.initiateRegistration({ fullName: 'New User', email: 'new@example.com', password: 'secret1' }),
+    /Terms and Conditions/,
+  );
+  await assert.rejects(
+    authService.initiateRegistration({ fullName: 'New User', email: 'new@example.com', password: 'secret1', acceptTerms: true, isSenior: true }),
+    /Senior Citizen ID/,
+  );
+
+  const res = await authService.initiateRegistration({
+    fullName: 'New User', email: 'new@example.com', password: 'secret1', barangay: 'Tabi, Boac',
+    acceptTerms: true, isSenior: true, seniorIdNumber: 'SC-123',
+  });
   assert.equal(res.email, 'new@example.com');
   assert.equal(created, undefined);
   const code = lastCode('new@example.com');
@@ -121,5 +133,9 @@ test('signup creates the account only after the emailed code', async () => {
   const done = await authService.completeRegistration({ email: 'new@example.com', otpCode: code });
   assert.ok(done.token);
   assert.equal(created.otpEnabled, true);
+  assert.equal(created.barangay, 'Tabi, Boac');
+  assert.equal(created.isSenior, true);
+  assert.equal(created.seniorIdNumber, 'SC-123');
+  assert.ok(created.termsAcceptedAt);
   await assert.rejects(authService.completeRegistration({ email: 'new@example.com', otpCode: code }), /No pending registration/);
 });

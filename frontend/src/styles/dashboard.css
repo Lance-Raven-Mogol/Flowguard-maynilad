@@ -4547,12 +4547,26 @@ input:checked + .slider:before {
   /* Hide everything except the modal card containing the label */
   body > * { display: none !important; }
 
-  /* Reveal only the modal overlay and card */
-  .modal-overlay.is-active { display: flex !important; position: static !important; background: none !important; }
-  .modal-card { display: flex !important; box-shadow: none !important; border: 1px solid #ccc !important; }
+  /* Reveal only the modal overlay and card, at full page size — no screen
+     max-height / scroll box, so nothing is cut off at the edges (Ctrl+P). */
+  .modal-overlay.is-active { display: block !important; position: static !important; background: none !important; padding: 0 !important; overflow: visible !important; }
+  .modal-card {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    animation: none !important;
+    font-size: 12pt;
+  }
   .modal-header { display: none !important; }
   .modal-footer { display: none !important; }
-  .modal-body { padding: 0 !important; }
+  .modal-body { padding: 0 !important; max-height: none !important; overflow: visible !important; }
+  .modal-body table { width: 100% !important; font-size: 11pt; }
+  .modal-body td, .modal-body th, .modal-body dd { overflow-wrap: anywhere; }
+  .mrf-items-table-wrap { overflow: visible !important; }
 
   .qr-label {
     display: flex !important;
@@ -6617,4 +6631,67 @@ input:checked + .slider:before {
   .site-visit-material-row { grid-template-columns: minmax(0, 1fr) 70px 32px; }
   .site-visit-material-row > select { grid-column: 1 / -1; }
   .site-visit-unit { display: none; }
+}
+
+/* Terms and Conditions (signup modal + Account Settings). */
+.terms-content {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text, inherit);
+}
+.terms-content h4 {
+  margin: 18px 0 6px;
+  font-size: 15px;
+}
+.terms-content p {
+  margin: 0 0 8px;
+}
+.terms-content ul {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+.terms-content li {
+  margin-bottom: 4px;
+}
+.terms-content .terms-updated {
+  font-size: 12px;
+  color: var(--muted);
+}
+.senior-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.senior-toggle input {
+  width: auto;
+}
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--blue);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.senior-discount-box {
+  padding: 12px 14px;
+  border: 1px solid var(--line, #dfe5f0);
+  border-radius: 10px;
+  background: var(--panel-soft, #f6f8fc);
+}
+.senior-discount-sum {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 16px;
+  margin: 10px 0 0;
+}
+.senior-discount-sum > div {
+  display: contents;
+}
+.senior-discount-sum dd {
+  margin: 0;
+  text-align: right;
 }
