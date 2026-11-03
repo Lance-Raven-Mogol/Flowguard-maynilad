@@ -52,13 +52,16 @@ export const RESOURCES: Record<string, ResourceDef> = {
       // Technical Team charges: [{ kind, description, material_sku, quantity, unit, unit_price, amount }]
       // and whether the customer pays at all (false = covered by the utility).
       'charges', 'billable',
+      // Zone Specialist's required materials, entered once and carried to the
+      // Technical Team (charges), the Job Order and the MRF: [{ material_sku, name, quantity, unit }]
+      'required_materials',
     ],
     required: ['description'],
     numeric: ['estimated_cost'],
     nullable: ['estimated_cost'],
     // Zone-specialist remarks have no fallback column — they must be stored, or
     // the save is a lie. Fail loudly (prompt a migration) rather than silently.
-    critical: ['remarks', 'site_action', 'site_visit_date', 'site_visit_period', 'site_visit_companions', 'site_visit_materials', 'site_visit_notes', 'bill_to_customer_id', 'estimated_cost', 'charges', 'billable'],
+    critical: ['remarks', 'site_action', 'site_visit_date', 'site_visit_period', 'site_visit_companions', 'site_visit_materials', 'site_visit_notes', 'bill_to_customer_id', 'estimated_cost', 'charges', 'billable', 'required_materials'],
     autoKeys: [{ column: 'ref_code', prefix: 'INC', digits: 4 }],
     touch: 'updated_at',
     // Valid incident statuses (informational — enforced in DB check constraint):

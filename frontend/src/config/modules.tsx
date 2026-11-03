@@ -939,7 +939,7 @@ function ChargesTable({ lines, total }: { lines: ChargeLine[]; total: unknown })
           {lines.map((line, i) => (
             <tr key={`${line.kind}-${i}`}>
               <td>{CHARGE_KIND_LABEL[line.kind] ?? line.kind}</td>
-              <td>{line.description}{line.material_sku ? ` (${line.material_sku})` : ''}</td>
+              <td>{line.description}{line.material_sku && <small>{line.material_sku}</small>}</td>
               <td className="num">{line.kind === 'material' ? `${line.quantity} ${line.unit}` : '—'}</td>
               <td className="num">{line.kind === 'material' ? money(line.unit_price) : '—'}</td>
               <td className="num">{signedMoney(line.amount)}</td>
@@ -975,7 +975,14 @@ const newChargeDraft = (kind: ChargeLine['kind']): ChargeDraft => ({
 });
 const chargeDraftsFrom = (row: EntityRow): ChargeDraft[] => {
   const lines = chargeLines(row);
-  if (!lines.length) return [newChargeDraft('material'), newChargeDraft('labor')];
+  if (!lines.length) {
+    // Start from the Zone Specialist's required materials — only labor and fees are left to add.
+    const required = Array.isArray(row.required_materials) ? (row.required_materials as { material_sku: string; quantity: number }[]) : [];
+    const materials = required.length
+      ? required.map((m) => ({ ...newChargeDraft('material'), sku: String(m.material_sku), quantity: String(m.quantity) }))
+      : [newChargeDraft('material')];
+    return [...materials, newChargeDraft('labor')];
+  }
   return lines.map((line) => ({
     ...newChargeDraft(line.kind),
     sku: line.material_sku,
@@ -993,13 +1000,19 @@ const chargeDraftsFrom = (row: EntityRow): ChargeDraft[] => {
 function ChargesEditor({
   drafts,
   onDrafts,
+  prefilled = false,
 }: {
   drafts: ChargeDraft[];
   onDrafts: (drafts: ChargeDraft[]) => void;
+  /** The material lines came from the Zone Specialist's required materials. */
+  prefilled?: boolean;
 }) {
   const { stats } = useStats();
   const priced = stats.materials.filter((m) => !m.archived && Number(m.unit_price ?? 0) > 0);
   const materialOf = (sku: string) => priced.find((m) => String(m.sku) === sku);
+  // A prefilled material without a unit price still shows, so it is not silently lost.
+  const unpricedOf = (sku: string) =>
+    sku && !materialOf(sku) ? stats.materials.find((m) => String(m.sku) === sku) : undefined;
   const lineAmount = (d: ChargeDraft) =>
     d.kind === 'material'
       ? Number(materialOf(d.sku)?.unit_price ?? 0) * (Number(d.quantity) || 0)
@@ -1010,71 +1023,106 @@ function ChargesEditor({
   return (
     <div className="charges-editor">
       <p className="detail-section-title">Price Breakdown</p>
-      {drafts.map((d) => (
-        <div className="charge-row" key={d.key}>
-          <span className="charge-kind">{CHARGE_KIND_LABEL[d.kind]}</span>
-          {d.kind === 'material' ? (
-            <>
-              <select value={d.sku} onChange={(e) => update(d.key, { sku: e.target.value })} aria-label="Material">
-                <option value="">Select material…</option>
-                {priced.map((m) => (
-                  <option key={String(m.id)} value={String(m.sku)}>
-                    {`${String(m.name)} — ${money(m.unit_price)} / ${String(m.unit ?? 'unit')}`}
-                  </option>
-                ))}
-              </select>
-              <input
-                className="charge-qty"
-                type="number"
-                min={1}
-                step={1}
-                aria-label="Quantity"
-                value={d.quantity}
-                onChange={(e) => update(d.key, { quantity: e.target.value })}
-              />
-            </>
-          ) : (
-            <>
-              <input
-                value={d.description}
-                aria-label="Description"
-                placeholder={d.kind === 'labor' ? 'e.g. Labor — 2 plumbers, half day' : 'e.g. Excavation permit'}
-                onChange={(e) => update(d.key, { description: e.target.value })}
-              />
-              <div className="peso-input charge-qty">
-                <span>₱</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  aria-label="Amount"
-                  placeholder="0.00"
-                  value={d.amount}
-                  onChange={(e) => { if (/^\d*(\.\d{0,2})?$/.test(e.target.value)) update(d.key, { amount: e.target.value }); }}
-                />
+      {prefilled && (
+        <p className="required-materials-note">
+          Materials are from the Zone Specialist. Just add labor and fees.
+        </p>
+      )}
+      <div className="charges-card">
+        {drafts.length > 0 && (
+          <div className="charge-line charge-line-head" aria-hidden="true">
+            <span>Item</span>
+            <span>Qty / Amount</span>
+            <span className="num">Subtotal</span>
+            <span />
+          </div>
+        )}
+        {drafts.length === 0 && (
+          <p className="charges-empty">No lines yet. Add a material, labor or other fee below.</p>
+        )}
+        {drafts.map((d) => {
+          const mat = d.kind === 'material' ? materialOf(d.sku) ?? unpricedOf(d.sku) : undefined;
+          return (
+            <div className="charge-line" key={d.key}>
+              <div className="charge-item">
+                <span className={`charge-pill is-${d.kind}`}>{CHARGE_KIND_LABEL[d.kind]}</span>
+                {d.kind === 'material' ? (
+                  <select value={d.sku} onChange={(e) => update(d.key, { sku: e.target.value })} aria-label="Material">
+                    <option value="">Select material…</option>
+                    {unpricedOf(d.sku) && (
+                      <option value={d.sku}>{`${String(unpricedOf(d.sku)?.name)} — no unit price set`}</option>
+                    )}
+                    {priced.map((m) => (
+                      <option key={String(m.id)} value={String(m.sku)}>
+                        {`${String(m.name)} — ${money(m.unit_price)} / ${String(m.unit ?? 'unit')}`}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={d.description}
+                    aria-label="Description"
+                    placeholder={d.kind === 'labor' ? 'e.g. 2 plumbers, half day' : 'e.g. Excavation permit'}
+                    onChange={(e) => update(d.key, { description: e.target.value })}
+                  />
+                )}
+                {mat && (
+                  <small className={materialOf(d.sku) ? 'charge-hint' : 'charge-hint is-warn'}>
+                    {materialOf(d.sku)
+                      ? `${money(mat.unit_price)} per ${String(mat.unit ?? 'unit')}`
+                      : 'No unit price in Inventory — this line counts as ₱0.00'}
+                  </small>
+                )}
               </div>
-            </>
-          )}
-          <strong className="charge-amount">{money(lineAmount(d))}</strong>
-          <button
-            type="button"
-            className="mrf-item-remove"
-            aria-label="Remove charge"
-            onClick={() => onDrafts(drafts.filter((x) => x.key !== d.key))}
-          >
-            ✕
-          </button>
+              {d.kind === 'material' ? (
+                <div className="charge-qty-field">
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    aria-label="Quantity"
+                    value={d.quantity}
+                    onChange={(e) => update(d.key, { quantity: e.target.value })}
+                  />
+                  <span>{mat ? String(mat.unit ?? 'units') : 'qty'}</span>
+                </div>
+              ) : (
+                <div className="charge-peso-field">
+                  <span>₱</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    aria-label="Amount"
+                    placeholder="0.00"
+                    value={d.amount}
+                    onChange={(e) => { if (/^\d*(\.\d{0,2})?$/.test(e.target.value)) update(d.key, { amount: e.target.value }); }}
+                  />
+                </div>
+              )}
+              <strong className="charge-amount">{money(lineAmount(d))}</strong>
+              <button
+                type="button"
+                className="charge-remove"
+                aria-label="Remove line"
+                title="Remove line"
+                onClick={() => onDrafts(drafts.filter((x) => x.key !== d.key))}
+              >
+                ✕
+              </button>
+            </div>
+          );
+        })}
+        <div className="charges-add">
+          <button type="button" className="charge-add-btn" onClick={() => onDrafts([...drafts, newChargeDraft('material')])}>+ Material</button>
+          <button type="button" className="charge-add-btn" onClick={() => onDrafts([...drafts, newChargeDraft('labor')])}>+ Labor</button>
+          <button type="button" className="charge-add-btn" onClick={() => onDrafts([...drafts, newChargeDraft('fee')])}>+ Other fee</button>
         </div>
-      ))}
-      <div className="charges-add">
-        <button type="button" className="btn-action" onClick={() => onDrafts([...drafts, newChargeDraft('material')])}>+ Material</button>
-        <button type="button" className="btn-action" onClick={() => onDrafts([...drafts, newChargeDraft('labor')])}>+ Labor</button>
-        <button type="button" className="btn-action" onClick={() => onDrafts([...drafts, newChargeDraft('fee')])}>+ Other fee</button>
+        <div className="charges-total">
+          <span>Total Price</span>
+          <strong>{money(total)}</strong>
+        </div>
       </div>
-      <div className="charges-total">
-        <span>Total Price</span>
-        <strong>{money(total)}</strong>
-      </div>
-      <small style={{ color: 'var(--muted)' }}>
+      <small className="charges-footnote">
         Material prices come from Inventory. This is the full price, not an estimate — the Commercial Department bills it, or marks the complaint as no charge.
         {priced.length === 0 && ' No inventory item has a unit price yet — set prices in the Material List first.'}
       </small>
@@ -1102,6 +1150,132 @@ const siteVisitCompanions = (row: EntityRow): string[] =>
   Array.isArray(row.site_visit_companions) ? (row.site_visit_companions as unknown[]).map(String) : [];
 const siteVisitMaterials = (row: EntityRow): SiteVisitMaterial[] =>
   Array.isArray(row.site_visit_materials) ? (row.site_visit_materials as SiteVisitMaterial[]) : [];
+
+/* ------------------------------------------- Required materials (entered once) */
+/**
+ * The Zone Specialist lists the materials the repair needs once, on the
+ * complaint. The Technical Team's price breakdown, the Job Order and the team
+ * leader's MRF all start from this list, so nobody types it again.
+ */
+const requiredMaterials = (row?: EntityRow): SiteVisitMaterial[] =>
+  row && Array.isArray(row.required_materials) ? (row.required_materials as SiteVisitMaterial[]) : [];
+const requiredMaterialDrafts = (row: EntityRow): SiteVisitMaterialDraft[] =>
+  requiredMaterials(row).map((m) => ({ ...newSiteVisitMaterial(), sku: m.material_sku, quantity: String(m.quantity) }));
+
+/** Returns an error message, or '' when the list can be saved. */
+function materialListProblem(list: SiteVisitMaterialDraft[]): string {
+  for (const m of list) {
+    const qty = Number(m.quantity);
+    if (!m.sku) return 'Select a material for every required material line, or remove the empty line.';
+    if (!Number.isInteger(qty) || qty <= 0) return 'Enter a whole-number quantity for every required material.';
+  }
+  if (new Set(list.map((m) => m.sku)).size !== list.length) return 'A required material is listed twice.';
+  return '';
+}
+
+/** Zone Specialist: pick the required materials from inventory, with quantities. */
+function RequiredMaterialsEditor({
+  value,
+  onChange,
+  siteVisit,
+}: {
+  value: SiteVisitMaterialDraft[];
+  onChange: (next: SiteVisitMaterialDraft[]) => void;
+  /** Site Visit Plan materials, offered as a one-click starting point. */
+  siteVisit: SiteVisitMaterial[];
+}) {
+  const { stats } = useStats();
+  const inventory = stats.materials.filter((m) => !m.archived);
+  const update = (key: string, patch: Partial<SiteVisitMaterialDraft>) =>
+    onChange(value.map((m) => (m.key === key ? { ...m, ...patch } : m)));
+  return (
+    <div className="required-materials-editor">
+      {value.length === 0 && (
+        <p className="required-materials-empty">No materials listed yet. Add what the repair needs so the next departments don't have to type it again.</p>
+      )}
+      {value.map((m) => {
+        const picked = inventory.find((x) => String(x.sku) === m.sku);
+        return (
+          <div className="site-visit-material-row" key={m.key}>
+            <select value={m.sku} onChange={(e) => update(m.key, { sku: e.target.value })} aria-label="Material">
+              <option value="">Select material…</option>
+              {inventory.map((x) => (
+                <option key={String(x.id)} value={String(x.sku)}>
+                  {`${String(x.name)} — ${Number(x.quantity ?? 0)} ${String(x.unit ?? 'units')} in stock`}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              aria-label="Quantity"
+              value={m.quantity}
+              onChange={(e) => update(m.key, { quantity: e.target.value })}
+            />
+            <span className="site-visit-unit">{picked ? String(picked.unit ?? 'units') : ''}</span>
+            <button
+              type="button"
+              className="mrf-item-remove"
+              aria-label="Remove material"
+              onClick={() => onChange(value.filter((x) => x.key !== m.key))}
+            >
+              ✕
+            </button>
+          </div>
+        );
+      })}
+      <div className="charges-add">
+        <button type="button" className="btn-action" onClick={() => onChange([...value, newSiteVisitMaterial()])}>
+          + Material
+        </button>
+        {siteVisit.length > 0 && value.length === 0 && (
+          <button
+            type="button"
+            className="btn-action"
+            onClick={() => onChange(siteVisit.map((m) => ({ ...newSiteVisitMaterial(), sku: m.material_sku, quantity: String(m.quantity) })))}
+          >
+            Copy from Site Visit Plan
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Read-only list of the Zone Specialist's required materials. */
+function RequiredMaterialsView({ row, stock = false }: { row?: EntityRow; stock?: boolean }) {
+  const { stats } = useStats();
+  const list = requiredMaterials(row);
+  if (!list.length) return <p>No required materials listed.</p>;
+  return (
+    <div className="mrf-items-table-wrap">
+      <table className="mrf-items-table required-materials-table">
+        <thead>
+          <tr>
+            <th>Material</th>
+            <th>SKU</th>
+            <th className="num">Qty</th>
+            {stock && <th className="num">In Stock</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((m) => {
+            const inv = stats.materials.find((x) => String(x.sku) === m.material_sku);
+            return (
+              <tr key={m.material_sku}>
+                <td>{m.name}</td>
+                <td>{m.material_sku}</td>
+                <td className="num">{`${m.quantity} ${m.unit}`}</td>
+                {stock && <td className="num">{inv ? `${Number(inv.quantity ?? 0)} ${String(inv.unit ?? '')}` : '—'}</td>}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 /**
  * Plain-text summary saved to `site_action`. Notifications, the activity feed
@@ -1290,12 +1464,18 @@ function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRema
               <SiteVisitPlanView row={row} />
             </section>
             <section className="complaint-note-card is-remarks">
-              <span>Zone Specialist Remarks</span>
-              <p>{String(row.remarks ?? '') || 'No remarks added yet.'}</p>
+              <span>Zone Specialist Findings</span>
+              <p>{String(row.remarks ?? '') || 'No findings added yet.'}</p>
             </section>
           </>
         )}
       </div>
+      {!hideRemarks && requiredMaterials(row).length > 0 && (
+        <>
+          <p className="detail-section-title">Required Materials (from the Zone Specialist)</p>
+          <RequiredMaterialsView row={row} stock />
+        </>
+      )}
       <ImageGallery images={row.images} />
     </>
   );
@@ -1629,6 +1809,7 @@ function IncidentViewButton({
   const [open, setOpen] = useState(false);
   const [showJobForm, setShowJobForm] = useState(false);
   const [remarks, setRemarks] = useState('');
+  const [reqMaterials, setReqMaterials] = useState<SiteVisitMaterialDraft[]>([]);
   const [siteVisit, setSiteVisit] = useState<SiteVisitDraft>(emptySiteVisit);
   const [billToCustomerId, setBillToCustomerId] = useState('');
   const [customers, setCustomers] = useState<BillingCustomerOption[]>([]);
@@ -1644,6 +1825,8 @@ function IncidentViewButton({
 
   const hasRemarks = String(c.row.remarks ?? '').trim() !== '';
   const hasSavedSitePlan = String(c.row.site_action ?? '').trim() !== '';
+  // Required materials stay editable until the Technical Team prices the complaint.
+  const materialsEditable = editable && hasSavedSitePlan && ['under_verification', 'in_progress'].includes(String(c.row.status));
   // A job order already exists for this incident — no second one may be created.
   const linkedJobOrder = stats.jobOrders.find(
     (j) => String(j.incident_ref ?? '') === String(c.row.ref_code ?? ''),
@@ -1663,6 +1846,7 @@ function IncidentViewButton({
 
   const openModal = () => {
     setRemarks(String(c.row.remarks ?? ''));
+    setReqMaterials(requiredMaterialDrafts(c.row));
     setSiteVisit(emptySiteVisit());
     setBillToCustomerId(String(c.row.bill_to_customer_id ?? ''));
     setUrgency(String(c.row.urgency ?? ''));
@@ -1712,6 +1896,15 @@ function IncidentViewButton({
             notify('Select the customer account that should receive the bill.', 'error');
             setSaving(false);
             return;
+          }
+          if (materialsEditable) {
+            const problem = materialListProblem(reqMaterials);
+            if (problem) {
+              notify(problem, 'error');
+              setSaving(false);
+              return;
+            }
+            patch.required_materials = reqMaterials.map((m) => ({ material_sku: m.sku, quantity: Number(m.quantity) }));
           }
           patch.remarks = remarks.trim();
           if (billToCustomerId) patch.bill_to_customer_id = billToCustomerId;
@@ -1840,12 +2033,22 @@ function IncidentViewButton({
               {hasSavedSitePlan && (
                 <>
                   <div className="form-group bill-to-reveal" style={{ marginTop: 18, marginBottom: 0 }}>
-                    <label>Zone Specialist Remarks</label>
+                    <label>Findings</label>
                     <textarea
                       value={remarks}
                       onChange={(e) => setRemarks(e.target.value)}
-                      placeholder="Assessment and findings…"
+                      placeholder="What did you verify on site? e.g. Leak on the customer's 1/2-inch line beside the meter"
                     />
+                  </div>
+                  <div className="form-group bill-to-reveal" style={{ marginTop: 18, marginBottom: 0 }}>
+                    <label>
+                      Required Materials <span className="address-optional">(carried to the Technical Team, Job Order and MRF)</span>
+                    </label>
+                    {materialsEditable ? (
+                      <RequiredMaterialsEditor value={reqMaterials} onChange={setReqMaterials} siteVisit={siteVisitMaterials(c.row)} />
+                    ) : (
+                      <div className="locked-site-plan"><RequiredMaterialsView row={c.row} /></div>
+                    )}
                   </div>
                   <div className="form-group bill-to-reveal" style={{ marginTop: 18, marginBottom: 0 }}>
                     <label>Bill To{freeConcern && <span className="address-optional"> (optional — this concern is normally free)</span>}</label>
@@ -1862,7 +2065,11 @@ function IncidentViewButton({
           )}
           {/* Technical Team: itemized charges — only while the complaint is Ongoing */}
           {estimateEditable && (
-            <ChargesEditor drafts={chargeDrafts} onDrafts={setChargeDrafts} />
+            <ChargesEditor
+              drafts={chargeDrafts}
+              onDrafts={setChargeDrafts}
+              prefilled={chargeLines(c.row).length === 0 && requiredMaterials(c.row).length > 0}
+            />
           )}
           {canEstimate && !estimateEditable && !c.archived && (
             <p style={{ marginTop: 14, color: 'var(--muted)', fontSize: 13 }}>
@@ -2084,10 +2291,12 @@ function JobOrderDetail({ row }: { row: EntityRow }) {
               <SiteVisitPlanView row={incident} />
             </section>
             <section className="complaint-note-card is-remarks">
-              <span>Zone Specialist Remarks</span>
-              <p>{String(incident.remarks ?? '') || 'No remarks added yet.'}</p>
+              <span>Zone Specialist Findings</span>
+              <p>{String(incident.remarks ?? '') || 'No findings added yet.'}</p>
             </section>
           </div>
+          <p className="detail-section-title">Required Materials (from the Zone Specialist)</p>
+          <RequiredMaterialsView row={incident} stock />
           <ImageGallery images={incident.images} />
         </>
       ) : row.incident_ref ? (
@@ -3883,6 +4092,22 @@ function RequestForm({
   const [items, setItems] = useState(() => [newItem()]);
   const updateItem = (key: string, patch: Partial<ReturnType<typeof newItem>>) =>
     setItems((list) => list.map((item) => (item.key === key ? { ...item, ...patch } : item)));
+
+  // Start the MRF from the Zone Specialist's required materials for the job
+  // order's complaint — only while the rows are still untouched.
+  const [prefilledFrom, setPrefilledFrom] = useState('');
+  useEffect(() => {
+    const ref = form.job_order_ref.trim();
+    if (form.request_type !== 'mrf' || !ref || prefilledFrom === ref) return;
+    if (!items.every((item) => !item.name.trim() && !item.sku)) return;
+    const job = stats.jobOrders.find((j) => String(j.ref_code ?? '') === ref);
+    const incident = job ? stats.incidents.find((i) => String(i.ref_code ?? '') === String(job.incident_ref ?? '')) : undefined;
+    const required = requiredMaterials(incident);
+    if (!required.length) return;
+    setPrefilledFrom(ref);
+    setItems(required.map((m) => ({ ...newItem(), name: m.name, sku: m.material_sku, quantity: String(m.quantity) })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.job_order_ref, form.request_type, stats.jobOrders, stats.incidents]);
   const stockOf = (sku: string) => (sku ? inventory.find((m) => String(m.sku) === sku) : undefined);
   const [saving, setSaving] = useState(false);
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
@@ -4019,6 +4244,11 @@ function RequestForm({
       {isMrf && (
         <div className="form-group">
           <label>Materials</label>
+          {prefilledFrom && prefilledFrom === form.job_order_ref.trim() && (
+            <p className="required-materials-note">
+              Filled in from the Zone Specialist's required materials for {prefilledFrom}. Adjust the quantities if needed.
+            </p>
+          )}
           <div className="mrf-item-editor">
             {items.map((item, index) => {
               const stock = stockOf(item.sku);

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Printer, X } from 'lucide-react';
 import { printHtml } from './print';
 
@@ -52,7 +53,9 @@ export function Modal({ title, open, onClose, onSubmit, submitText = 'Submit', s
 
   if (!open) return null;
 
-  return (
+  // Rendered into <body>, not where it is used: a modal opened from a table row
+  // would otherwise inherit that table's styles (fixed widths, ellipsis, …).
+  return createPortal(
     <div
       className="modal-overlay is-active"
       onMouseDown={(e) => {
@@ -88,6 +91,7 @@ export function Modal({ title, open, onClose, onSubmit, submitText = 'Submit', s
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

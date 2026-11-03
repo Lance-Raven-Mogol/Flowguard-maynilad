@@ -553,3 +553,6 @@ create index if not exists waste_disposals_status_idx    on public.waste_disposa
 
 -- RLS on (backend uses the service-role key, which bypasses it).
 alter table public.waste_disposals enable row level security;
+
+-- ---------- Zone Specialist required materials, entered once (2026-11-03) ----
+alter table public.incidents add column if not exists required_materials jsonb not null default '[]'::jsonb;

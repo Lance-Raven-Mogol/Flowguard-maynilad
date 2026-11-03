@@ -172,6 +172,27 @@ async function normalizeSiteVisit(values: Row): Promise<void> {
   values.site_visit_notes = String(values.site_visit_notes ?? '').trim();
 }
 
+/**
+ * The Zone Specialist's Required Materials — the inventory items the repair
+ * needs, entered once and carried to the Technical Team's price breakdown,
+ * the Job Order and the team leader's MRF. Names and units come from inventory.
+ */
+async function normalizeRequiredMaterials(raw: unknown): Promise<Row[]> {
+  const list = Array.isArray(raw) ? (raw as Row[]) : [];
+  if (list.length > MAX_MRF_ITEMS) throw badRequest(`List at most ${MAX_MRF_ITEMS} required materials.`);
+  const materials: Row[] = [];
+  for (const entry of list) {
+    const sku = String(entry.material_sku ?? '').trim();
+    const material = sku ? await materialBySku(sku) : undefined;
+    if (!material || material.archived) throw badRequest(`No active inventory item found for SKU "${sku}".`);
+    const qty = Number(entry.quantity);
+    if (!Number.isInteger(qty) || qty <= 0) throw badRequest(`Enter a whole-number quantity for "${material.name}".`);
+    if (materials.some((m) => m.material_sku === sku)) throw badRequest(`"${material.name}" is listed twice.`);
+    materials.push({ material_sku: sku, name: String(material.name ?? sku), quantity: qty, unit: String(material.unit ?? 'units') });
+  }
+  return materials;
+}
+
 /** Payment method stored for cash paid in person at the office. */
 const CASH_WALK_IN = 'Cash (Walk-in)';
 
@@ -1278,7 +1299,7 @@ export const resourceService = {
     }
     if (
       entity === 'incidents' &&
-      ('remarks' in values || 'site_action' in values || SITE_VISIT_FIELDS.some((f) => f in values)) &&
+      ('remarks' in values || 'required_materials' in values || 'site_action' in values || SITE_VISIT_FIELDS.some((f) => f in values)) &&
       user.role !== 'zone-specialist' &&
       user.role !== 'general-manager'
     ) {
@@ -1326,6 +1347,22 @@ export const resourceService = {
           values.published_at = new Date().toISOString();
         }
       }
+    }
+
+    // Required materials: set after the Site Visit Plan, and only until the
+    // Technical Team prices the complaint (the price is built from them).
+    if (entity === 'incidents' && 'required_materials' in values) {
+      const currentIncident = await repo.getRowById(def.table, id);
+      if (!currentIncident) throw notFound('Record not found.');
+      if (user.role !== 'general-manager') {
+        if (!String(currentIncident.site_action ?? '').trim()) {
+          throw badRequest('Save the Site Visit Plan before listing the required materials.');
+        }
+        if (!['under_verification', 'in_progress'].includes(String(currentIncident.status))) {
+          throw conflict('Required materials can no longer be changed once the complaint has been priced.');
+        }
+      }
+      values.required_materials = await normalizeRequiredMaterials(values.required_materials);
     }
 
     // Price: the Technical Team (or GM) prices an Ongoing complaint with a

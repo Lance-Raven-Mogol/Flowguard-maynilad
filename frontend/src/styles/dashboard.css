@@ -1357,16 +1357,16 @@ td strong {
 
 .job-orders-table table {
   table-layout: fixed;
-  min-width: 920px;
+  min-width: 1220px; /* wider than the panel → the table scrolls sideways instead of cutting cells */
 }
 
-.job-orders-table th:nth-child(1) { width: 105px; } /* Ref */
-.job-orders-table th:nth-child(2) { width: auto;  } /* Title â€” flex */
-.job-orders-table th:nth-child(3) { width: 120px; } /* Team */
-.job-orders-table th:nth-child(4) { width: 140px; } /* Assigned To */
-.job-orders-table th:nth-child(5) { width: 105px; } /* Schedule */
-.job-orders-table th:nth-child(6) { width: 135px; } /* Status */
-.job-orders-table th:last-child   { width: 200px; } /* Actions */
+.job-orders-table th:nth-child(1) { width: 110px; } /* Ref */
+.job-orders-table th:nth-child(2) { width: 240px; } /* Title */
+.job-orders-table th:nth-child(3) { width: 140px; } /* Team */
+.job-orders-table th:nth-child(4) { width: 170px; } /* Assigned To */
+.job-orders-table th:nth-child(5) { width: 170px; } /* Schedule */
+.job-orders-table th:nth-child(6) { width: 150px; } /* Status */
+.job-orders-table th:last-child   { width: 240px; } /* Actions */
 
 /* Customer ↔ Commercial Department modern support inbox. */
 .support-chat-layout {
@@ -1556,16 +1556,18 @@ td strong {
 /* Incidents use the same stable, single-line table rhythm as Inventory and JOs. */
 .incidents-table table {
   table-layout: fixed;
-  min-width: 920px;
+  min-width: 1440px; /* wider than the panel → the table scrolls sideways instead of cutting cells */
 }
 
-.incidents-table th:nth-child(1) { width: 100px; } /* Ref */
-.incidents-table th:nth-child(2) { width: 110px; } /* Type */
-.incidents-table th:nth-child(3) { width: auto;  } /* Description â€” flex */
-.incidents-table th:nth-child(4) { width: 130px; } /* Location */
-.incidents-table th:nth-child(5) { width: 90px;  } /* Urgency */
-.incidents-table th:nth-child(6) { width: 130px; } /* Status */
-.incidents-table th:last-child   { width: 200px; } /* Actions */
+.incidents-table th:nth-child(1) { width: 110px; } /* Ref */
+.incidents-table th:nth-child(2) { width: 160px; } /* Category */
+.incidents-table th:nth-child(3) { width: 180px; } /* Concern */
+.incidents-table th:nth-child(4) { width: 110px; } /* Price */
+.incidents-table th:nth-child(5) { width: 200px; } /* Description */
+.incidents-table th:nth-child(6) { width: 190px; } /* Location */
+.incidents-table th:nth-child(7) { width: 120px; } /* Urgency */
+.incidents-table th:nth-child(8) { width: 140px; } /* Status */
+.incidents-table th:last-child   { width: 240px; } /* Actions */
 
 /* Waste Management: same single-line rhythm and action buttons as Incidents. */
 .waste-table table {
@@ -6580,18 +6582,120 @@ input:checked + .slider:before {
 .charges-covered input { margin-top: 3px; width: auto; }
 .charges-covered strong { display: block; }
 .charges-covered small { color: var(--muted); }
-.charge-row { display: grid; grid-template-columns: 78px minmax(0, 1fr) 110px 100px 32px; gap: 8px; align-items: center; }
-.charge-kind { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
-.charge-amount { text-align: right; font-variant-numeric: tabular-nums; }
 .charges-add { display: flex; gap: 8px; flex-wrap: wrap; }
-.charges-total { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 12px; border-radius: 10px; background: #f6f8fb; }
-.charges-total strong { font-size: 18px; font-variant-numeric: tabular-nums; }
 .charges-table tfoot th { text-align: left; border-top: 2px solid #e3e8f0; padding-top: 8px; }
 .charges-table tfoot th.num, .charges-table td.num { text-align: right; }
+/* Long material names wrap instead of widening the table past the modal. */
+.charges-table td:nth-child(2), .required-materials-table td:first-child { white-space: normal; overflow-wrap: anywhere; }
+.charges-table td small { display: block; color: var(--muted); font-size: 11.5px; }
+
+/* Technical Team price breakdown: one card, a labelled row per line. */
+/* Never wider than the modal: the card's contents (e.g. a long material name in
+   the dropdown) must not size the column, so the inline size is contained. */
+.charges-editor { grid-template-columns: minmax(0, 1fr); width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.charges-editor > * { min-width: 0; max-width: 100%; }
+.charges-editor .detail-section-title { margin-bottom: 0; }
+.charges-editor .required-materials-note { margin: 0; overflow-wrap: anywhere; }
+.charges-card { border: 1px solid var(--line-strong); border-radius: 14px; background: #fff; overflow: hidden; contain: inline-size; }
+.charge-line > * { min-width: 0; }
+.charges-card select { max-width: 100%; text-overflow: ellipsis; }
+.charge-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px 112px 34px;
+  gap: 14px;
+  align-items: start;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.charge-line-head {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  align-items: center;
+  background: var(--panel-soft);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.charge-line-head .num { text-align: right; }
+.charge-item { display: grid; gap: 6px; min-width: 0; }
+.charge-pill {
+  justify-self: start;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.charge-pill.is-material { color: var(--blue-700); background: var(--blue-50); }
+.charge-pill.is-labor { color: #0b7a5c; background: #e3f6ef; }
+.charge-pill.is-fee { color: #8a5a12; background: #fdf1dc; }
+.charges-card select,
+.charges-card input {
+  width: 100%;
+  height: 40px;
+  min-width: 0;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--text);
+  background: #fff;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.charges-card select:focus,
+.charges-card input:focus { border-color: var(--blue); box-shadow: var(--ring); }
+.charge-hint { font-size: 12px; color: var(--muted); }
+.charge-hint.is-warn { color: #b26b00; }
+/* Qty and amount sit level with the item field (below the pill). */
+.charge-qty-field,
+.charge-peso-field,
+.charge-amount,
+.charge-remove { margin-top: 26px; }
+.charge-qty-field { display: flex; align-items: center; gap: 8px; }
+.charge-qty-field input { width: 72px; flex: none; text-align: right; }
+.charge-qty-field span { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.charge-peso-field { position: relative; }
+.charge-peso-field > span { position: absolute; top: 50%; left: 12px; transform: translateY(-50%); font-weight: 700; color: var(--text-soft); pointer-events: none; }
+.charges-card .charge-peso-field input { padding-left: 28px; text-align: right; }
+.charge-amount { line-height: 40px; text-align: right; font-size: 14.5px; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.charge-remove {
+  width: 34px;
+  height: 40px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.charge-remove:hover { color: var(--bad); border-color: #f6c6d4; background: #fdebf2; }
+.charges-empty { margin: 0; padding: 18px 16px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line); }
+.charges-card .charges-add { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.charge-add-btn {
+  padding: 7px 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.charge-add-btn:hover { border-color: var(--blue); background: var(--blue-50); }
+.charges-total { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 16px; background: var(--panel-soft); }
+.charges-total span { font-size: 13px; font-weight: 700; color: var(--text-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+.charges-total strong { font-size: 20px; color: var(--text); font-variant-numeric: tabular-nums; }
+.charges-footnote { color: var(--muted); font-size: 12px; line-height: 1.5; }
 @media (max-width: 640px) {
-  .charge-row { grid-template-columns: 1fr 1fr; }
-  .charge-row .charge-kind { grid-column: 1 / -1; }
-  .charge-row > select, .charge-row > input:not(.charge-qty) { grid-column: 1 / -1; }
+  .charge-line { grid-template-columns: minmax(0, 1fr) auto 34px; gap: 10px 12px; padding: 14px; }
+  .charge-line-head { display: none; }
+  .charge-item { grid-column: 1 / -1; }
+  .charge-qty-field, .charge-peso-field, .charge-amount, .charge-remove { margin-top: 0; }
+  .charges-card .charges-add, .charges-total { padding-left: 14px; padding-right: 14px; }
 }
 
 .charges-waived { margin: 8px 0 0; font-weight: 600; color: #16a37b; }
@@ -6738,4 +6842,24 @@ input:checked + .slider:before {
   width: 100%;
   box-sizing: border-box;
   margin-top: 8px;
+}
+
+/* Required materials: entered once by the Zone Specialist, reused downstream. */
+.required-materials-editor .charges-add {
+  margin-top: 4px;
+}
+.required-materials-empty {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.required-materials-note {
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--blue-100);
+  background: var(--blue-50);
+  color: var(--blue);
+  font-size: 12.5px;
+  line-height: 1.5;
 }
