@@ -145,6 +145,27 @@ export const RESOURCES: Record<string, ResourceDef> = {
     autoKeys: [{ column: 'ref_code', prefix: 'REQ', digits: 4 }],
   },
 
+  'waste-disposals': {
+    table: 'waste_disposals',
+    // Waste management for leftover materials that are Not in Good Condition:
+    //   team leader reports them on Log Leftovers → status pending_disposal
+    //   Inventory Officer disposes them with photo proof → disposed
+    //   General Manager checks the photos → verified (or rejected → redo)
+    // Who may do which step is enforced in resource.service.ts.
+    writeRoles: ['inventory-officer', 'contractor', 'inhouse-team'],
+    allowed: [
+      'job_order_ref', 'mrf_id', 'material_sku', 'material_name', 'quantity', 'unit',
+      'condition', 'remarks', 'status',
+      'disposal_method', 'disposal_location', 'disposal_images', 'disposal_notes',
+      'verification_notes', 'archived',
+    ],
+    required: ['job_order_ref', 'material_name'],
+    numeric: ['quantity'],
+    critical: ['status', 'disposal_method', 'disposal_location', 'disposal_images', 'verification_notes'],
+    autoKeys: [{ column: 'ref_code', prefix: 'WST', digits: 5 }],
+    touch: 'updated_at',
+  },
+
   assets: {
     table: 'assets',
     writeRoles: ['technical-team', 'zone-specialist', 'contractor', 'inhouse-team'],

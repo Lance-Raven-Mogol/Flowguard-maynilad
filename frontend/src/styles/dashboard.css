@@ -1268,7 +1268,8 @@ td strong {
 /* â”€â”€â”€ Shared single-row cell behaviour for the three dense operational tables â”€ */
 .incidents-table td,
 .job-orders-table td,
-.inventory-materials-table td {
+.inventory-materials-table td,
+.waste-table td {
   height: 54px;
   max-height: 54px;
   overflow: hidden;
@@ -1279,7 +1280,8 @@ td strong {
 
 .incidents-table td > *:not(.action-group),
 .job-orders-table td > *:not(.action-group),
-.inventory-materials-table td > *:not(.action-group) {
+.inventory-materials-table td > *:not(.action-group),
+.waste-table td > *:not(.action-group) {
   max-width: 100%;
   overflow: hidden;
   white-space: nowrap;
@@ -1289,7 +1291,8 @@ td strong {
 /* Action column layout: status select full-width, buttons in a row below */
 .incidents-table .action-group,
 .job-orders-table .action-group,
-.inventory-materials-table .action-group {
+.inventory-materials-table .action-group,
+.waste-table .action-group {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -1307,14 +1310,16 @@ td strong {
 
 .incidents-table .action-group .btn-row,
 .job-orders-table .action-group .btn-row,
-.inventory-materials-table .action-group .btn-row {
+.inventory-materials-table .action-group .btn-row,
+.waste-table .action-group .btn-row {
   display: flex;
   gap: 4px;
   width: 100%;
 }
 .incidents-table .action-group .btn-row .btn-action,
 .job-orders-table .action-group .btn-row .btn-action,
-.inventory-materials-table .action-group .btn-row .btn-action {
+.inventory-materials-table .action-group .btn-row .btn-action,
+.waste-table .action-group .btn-row .btn-action {
   flex: 1 1 0;
   justify-content: center;
   min-width: 0;
@@ -1326,7 +1331,8 @@ td strong {
 /* Single button (e.g. View-only) â€” just full width */
 .incidents-table .action-group > .btn-action,
 .job-orders-table .action-group > .btn-action,
-.inventory-materials-table .action-group > .btn-action {
+.inventory-materials-table .action-group > .btn-action,
+.waste-table .action-group > .btn-action {
   width: 100%;
   justify-content: center;
   padding: 7px 8px;
@@ -1560,6 +1566,20 @@ td strong {
 .incidents-table th:nth-child(5) { width: 90px;  } /* Urgency */
 .incidents-table th:nth-child(6) { width: 130px; } /* Status */
 .incidents-table th:last-child   { width: 200px; } /* Actions */
+
+/* Waste Management: same single-line rhythm and action buttons as Incidents. */
+.waste-table table {
+  table-layout: fixed;
+  min-width: 980px;
+}
+.waste-table th:nth-child(1) { width: 110px; } /* Ref */
+.waste-table th:nth-child(2) { width: auto;  } /* Material */
+.waste-table th:nth-child(3) { width: 80px;  } /* Qty */
+.waste-table th:nth-child(4) { width: 100px; } /* Condition */
+.waste-table th:nth-child(5) { width: 115px; } /* Job Order */
+.waste-table th:nth-child(6) { width: 130px; } /* Reported By */
+.waste-table th:nth-child(7) { width: 150px; } /* Status */
+.waste-table th:last-child   { width: 230px; } /* Actions */
 
 
 
@@ -4391,6 +4411,22 @@ input:checked + .slider:before {
   font-weight: 600;
   color: #c0294e;
 }
+/* Remarks for a Not in Good Condition item (sent to Waste Management) */
+.return-remarks-row input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--text);
+  background: #fff;
+  outline: none;
+}
+.return-remarks-row input:focus {
+  border-color: var(--blue);
+  box-shadow: var(--ring);
+}
 
 /* Condition + Return to Inventory — side by side, each full-height */
 .return-toggles-row {
@@ -6694,4 +6730,12 @@ input:checked + .slider:before {
 .senior-discount-sum dd {
   margin: 0;
   text-align: right;
+}
+
+/* Waste Management: "Other" disposal method typed right under the dropdown. */
+.form-group .disposal-other-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
 }
