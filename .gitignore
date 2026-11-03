@@ -3,3 +3,6 @@ dist
 .env
 *.log
 .DS_Store
+
+# Personal TODO list (local only)
+TODO.md
