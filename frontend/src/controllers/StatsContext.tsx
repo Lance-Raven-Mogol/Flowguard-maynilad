@@ -30,6 +30,8 @@ export interface DashboardStats {
   assets: EntityRow[];
   advisories: EntityRow[];
   payments: EntityRow[];
+  /** Not in Good Condition leftovers — Inventory Officer and General Manager only. */
+  wasteDisposals: EntityRow[];
   /** Staff user list — populated only for the General Manager role; empty for others. */
   users: StatsUser[];
 }
@@ -42,6 +44,7 @@ const EMPTY: DashboardStats = {
   assets: [],
   advisories: [],
   payments: [],
+  wasteDisposals: [],
   users: [],
 };
 
@@ -53,6 +56,7 @@ const ENTITIES: [keyof Omit<DashboardStats, 'users'>, string][] = [
   ['assets', 'assets'],
   ['advisories', 'advisories'],
   ['payments', 'payments'],
+  ['wasteDisposals', 'waste-disposals'],
 ];
 
 interface StatsValue {
@@ -70,9 +74,12 @@ export function StatsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const canFetchUsers = user?.role === 'general-manager';
   const canFetchPayments = ['general-manager', 'commercial-department', 'customer'].includes(user?.role ?? '');
+  const canFetchWaste = ['general-manager', 'inventory-officer'].includes(user?.role ?? '');
   const accessibleEntities = useMemo(
-    () => ENTITIES.filter(([key]) => key !== 'payments' || canFetchPayments),
-    [canFetchPayments],
+    () => ENTITIES.filter(([key]) =>
+      (key !== 'payments' || canFetchPayments) &&
+      (key !== 'wasteDisposals' || canFetchWaste)),
+    [canFetchPayments, canFetchWaste],
   );
   const [stats, setStats] = useState<DashboardStats>(EMPTY);
   const [loading, setLoading] = useState(true);
@@ -233,6 +240,7 @@ const planVersion = (incident: EntityRow): string => {
 
 const sitePlanBadgeId = (incident: EntityRow): string => `site-plan:${incident.id}:${planVersion(incident)}`;
 const billingBadgeId = (bill: EntityRow): string => `billing:${bill.id}:${String(bill.status ?? 'unpaid')}`;
+const wasteBadgeId = (w: EntityRow): string => `waste:${w.id}:${String(w.status ?? '')}`;
 const paymentStatusLabel = (status: unknown): string =>
   String(status ?? 'unpaid').replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 const paymentTone = (status: unknown): Alert['tone'] => {
@@ -268,6 +276,9 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
   const overduePayments = stats.payments.filter((p) => p.status === 'overdue' || p.status === 'late');
   const pendingSupplies = stats.materialRequests.filter((r) => r.request_type === 'general' && r.status === 'pending');
   const incidentsWithSitePlan = stats.incidents.filter((i) => String(i.site_action ?? '').trim() !== '');
+  const activeWaste = stats.wasteDisposals.filter((w) => !w.archived);
+  const wasteToDispose = activeWaste.filter((w) => w.status === 'pending_disposal' || w.status === 'rejected');
+  const wasteToVerify = activeWaste.filter((w) => w.status === 'disposed');
 
   // Which sidebar view each alert kind opens, per role.
   const incView = role === 'general-manager' ? 'incidents' : role === 'zone-specialist' ? 'investigations' : 'joborders';
@@ -352,8 +363,28 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
     if (role === 'inventory-officer') {
       if (mrfsToVerify.length) alerts.push({ key: aggKey('mrf-verify', mrfsToVerify), view: mrfView, icon: 'file-input', title: `${mrfsToVerify.length} MRF(s) need stock verification`, detail: 'Check stock, then send to the General Manager', tone: 'warn' });
       if (mrfsToRelease.length) alerts.push({ key: aggKey('mrf-release', mrfsToRelease), view: mrfView, icon: 'package-check', title: `${mrfsToRelease.length} MRF(s) ready for release`, detail: 'Approved by the General Manager', tone: 'info' });
-    } else if (mrfsToApprove.length) {
-      alerts.push({ key: aggKey('mrf-approve', mrfsToApprove), view: mrfView, icon: 'file-input', title: `${mrfsToApprove.length} MRF(s) awaiting your approval`, detail: 'Stock verified by the Inventory Officer', tone: 'warn' });
+      wasteToDispose.forEach((w) => alerts.push({
+        key: wasteBadgeId(w),
+        view: 'waste',
+        icon: 'trash-2',
+        title: w.status === 'rejected'
+          ? `Disposal ${w.ref_code} was rejected by the GM`
+          : `Dispose ${w.quantity} ${w.unit ?? ''} of ${w.material_name}`.replace(/\s+/g, ' '),
+        detail: w.status === 'rejected'
+          ? String(w.verification_notes ?? 'Redo the disposal').slice(0, 100)
+          : `Not in Good Condition · ${String(w.job_order_ref ?? '')} · ${String(w.reported_by ?? '')}`,
+        tone: w.status === 'rejected' ? 'danger' : 'warn',
+      }));
+    } else {
+      if (mrfsToApprove.length) alerts.push({ key: aggKey('mrf-approve', mrfsToApprove), view: mrfView, icon: 'file-input', title: `${mrfsToApprove.length} MRF(s) awaiting your approval`, detail: 'Stock verified by the Inventory Officer', tone: 'warn' });
+      wasteToVerify.forEach((w) => alerts.push({
+        key: wasteBadgeId(w),
+        view: 'waste',
+        icon: 'trash-2',
+        title: `Verify disposal ${w.ref_code}`,
+        detail: `${w.quantity} ${w.unit ?? ''} of ${w.material_name} · disposed by ${String(w.disposed_by ?? 'Inventory')}`.replace(/\s+/g, ' '),
+        tone: 'warn',
+      }));
     }
     if (pendingPurchases.length) alerts.push({ key: aggKey('purchase', pendingPurchases), view: 'purchase', icon: 'shopping-cart', title: `${pendingPurchases.length} purchase request(s) pending`, detail: 'Awaiting approval', tone: 'warn' });
   }
@@ -440,6 +471,10 @@ export function buildBadgeItems(stats: DashboardStats, role: string, fullName: s
     .map(billingBadgeId);
 
   const JOB_LEVEL_ROLES = new Set(['zone-specialist', 'technical-team', 'inventory-officer', 'contractor']);
+  const activeWaste = stats.wasteDisposals.filter((w) => !w.archived);
+  const wasteToDispose = activeWaste.filter((w) => w.status === 'pending_disposal' || w.status === 'rejected').map(wasteBadgeId);
+  const wasteToVerify = activeWaste.filter((w) => w.status === 'disposed').map(wasteBadgeId);
+
   const unlevedUsers = stats.users
     .filter((u) => !u.isArchived && JOB_LEVEL_ROLES.has(u.role) && u.jobLevel === null)
     .map((u) => u.id);
@@ -461,9 +496,9 @@ export function buildBadgeItems(stats: DashboardStats, role: string, fullName: s
     case 'technical-team':
       return { joborders: activeJobs };
     case 'inventory-officer':
-      return { materials: [...outOfStock, ...lowStock], mrf: [...mrfsToVerify, ...mrfsToRelease, ...pendingPurchases] };
+      return { materials: [...outOfStock, ...lowStock], mrf: [...mrfsToVerify, ...mrfsToRelease, ...pendingPurchases], waste: wasteToDispose };
     case 'general-manager':
-      return { incidents: open, requests: [...mrfsToApprove, ...pendingSupplies, ...pendingPurchases], advisories: draftAdv, payments: overduePayments, inventory: [...outOfStock, ...lowStock], users: unlevedUsers };
+      return { incidents: open, requests: [...mrfsToApprove, ...pendingSupplies, ...pendingPurchases], advisories: draftAdv, payments: overduePayments, inventory: [...outOfStock, ...lowStock], users: unlevedUsers, waste: wasteToVerify };
     case 'commercial-department':
       return { incidents: sitePlanItems, billing: billingReviewItems };
     default:

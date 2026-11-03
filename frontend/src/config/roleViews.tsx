@@ -24,6 +24,7 @@ import {
   RequestsModule,
   SuppliersModule,
   UsersPanel,
+  WasteManagementModule,
 } from './modules';
 
 export interface ViewContext {
@@ -163,6 +164,10 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter }) => <SuppliersModule filter={filter} />,
       },
       {
+        id: 'waste', label: 'Waste Management', icon: 'trash-2', group: 'main',
+        render: ({ filter }) => <WasteManagementModule filter={filter} />,
+      },
+      {
         id: 'payments', label: 'Billing', icon: 'credit-card', group: 'main',
         render: ({ filter, navigate }) => <BillingModule filter={filter} navigate={navigate} />,
       },
@@ -204,10 +209,15 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         id: 'suppliers', label: 'Suppliers', icon: 'truck', group: 'main',
         render: ({ filter }) => <SuppliersModule filter={filter} />,
       },
+      {
+        id: 'waste', label: 'Waste Management', icon: 'trash-2', group: 'main',
+        render: ({ filter }) => <WasteManagementModule filter={filter} />,
+      },
       faqView('help', 'Help', 'circle-help', 'Inventory Help', [
         { q: 'How do I add a new material?', a: "In 'Material List' click 'Add New Item'. A SKU is generated automatically. Set the quantity, minimum level, supplier and source." },
         { q: 'How are low-stock items flagged?', a: 'Set a material status to Low Stock (or it can be marked when quantity nears the minimum). The overview and notifications surface them automatically.' },
         { q: 'How do I process a material request?', a: "In 'Requests', click 'Verify Stock' on an MRF to check every material against inventory, then mark it Stock Verified (it goes to the General Manager) or Reject it. Once the GM approves, click 'Release' when the materials are handed out." },
+        { q: 'How do I dispose of materials that are Not in Good Condition?', a: "When a team leader logs leftovers as Not in Good Condition, they appear in 'Waste Management'. Click 'Dispose', choose the method and location, and attach a photo as proof. The General Manager then verifies it from the photo. If it is rejected, click 'Redo Disposal'." },
       ]),
       settings(),
     ],

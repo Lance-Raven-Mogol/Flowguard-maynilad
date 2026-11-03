@@ -509,6 +509,140 @@ async function settlePurchaseReceived(prId: string, user: PublicUser): Promise<v
   }
 }
 
+/* ------------------------------------------------------ Waste management */
+const WASTE_STATUS_LABEL: Record<string, string> = {
+  pending_disposal: 'Pending Disposal',
+  disposed: 'For GM Verification',
+  verified: 'Verified',
+  rejected: 'Rejected by GM',
+};
+const WASTE_VIEW_ROLES: Role[] = ['general-manager', 'inventory-officer', 'contractor', 'inhouse-team'];
+const WASTE_CONDITIONS = ['fair', 'damaged'];
+const MAX_DISPOSAL_PHOTOS = 5;
+
+const sameName = (a: unknown, b: string) => String(a ?? '').trim().toLowerCase() === b.trim().toLowerCase();
+
+/**
+ * A team leader reports a leftover material that is Not in Good Condition.
+ * It must have been released to that (completed) job order; the record always
+ * starts at pending_disposal, attributed to the caller.
+ */
+async function prepareWasteCreate(user: PublicUser, values: Row): Promise<void> {
+  if (!['contractor', 'inhouse-team', 'general-manager'].includes(user.role)) {
+    throw forbidden('Only the job order team leader can report materials that are not in good condition.');
+  }
+  const jobOrderRef = String(values.job_order_ref ?? '').trim();
+  const jobOrder = (await repo.findRowsBy('job_orders', 'ref_code', jobOrderRef)).find((j) => !j.archived);
+  if (!jobOrder) throw badRequest(`Job order ${jobOrderRef || '(none)'} was not found.`);
+  if (String(jobOrder.status) !== 'completed') {
+    throw conflict('Leftover materials can only be reported for a completed job order.');
+  }
+  if (user.role !== 'general-manager' && !sameName(jobOrder.team_leader, user.fullName)) {
+    throw forbidden('Only the assigned team leader can report leftovers for this job order.');
+  }
+
+  const quantity = Number(values.quantity);
+  if (!Number.isFinite(quantity) || quantity <= 0) throw badRequest('Quantity must be greater than zero.');
+
+  // The material must have been released to this job order.
+  const sku = String(values.material_sku ?? '').trim();
+  const released = (await repo.findRowsBy('material_requests', 'job_order_ref', String(jobOrder.ref_code)))
+    .filter((r) => String(r.status) === 'released' && !r.archived)
+    .flatMap((r) => mrfItems(r).map((item) => ({ ...item, mrfId: String(r.id) })))
+    .filter((item) => item.material_sku === sku);
+  if (!sku || released.length === 0) {
+    throw badRequest(`${sku || 'This material'} was not released to ${jobOrder.ref_code}.`);
+  }
+  const releasedQty = released.reduce((sum, item) => sum + item.quantity, 0);
+  if (quantity > releasedQty) {
+    throw badRequest(`Only ${releasedQty} ${released[0].unit} of ${sku} was released to ${jobOrder.ref_code}.`);
+  }
+
+  const condition = String(values.condition ?? 'damaged').toLowerCase();
+  values.job_order_ref = jobOrder.ref_code;
+  values.material_sku = sku;
+  values.mrf_id = String(values.mrf_id ?? '').trim() || released[0].mrfId;
+  values.unit = String(values.unit ?? '').trim() || released[0].unit;
+  values.quantity = quantity;
+  values.condition = WASTE_CONDITIONS.includes(condition) ? condition : 'damaged';
+  values.remarks = String(values.remarks ?? '').trim().slice(0, 500);
+  values.status = 'pending_disposal';
+  values.reported_by = user.fullName;
+  values.reported_by_id = user.id;
+  values.reported_by_role = user.role;
+  for (const key of ['disposal_method', 'disposal_location', 'disposal_images', 'disposal_notes', 'verification_notes', 'archived']) {
+    delete values[key];
+  }
+}
+
+/**
+ * The two steps after a report: the Inventory Officer records the disposal
+ * (method, location, photo proof), then the General Manager verifies it from
+ * the photos — or rejects it with a reason, sending it back to the officer.
+ * Returns exactly the columns to write; everything else in the body is ignored.
+ */
+async function prepareWasteUpdate(user: PublicUser, id: string, values: Row): Promise<Row> {
+  const current = await repo.getRowById('waste_disposals', id);
+  if (!current) throw notFound('Waste record not found.');
+  const isGM = user.role === 'general-manager';
+  const from = String(current.status ?? 'pending_disposal');
+  const to = 'status' in values ? String(values.status ?? '') : from;
+  const out: Row = {};
+  const now = new Date().toISOString();
+
+  if ('archived' in values) {
+    if (!isGM) throw forbidden('Only the General Manager can archive waste records.');
+    out.archived = values.archived === true;
+  }
+
+  if (to !== from) {
+    if (to === 'disposed') {
+      if (!['inventory-officer', 'general-manager'].includes(user.role)) {
+        throw forbidden('Only the Inventory Officer can record a disposal.');
+      }
+      if (!['pending_disposal', 'rejected'].includes(from)) {
+        throw conflict(`A record that is ${WASTE_STATUS_LABEL[from] ?? from} cannot be disposed again.`);
+      }
+      const method = String(values.disposal_method ?? '').trim();
+      const location = String(values.disposal_location ?? '').trim();
+      const photos = Array.isArray(values.disposal_images) ? values.disposal_images.filter((p) => typeof p === 'string' && p) : [];
+      if (!method) throw badRequest('Select how the material was disposed.');
+      if (!location) throw badRequest('Enter where the material was disposed.');
+      if (photos.length === 0) throw badRequest('Attach at least one photo as proof of disposal.');
+      if (photos.length > MAX_DISPOSAL_PHOTOS) throw badRequest(`Attach at most ${MAX_DISPOSAL_PHOTOS} photos.`);
+      Object.assign(out, {
+        status: 'disposed',
+        disposal_method: method.slice(0, 80),
+        disposal_location: location.slice(0, 200),
+        disposal_images: photos,
+        disposal_notes: String(values.disposal_notes ?? '').trim().slice(0, 500),
+        disposed_by: user.fullName,
+        disposed_by_id: user.id,
+        disposed_at: now,
+        verified_by: null,
+        verified_at: null,
+      });
+    } else if (to === 'verified' || to === 'rejected') {
+      if (!isGM) throw forbidden('Only the General Manager can verify a disposal.');
+      if (from !== 'disposed') throw conflict('Only a recorded disposal can be verified.');
+      const notes = String(values.verification_notes ?? '').trim().slice(0, 500);
+      if (to === 'rejected' && !notes) throw badRequest('Give a reason so the Inventory Officer knows what to fix.');
+      Object.assign(out, { status: to, verification_notes: notes, verified_by: user.fullName, verified_at: now });
+    } else {
+      throw badRequest(`A record that is ${WASTE_STATUS_LABEL[from] ?? from} cannot be moved to ${WASTE_STATUS_LABEL[to] ?? to}.`);
+    }
+  }
+
+  if (Object.keys(out).length === 0) throw badRequest('Nothing to update on this waste record.');
+  return out;
+}
+
+/** Audit details for a waste write — photos are counted, not copied into the log. */
+function wasteAuditDetails(values: Row): Row {
+  const { disposal_images: photos, ...rest } = values;
+  return Array.isArray(photos) ? { ...rest, disposal_photo_count: photos.length } : rest;
+}
+
 export const resourceService = {
   async list(entity: string, user: PublicUser, archived?: 'only' | 'all'): Promise<Row[]> {
     const def = getDef(entity);
@@ -524,7 +658,14 @@ export const resourceService = {
     if (entity === 'team-schedules' && !['technical-team', 'general-manager'].includes(user.role)) {
       throw forbidden('Only the Technical Department can view the team schedule.');
     }
+    if (entity === 'waste-disposals' && !WASTE_VIEW_ROLES.includes(user.role)) {
+      throw forbidden('Only the Inventory Officer and General Manager can view waste management.');
+    }
     let rows = await repo.listRows(def.table, { archived });
+    // Field teams only see the items they reported themselves.
+    if (entity === 'waste-disposals' && ['contractor', 'inhouse-team'].includes(user.role)) {
+      rows = rows.filter((row) => String(row.reported_by_id ?? '') === user.id);
+    }
     if (entity === 'incidents' && user.role === 'customer') {
       const ownName = user.fullName.trim().toLowerCase();
       rows = rows.filter((row) =>
@@ -692,6 +833,8 @@ export const resourceService = {
       }
     }
 
+    if (entity === 'waste-disposals') await prepareWasteCreate(user, values);
+
     for (const field of def.required) {
       if (values[field] === undefined || values[field] === '' || values[field] === null) {
         throw badRequest(`"${field}" is required.`);
@@ -849,7 +992,24 @@ export const resourceService = {
             quantity_change: Number(row.quantity ?? 0),
           }
         : values;
-      await logAudit(entity, String(row.id ?? ''), 'create', user.fullName, user.role, auditDetails);
+      if (entity === 'waste-disposals') {
+        // Filed as a leftover log on the MRF so Log Leftovers counts it as
+        // already logged and Inventory History shows it.
+        await logAudit('material-requests', String(row.mrf_id ?? ''), 'leftover_log', user.fullName, user.role, {
+          description: `${user.fullName} reported ${row.quantity} ${row.unit ?? ''} of "${row.material_name}" (${row.material_sku}) as not in good condition — ${row.condition}`,
+          job_order_ref: row.job_order_ref,
+          material_name: row.material_name,
+          material_sku: row.material_sku,
+          qty_leftover: Number(row.quantity ?? 0),
+          unit: row.unit,
+          condition: row.condition,
+          leftover_status: 'not_good_condition',
+          restocked: false,
+          waste_ref: row.ref_code,
+        });
+      } else {
+        await logAudit(entity, String(row.id ?? ''), 'create', user.fullName, user.role, auditDetails);
+      }
       return enrich(entity, row);
     } catch (err) {
       mapDbError(err);
@@ -1144,6 +1304,11 @@ export const resourceService = {
         throw badRequest('The Site Visit Plan summary is missing.');
       }
     }
+    if (entity === 'waste-disposals') {
+      const prepared = await prepareWasteUpdate(user, id, values);
+      for (const key of Object.keys(values)) delete values[key];
+      Object.assign(values, prepared);
+    }
     if (def.touch) values[def.touch] = new Date().toISOString();
     if (Object.keys(values).length === 0) throw badRequest('No valid fields to update.');
 
@@ -1414,6 +1579,8 @@ export const resourceService = {
               variance: quantityChange,
             } : {}),
           }
+        : entity === 'waste-disposals'
+        ? { ...wasteAuditDetails(values), ref_code: row.ref_code, material_name: row.material_name, job_order_ref: row.job_order_ref }
         : values;
       await logAudit(entity, id, 'update', user.fullName, user.role, auditDetails);
       return enrich(entity, row);
@@ -1427,6 +1594,9 @@ export const resourceService = {
     const def = getDef(entity);
     if (entity === 'support-messages') throw forbidden('Inquiry messages cannot be deleted.');
     if (!canWrite(def, user.role)) throw forbidden('You do not have permission to delete this record.');
+    if (entity === 'waste-disposals' && user.role !== 'general-manager') {
+      throw forbidden('Waste records cannot be deleted. The General Manager can archive them.');
+    }
     if (entity === 'team-schedules') {
       const schedule = await repo.getRowById(def.table, id);
       if (!schedule) throw notFound('Schedule not found.');

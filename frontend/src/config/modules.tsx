@@ -2112,6 +2112,8 @@ interface ReturnRow {
   returnQty: string;
   quality: ReturnQuality;
   isUsable: boolean;
+  /** Team leader's note on a Not in Good Condition item (goes to Waste Management). */
+  remarks: string;
 }
 
 /**
@@ -2120,7 +2122,8 @@ interface ReturnRow {
  * - Only shows items linked to an inventory SKU (custom/unnamed materials excluded).
  * - Qty is hard-capped to the released amount on every keystroke.
  * - Writes one audit-log entry per item on submit.
- * - Usable items are added back to inventory; damaged/unusable are logged only.
+ * - Usable items are added back to inventory; items Not in Good Condition go to
+ *   Waste Management for the Inventory Officer to dispose (GM verifies).
  */
 function MaterialReturnModal({
   jobOrderRef,
@@ -2196,6 +2199,7 @@ function MaterialReturnModal({
             returnQty: '',
             quality: 'good' as ReturnQuality,
             isUsable: true,
+            remarks: '',
           };
         }));
       })
@@ -2223,6 +2227,12 @@ function MaterialReturnModal({
       r.id === id ? { ...r, quality, isUsable: quality !== 'damaged' } : r,
     ));
 
+  // Not in Good Condition can't be rated "Good" — default it to Damaged.
+  const setUsable = (id: string, isUsable: boolean) =>
+    setRows((prev) => prev.map((r) =>
+      r.id === id ? { ...r, isUsable, quality: !isUsable && r.quality === 'good' ? 'damaged' : r.quality } : r,
+    ));
+
   const save = async () => {
     const active = rows.filter((r) => Number(r.returnQty) > 0);
     if (active.length === 0) {
@@ -2239,12 +2249,9 @@ function MaterialReturnModal({
     setSaving(true);
     try {
       const allMaterials = await resourceService.list('materials');
-      const actor = user!.fullName;
-      const actorRole = user!.role;
 
       for (const item of active) {
         const qty = Number(item.returnQty);
-        const status = item.isUsable ? 'returned' : 'discarded';
 
         // Restock inventory only for usable items.
         // The backend automatically writes a materials/update audit log entry
@@ -2263,34 +2270,26 @@ function MaterialReturnModal({
           }
           // No leftover_log here — the backend's automatic stock_in audit covers it.
         } else {
-          // Discarded items have no inventory change, so no automatic backend log.
-          // Write the leftover_log so the discard is recorded in Inventory History.
-          await resourceService.create('audit-logs', {
-            entity: 'material-requests',
-            entity_id: item.mrfId,
-            action: 'leftover_log',
-            actor,
-            actor_role: actorRole,
-            details: {
-              description: `${actor} discarded ${qty} ${item.unit} of "${item.name}" (${item.sku}) — condition: ${item.quality}`,
-              job_order_ref: jobOrderRef,
-              material_name: item.name,
-              material_sku: item.sku,
-              qty_leftover: qty,
-              unit: item.unit,
-              condition: item.quality,
-              leftover_status: status,
-              restocked: false,
-            },
+          // Not in Good Condition → Waste Management. The backend also files the
+          // leftover_log, so Inventory History and "Already Logged" stay correct.
+          await resourceService.create('waste-disposals', {
+            job_order_ref: jobOrderRef,
+            mrf_id: item.mrfId,
+            material_sku: item.sku,
+            material_name: item.name,
+            quantity: qty,
+            unit: item.unit,
+            condition: item.quality,
+            remarks: item.remarks.trim(),
           });
         }
       }
 
       const restocked = active.filter((r) => r.isUsable).length;
-      const discarded = active.filter((r) => !r.isUsable).length;
+      const forDisposal = active.filter((r) => !r.isUsable).length;
       const parts: string[] = [];
       if (restocked > 0) parts.push(`${restocked} item(s) returned to inventory`);
-      if (discarded > 0) parts.push(`${discarded} item(s) logged as discarded`);
+      if (forDisposal > 0) parts.push(`${forDisposal} item(s) sent to the Inventory Officer for disposal`);
       notify(parts.join(', ') + '.');
 
       await onDone();
@@ -2320,6 +2319,7 @@ function MaterialReturnModal({
     >
       <p style={{ margin: '0 0 20px', color: 'var(--muted)', fontSize: 13, lineHeight: 1.6 }}>
         Rate the condition of each leftover item. <strong>Usable</strong> items will be restocked.
+        Items <strong>Not in Good Condition</strong> go to the Inventory Officer for disposal.
       </p>
 
       {loading ? (
@@ -2408,32 +2408,45 @@ function MaterialReturnModal({
                     </div>
 
                     <div className="return-toggle-group">
-                      <label>Return to Inventory?</label>
+                      <label>Where does it go?</label>
                       <div className="return-usable-toggle">
                         <button
                           type="button"
                           className={`return-usable-btn${r.isUsable ? ' is-yes' : ''}`}
-                          onClick={() => setRow(r.id, 'isUsable', true)}
+                          onClick={() => setUsable(r.id, true)}
                         >
-                          ✓ Yes
+                          ✓ Back to Inventory
                         </button>
                         <button
                           type="button"
                           className={`return-usable-btn${!r.isUsable ? ' is-no' : ''}`}
-                          onClick={() => setRow(r.id, 'isUsable', false)}
+                          onClick={() => setUsable(r.id, false)}
                         >
-                          ✕ No
+                          ✕ Not in Good Condition
                         </button>
                       </div>
                     </div>
                   </div>
+
+                  {!r.isUsable && (
+                    <div className="return-qty-row return-remarks-row">
+                      <label>Remarks</label>
+                      <input
+                        type="text"
+                        maxLength={500}
+                        placeholder="What is wrong with it? e.g. cracked, bent, rusted"
+                        value={r.remarks}
+                        onChange={(e) => setRow(r.id, 'remarks', e.target.value)}
+                      />
+                    </div>
+                  )}
 
                   {/* Outcome strip */}
                   {hasQty && !overLimit && (
                     <div className={`return-card-outcome${r.isUsable ? ' is-restock' : ' is-discard'}`}>
                       {r.isUsable
                         ? `✓ ${qty} ${r.unit} of "${r.name}" (${r.quality}) will be returned to inventory`
-                        : `✕ ${qty} ${r.unit} of "${r.name}" (${r.quality}) will be logged as discarded`}
+                        : `✕ ${qty} ${r.unit} of "${r.name}" (${r.quality}) is Not in Good Condition and goes to the Inventory Officer for disposal`}
                     </div>
                   )}
 
@@ -2444,6 +2457,303 @@ function MaterialReturnModal({
         </div>
       )}
     </Modal>
+  );
+}
+
+/* --------------------------------------------------------- Waste management */
+/**
+ * Leftover materials that are Not in Good Condition. The team leader reports
+ * them on Log Leftovers → the Inventory Officer disposes them with photo proof
+ * → the General Manager verifies the disposal from the photos (or rejects it,
+ * sending it back to the officer).
+ */
+const WASTE_STATUS: Record<string, { label: string; tone: StatusTone }> = {
+  pending_disposal: { label: 'Pending Disposal', tone: 'pending' },
+  disposed: { label: 'For GM Verification', tone: 'pending' },
+  verified: { label: 'Verified', tone: 'paid' },
+  rejected: { label: 'Rejected — Redo', tone: 'overdue' },
+};
+const wasteStatusLabel = (v: unknown) => WASTE_STATUS[String(v ?? '')]?.label ?? titleCase(v);
+const DISPOSAL_METHODS = [
+  'Sold to junk shop / scrap buyer',
+  'Sent to recycling facility',
+  'Brought to the municipal disposal site',
+  'Hauled away by a licensed waste hauler',
+  'Kept in the warehouse scrap area',
+  'Other',
+];
+const dateTimeText = (v: unknown): string => {
+  const when = v ? new Date(String(v)) : null;
+  return when && !Number.isNaN(when.getTime())
+    ? when.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })
+    : '—';
+};
+
+function WasteDetail({ row }: { row: EntityRow }) {
+  const status = String(row.status ?? '');
+  const photos = Array.isArray(row.disposal_images) ? row.disposal_images : [];
+  return (
+    <>
+      <p className="detail-section-title">Reported by the Team Leader</p>
+      <dl className="detail-list">
+        <DetailRow label="Waste Ref">{String(row.ref_code ?? '')}</DetailRow>
+        <DetailRow label="Status">{wasteStatusLabel(status)}</DetailRow>
+        <DetailRow label="Material">{`${String(row.material_name ?? '')}${row.material_sku ? ` (${String(row.material_sku)})` : ''}`}</DetailRow>
+        <DetailRow label="Quantity">{`${Number(row.quantity ?? 0)} ${String(row.unit ?? '')}`.trim()}</DetailRow>
+        <DetailRow label="Condition">{`Not in Good Condition · ${titleCase(row.condition)}`}</DetailRow>
+        <DetailRow label="Job Order">{String(row.job_order_ref ?? '')}</DetailRow>
+        <DetailRow label="Reported By">{`${String(row.reported_by ?? '—')}${row.reported_by_role ? ` · ${roleLabel(row.reported_by_role)}` : ''}`}</DetailRow>
+        <DetailRow label="Reported On">{dateTimeText(row.created_at)}</DetailRow>
+        {Boolean(row.remarks) && <DetailRow label="Remarks">{String(row.remarks)}</DetailRow>}
+      </dl>
+
+      {(status !== 'pending_disposal' || photos.length > 0) && Boolean(row.disposed_by) && (
+        <>
+          <p className="detail-section-title">Disposal by the Inventory Officer</p>
+          <dl className="detail-list">
+            <DetailRow label="Method">{String(row.disposal_method ?? '')}</DetailRow>
+            <DetailRow label="Location">{String(row.disposal_location ?? '')}</DetailRow>
+            <DetailRow label="Disposed By">{String(row.disposed_by ?? '')}</DetailRow>
+            <DetailRow label="Disposed On">{dateTimeText(row.disposed_at)}</DetailRow>
+            {Boolean(row.disposal_notes) && <DetailRow label="Notes">{String(row.disposal_notes)}</DetailRow>}
+          </dl>
+          <ImageGallery images={photos} />
+        </>
+      )}
+
+      {Boolean(row.verified_by) && (
+        <>
+          <p className="detail-section-title">General Manager's Review</p>
+          <dl className="detail-list">
+            <DetailRow label="Decision">{status === 'rejected' ? 'Rejected' : 'Verified'}</DetailRow>
+            <DetailRow label="Reviewed By">{String(row.verified_by ?? '')}</DetailRow>
+            <DetailRow label="Reviewed On">{dateTimeText(row.verified_at)}</DetailRow>
+            {Boolean(row.verification_notes) && <DetailRow label="Notes">{String(row.verification_notes)}</DetailRow>}
+          </dl>
+        </>
+      )}
+    </>
+  );
+}
+
+/** Inventory Officer: record how and where the item was disposed, with photo proof. */
+function DisposeWasteAction({ c }: { c: RowActionCtx }) {
+  const { notify } = useToast();
+  const { reload: reloadStats } = useStats();
+  const [open, setOpen] = useState(false);
+  const [method, setMethod] = useState(DISPOSAL_METHODS[0]);
+  const [otherMethod, setOtherMethod] = useState('');
+  const [location, setLocation] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const isRejected = c.row.status === 'rejected';
+
+  const start = () => {
+    const previous = String(c.row.disposal_method ?? '');
+    const known = DISPOSAL_METHODS.includes(previous);
+    setMethod(previous ? (known ? previous : 'Other') : DISPOSAL_METHODS[0]);
+    setOtherMethod(previous && !known ? previous : '');
+    setLocation(String(c.row.disposal_location ?? ''));
+    setPhotos([]);
+    setNotes(String(c.row.disposal_notes ?? ''));
+    setOpen(true);
+  };
+
+  const save = async () => {
+    const finalMethod = method === 'Other' ? otherMethod.trim() : method;
+    if (!finalMethod) return notify('Type the disposal method for "Other".', 'error');
+    if (!location.trim()) return notify('Enter where the material was disposed.', 'error');
+    if (photos.length === 0) return notify('Attach at least one photo as proof of disposal.', 'error');
+    setSaving(true);
+    try {
+      await resourceService.update('waste-disposals', c.row.id, {
+        status: 'disposed',
+        disposal_method: finalMethod,
+        disposal_location: location.trim(),
+        disposal_images: photos,
+        disposal_notes: notes.trim(),
+      });
+      await Promise.all([c.reload(), reloadStats()]);
+      notify('Disposal recorded. It is now waiting for the General Manager to verify.');
+      setOpen(false);
+    } catch (cause) {
+      notify(cause instanceof ApiError ? cause.message : 'Could not record the disposal.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <button className="btn-action" type="button" onClick={start} disabled={c.busy}>
+        {isRejected ? 'Redo Disposal' : 'Dispose'}
+      </button>
+      {open && (
+        <Modal
+          title={`${isRejected ? 'Redo Disposal' : 'Dispose'} — ${String(c.row.ref_code ?? '')}`}
+          open
+          wide
+          onClose={() => setOpen(false)}
+          onSubmit={save}
+          submitText="Submit for GM Verification"
+          submitting={saving}
+        >
+          {isRejected && (
+            <div className="billing-rejected-banner" role="alert">
+              <div className="billing-rejected-icon">✕</div>
+              <div>
+                <strong>The General Manager rejected the last disposal</strong>
+                <p>{String(c.row.verification_notes || 'Redo the disposal and attach clearer photos.')}</p>
+              </div>
+            </div>
+          )}
+          <div className="billing-amount-card" style={{ marginBottom: 20 }}>
+            <span>Not in Good Condition</span>
+            <strong>{`${Number(c.row.quantity ?? 0)} ${String(c.row.unit ?? '')}`.trim()} · {String(c.row.material_name ?? '')}</strong>
+            <small>
+              {String(c.row.material_sku ?? '')} · {String(c.row.job_order_ref ?? '')} · Reported by {String(c.row.reported_by ?? '—')}
+              {c.row.remarks ? ` · "${String(c.row.remarks)}"` : ''}
+            </small>
+          </div>
+          <div className="form-grid">
+            <div className="form-group">
+              <label>Disposal Method</label>
+              <select value={method} onChange={(e) => setMethod(e.target.value)}>
+                {DISPOSAL_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+              {method === 'Other' && (
+                <input
+                  className="disposal-other-input"
+                  value={otherMethod}
+                  maxLength={80}
+                  autoFocus
+                  onChange={(e) => setOtherMethod(e.target.value)}
+                  placeholder="Type the disposal method (required)"
+                  aria-label="Other disposal method"
+                />
+              )}
+            </div>
+            <div className="form-group">
+              <label>Disposal Location</label>
+              <input value={location} maxLength={200} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Boac Municipal MRF, Brgy. Tabi" />
+            </div>
+          </div>
+          <div className="form-group">
+            <label>Photo Proof of Disposal (required)</label>
+            <ImageUpload value={photos} onChange={setPhotos} maxFiles={5} />
+          </div>
+          <div className="form-group">
+            <label>Notes (optional)</label>
+            <textarea value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Cut into pieces before hauling, receipt no. 1234" />
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+/** General Manager: check the disposal photos, then verify or reject. */
+function VerifyWasteAction({ c }: { c: RowActionCtx }) {
+  const { notify } = useToast();
+  const { reload: reloadStats } = useStats();
+  const [open, setOpen] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const decide = async (status: 'verified' | 'rejected') => {
+    if (status === 'rejected' && !notes.trim()) {
+      return notify('Enter a reason so the Inventory Officer knows what to fix.', 'error');
+    }
+    setSaving(true);
+    try {
+      await resourceService.update('waste-disposals', c.row.id, { status, verification_notes: notes.trim() });
+      await Promise.all([c.reload(), reloadStats()]);
+      notify(status === 'verified' ? 'Disposal verified.' : 'Disposal rejected and sent back to the Inventory Officer.');
+      setOpen(false);
+    } catch (cause) {
+      notify(cause instanceof ApiError ? cause.message : 'Could not save your review.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <button className="btn-action" type="button" onClick={() => { setNotes(''); setOpen(true); }} disabled={c.busy}>
+        Verify
+      </button>
+      {open && (
+        <Modal title={`Verify Disposal — ${String(c.row.ref_code ?? '')}`} open wide onClose={() => setOpen(false)} closeText="Close">
+          <WasteDetail row={c.row} />
+          <div className="payment-review-controls">
+            <div className="form-group">
+              <label>Notes / Rejection Reason</label>
+              <textarea value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} placeholder="Required when rejecting, e.g. the photo does not show the disposal site" />
+            </div>
+            <div className="payment-review-actions">
+              <button className="btn-secondary payment-reject" type="button" disabled={saving} onClick={() => void decide('rejected')}>Reject</button>
+              <button className="btn-primary" type="button" disabled={saving} onClick={() => void decide('verified')}>Verify Disposal</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+export function WasteManagementModule({ filter }: ModuleProps) {
+  const { user } = useAuth();
+  const role = user!.role;
+  const isGM = role === 'general-manager';
+  const canDispose = role === 'inventory-officer' || isGM;
+
+  const columns: ModuleColumn[] = [
+    { header: 'Ref', cell: (r) => ({ text: String(r.ref_code ?? '—'), strong: true }) },
+    { header: 'Material', cell: (r) => `${String(r.material_name ?? '')}${r.material_sku ? ` · ${String(r.material_sku)}` : ''}` },
+    { header: 'Qty', cell: (r) => `${Number(r.quantity ?? 0)} ${String(r.unit ?? '')}`.trim() },
+    { header: 'Condition', cell: (r) => ({ text: titleCase(r.condition), badge: (r.condition === 'damaged' ? 'high' : 'medium') as BadgeTone }) },
+    { header: 'Job Order', cell: (r) => String(r.job_order_ref ?? '—') },
+    { header: 'Reported By', cell: (r) => String(r.reported_by ?? '—') },
+    { header: 'Status', cell: (r) => ({ text: wasteStatusLabel(r.status), status: WASTE_STATUS[String(r.status)]?.tone ?? 'pending' }) },
+  ];
+
+  return (
+    <LiveModule
+      entity="waste-disposals"
+      title="Waste Management"
+      columns={columns}
+      tableClassName="waste-table"
+      canWrite={isGM}
+      filter={filter}
+      metrics={(rows) => [
+        metric('w1', 'Pending Disposal', count(rows, (r) => r.status === 'pending_disposal' || r.status === 'rejected'), 'trash-2', 'profit'),
+        metric('w2', 'For GM Verification', count(rows, (r) => r.status === 'disposed'), 'eye', 'revenue'),
+        metric('w3', 'Verified', count(rows, (r) => r.status === 'verified'), 'shield-check', 'invoices'),
+        metric('w4', 'Total Reported', String(rows.length), 'package-x', 'customers'),
+      ]}
+      quickFilters={(rows) => Object.entries(WASTE_STATUS)
+        .map(([status, s]) => ({
+          id: `status:${status}`,
+          label: s.label,
+          hint: String(rows.filter((r) => r.status === status).length),
+          matches: (r: EntityRow) => r.status === status,
+        }))
+        .filter((item) => item.hint !== '0')}
+      actions={(c) => {
+        const status = String(c.row.status ?? '');
+        return (
+          <div className="btn-row">
+            <ViewAction title={`Waste ${String(c.row.ref_code ?? '')}`} wide>
+              <WasteDetail row={c.row} />
+            </ViewAction>
+            {!c.archived && canDispose && (status === 'pending_disposal' || status === 'rejected') && <DisposeWasteAction c={c} />}
+            {!c.archived && isGM && status === 'disposed' && <VerifyWasteAction c={c} />}
+            {isGM && <ArchiveBtn c={c} />}
+          </div>
+        );
+      }}
+    />
   );
 }
 
@@ -2936,7 +3246,7 @@ function InventoryHistory({ filter }: ModuleProps) {
         const unit   = String(details.unit ?? '').trim();
         const status = String(details.leftover_status ?? 'discarded');
         const restocked = details.restocked === true;
-        const movLabel  = restocked ? 'Returned' : 'Discarded';
+        const movLabel  = restocked ? 'Returned' : status === 'not_good_condition' ? 'Not in Good Condition' : 'Discarded';
         const when = row.created_at ? new Date(String(row.created_at)) : null;
         const timestamp = when && !Number.isNaN(when.getTime())
           ? when.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })
@@ -2950,7 +3260,7 @@ function InventoryHistory({ filter }: ModuleProps) {
             { text: restocked ? `+${qty}${unit ? ` ${unit}` : ''}` : `${qty}${unit ? ` ${unit}` : ''}`, strong: true },
             { text: '—' },
             { text: '—' },
-            { text: `JO: ${String(details.job_order_ref ?? '—')} · ${titleCase(status)}` },
+            { text: `JO: ${String(details.job_order_ref ?? '—')} · ${details.waste_ref ? `Waste ${String(details.waste_ref)}` : titleCase(status)}` },
             { text: String(row.actor ?? titleCase(row.actor_role ?? 'System')) },
           ],
         };
