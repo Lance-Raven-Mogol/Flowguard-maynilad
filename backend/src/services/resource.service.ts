@@ -389,6 +389,20 @@ async function settleStockDeduction(mrfId: string, user: PublicUser): Promise<vo
   if (current.stock_deducted) return; // already settled — no double deduction
 
   const lines = await checkMrfStock(current);
+  await deductStock(lines, user, {
+    reference: current.ref_code,
+    job_order_ref: current.job_order_ref ?? null,
+    reason: 'Material request approved',
+  });
+  await repo.updateRow('material_requests', mrfId, { stock_deducted: true });
+}
+
+/** Take already stock-checked lines out of inventory, logging each movement. */
+async function deductStock(
+  lines: Array<{ item: MrfItem; material: Row }>,
+  user: PublicUser,
+  context: { reference: unknown; job_order_ref?: unknown; incident_ref?: unknown; reason: string },
+): Promise<void> {
   for (const { item, material } of lines) {
     const available = Number(material.quantity ?? 0);
     const remaining = available - item.quantity;
@@ -406,12 +420,47 @@ async function settleStockDeduction(mrfId: string, user: PublicUser): Promise<vo
       new_quantity: remaining,
       quantity_change: -item.quantity,
       unit: material.unit,
-      reference: current.ref_code,
-      job_order_ref: current.job_order_ref ?? null,
-      reason: 'Material request approved',
+      ...context,
     });
   }
-  await repo.updateRow('material_requests', mrfId, { stock_deducted: true });
+}
+
+/** Site Visit Plan / required-material lines in the MRF item shape. */
+const asMrfItems = (list: unknown): MrfItem[] =>
+  (Array.isArray(list) ? (list as Row[]) : []).map((m) => ({
+    material_sku: String(m.material_sku ?? ''),
+    material_name: String(m.name ?? m.material_name ?? ''),
+    quantity: Number(m.quantity ?? 0),
+    unit: String(m.unit ?? ''),
+  }));
+
+/**
+ * A complaint's Required Materials become the job order's first MRF as soon
+ * as the job order is created, so nobody files them by hand. It follows the
+ * normal MRF workflow (Inventory verifies → GM approves → Inventory releases)
+ * and the job order's team leader sees it once assigned.
+ */
+async function createRequiredMaterialsMrf(jobOrder: Row, user: PublicUser): Promise<void> {
+  const incidentRef = String(jobOrder.incident_ref ?? '').trim();
+  if (!incidentRef) return;
+  const incident = (await repo.findRowsBy('incidents', 'ref_code', incidentRef)).find((i) => !i.archived);
+  const items = asMrfItems(incident?.required_materials);
+  if (!items.length) return;
+  const def = getDef('material-requests');
+  const values: Row = {
+    request_type: 'mrf',
+    status: 'pending',
+    job_order_ref: jobOrder.ref_code,
+    requested_by: `Required Materials (${incidentRef})`,
+    requested_by_id: null,
+  };
+  await normalizeMrfItems(values, { items });
+  for (const key of def.autoKeys ?? []) values[key.column] = `${key.prefix}-${randDigits(key.digits)}`;
+  const row = await writeResilient(values, (v) => repo.insertRow(def.table, v), def.critical);
+  await logAudit('material-requests', String(row.id ?? ''), 'create', user.fullName, user.role, {
+    ...values,
+    auto_created_from: incidentRef,
+  });
 }
 
 /**
@@ -728,11 +777,21 @@ export const resourceService = {
         String(row.requested_by ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase(),
       );
     } else if (entity === 'material-requests' && user.role !== 'general-manager') {
+      // Team leaders also see every MRF on the job orders they lead — including
+      // the one auto-created from the complaint's Required Materials.
+      const ledJobRefs = ['contractor', 'inhouse-team'].includes(user.role)
+        ? new Set(
+            (await repo.listRows('job_orders', {}))
+              .filter((j) => String(j.team_leader ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase())
+              .map((j) => String(j.ref_code ?? '')),
+          )
+        : new Set<string>();
       rows = rows.filter(
         (row) =>
           String(row.requested_by_id ?? '').trim() === user.id ||
           // Fallback for older rows that were saved before requested_by_id was added.
-          String(row.requested_by ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase(),
+          String(row.requested_by ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase() ||
+          (isMrf(row) && ledJobRefs.has(String(row.job_order_ref ?? ''))),
       );
     }
     if (entity === 'payments') {
@@ -1031,6 +1090,14 @@ export const resourceService = {
       } else {
         await logAudit(entity, String(row.id ?? ''), 'create', user.fullName, user.role, auditDetails);
       }
+      if (entity === 'job-orders') {
+        // The job order is created either way; a failed auto-MRF can still be filed by hand.
+        try {
+          await createRequiredMaterialsMrf(row, user);
+        } catch (err) {
+          console.warn(`[resource] job order ${String(row.ref_code)}: could not auto-create the required-materials MRF:`, err);
+        }
+      }
       return enrich(entity, row);
     } catch (err) {
       mapDbError(err);
@@ -1040,6 +1107,9 @@ export const resourceService = {
   async update(entity: string, user: PublicUser, id: string, body: Record<string, unknown>): Promise<Row> {
     const def = getDef(entity);
     if (entity === 'support-messages') throw forbidden('Inquiry messages cannot be edited.');
+    // Site Visit Plan materials to take out of stock once the plan is saved.
+    let siteVisitStock: Array<{ item: MrfItem; material: Row }> | null = null;
+    let siteVisitRef: unknown = null;
     const isCustomerPayment = entity === 'payments' && user.role === 'customer';
     const isTeamMaterialReturn =
       entity === 'materials' &&
@@ -1319,6 +1389,11 @@ export const resourceService = {
         // First save. The structured fields are required for new plans — the
         // plain-text-only form is gone; legacy rows simply keep their text.
         await normalizeSiteVisit(values);
+        // What the team brings on the visit leaves inventory. Checked now (no
+        // save on a shortage), deducted once the plan is stored. The plan locks
+        // after this first save, so the deduction can only happen once.
+        siteVisitStock = await checkMrfStock({ items: asMrfItems(values.site_visit_materials) });
+        siteVisitRef = currentIncident.ref_code;
         values.site_action = nextPlan;
         values.site_action_updated_at = new Date().toISOString();
       } else if (SITE_VISIT_FIELDS.some((f) => f in values)) {
@@ -1555,6 +1630,13 @@ export const resourceService = {
     try {
       const row = await writeResilient(values, (v) => repo.updateRow(def.table, id, v), def.critical);
       if (!row) throw notFound('Record not found.');
+      if (siteVisitStock?.length) {
+        await deductStock(siteVisitStock, user, {
+          reference: siteVisitRef,
+          incident_ref: siteVisitRef,
+          reason: 'Brought on the site visit',
+        });
+      }
       if (entity === 'job-orders' && row.status === 'in_progress' && row.scheduled_date) {
         const jobRef = String(row.ref_code ?? '');
         const names = Array.isArray(row.team_members) ? row.team_members.map(String) : [];

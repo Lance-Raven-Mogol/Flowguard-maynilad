@@ -1356,6 +1356,9 @@ function SiteVisitPlanEditor({ value, onChange }: { value: SiteVisitDraft; onCha
       </div>
       <div className="form-group">
         <label>Materials to Bring <span className="address-optional">(optional)</span></label>
+        {value.materials.length > 0 && (
+          <p className="required-materials-note">These are taken out of inventory when you save the plan.</p>
+        )}
         {value.materials.map((m) => {
           const picked = inventory.find((x) => String(x.sku) === m.sku);
           return (
@@ -4100,6 +4103,11 @@ function RequestForm({
     const ref = form.job_order_ref.trim();
     if (form.request_type !== 'mrf' || !ref || prefilledFrom === ref) return;
     if (!items.every((item) => !item.name.trim() && !item.sku)) return;
+    // New job orders get the required materials as an auto-created MRF — don't file them twice.
+    const hasMrf = stats.materialRequests.some(
+      (r) => (String(r.request_type ?? '') || 'mrf') === 'mrf' && String(r.job_order_ref ?? '') === ref && String(r.status) !== 'rejected',
+    );
+    if (hasMrf) return;
     const job = stats.jobOrders.find((j) => String(j.ref_code ?? '') === ref);
     const incident = job ? stats.incidents.find((i) => String(i.ref_code ?? '') === String(job.incident_ref ?? '')) : undefined;
     const required = requiredMaterials(incident);
@@ -4107,7 +4115,7 @@ function RequestForm({
     setPrefilledFrom(ref);
     setItems(required.map((m) => ({ ...newItem(), name: m.name, sku: m.material_sku, quantity: String(m.quantity) })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.job_order_ref, form.request_type, stats.jobOrders, stats.incidents]);
+  }, [form.job_order_ref, form.request_type, stats.jobOrders, stats.incidents, stats.materialRequests]);
   const stockOf = (sku: string) => (sku ? inventory.find((m) => String(m.sku) === sku) : undefined);
   const [saving, setSaving] = useState(false);
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
