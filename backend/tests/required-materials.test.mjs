@@ -64,3 +64,54 @@ test('only the zone specialist sets them, after the site plan and before pricing
   seed({ status: 'for_estimation' });
   await assert.rejects(setMaterials(zone, []), /priced/);
 });
+
+const commercial = user('commercial-department', 'Cora Commercial');
+const sitePlan = (materials) => resourceService.update('incidents', zone, 'inc1', {
+  site_action: 'Visit: Nov 5 (AM)',
+  site_visit_date: '2026-11-05',
+  site_visit_period: 'AM',
+  site_visit_companions: [],
+  site_visit_materials: materials,
+  site_visit_notes: '',
+});
+const stockOf = (id) => table('materials').find((m) => m.id === id).quantity;
+
+test('materials brought on the site visit are taken out of stock once the plan is saved', async () => {
+  seed({ site_action: '', status: 'under_verification' });
+  await sitePlan([{ material_sku: 'SKU-00001', quantity: 3 }]);
+  assert.equal(stockOf('m1'), 17);
+  // The plan locks after its first save, so the stock can't be taken twice.
+  await assert.rejects(sitePlan([{ material_sku: 'SKU-00001', quantity: 3 }]), /locked/);
+  assert.equal(stockOf('m1'), 17);
+});
+
+test('a site visit plan that needs more than the available stock is not saved', async () => {
+  seed({ site_action: '', status: 'under_verification' });
+  // 3 Gate Valves in stock, 1 kept as safety stock → only 2 can be taken.
+  await assert.rejects(sitePlan([{ material_sku: 'SKU-00002', quantity: 3 }]), /Insufficient stock/);
+  assert.equal(stockOf('m2'), 3);
+  assert.equal(table('incidents')[0].site_action, '');
+});
+
+test('creating the job order auto-files an MRF with the required materials, visible to its team leader', async () => {
+  seed({ status: 'resolved', required_materials: [{ material_sku: 'SKU-00001', name: 'PVC Pipe 50mm', quantity: 2, unit: 'pcs' }] });
+  const jo = await resourceService.create('job-orders', commercial, { title: 'Fix leak', incident_ref: 'INC-0001' });
+  const mrfs = table('material_requests');
+  assert.equal(mrfs.length, 1);
+  assert.equal(mrfs[0].request_type, 'mrf');
+  assert.equal(mrfs[0].status, 'pending');
+  assert.equal(mrfs[0].job_order_ref, jo.ref_code);
+  assert.deepEqual(mrfs[0].items, [{ material_sku: 'SKU-00001', material_name: 'PVC Pipe 50mm', quantity: 2, unit: 'pcs' }]);
+  // Stock only moves when the MRF is approved, not when it is filed.
+  assert.equal(stockOf('m1'), 20);
+
+  assert.equal((await resourceService.list('material-requests', leader)).length, 0);
+  table('job_orders')[0].team_leader = 'Lea Leader';
+  assert.equal((await resourceService.list('material-requests', leader)).length, 1);
+});
+
+test('no MRF is filed when the complaint has no required materials', async () => {
+  seed({ status: 'resolved', required_materials: [] });
+  await resourceService.create('job-orders', commercial, { title: 'Fix leak', incident_ref: 'INC-0001' });
+  assert.equal(table('material_requests').length, 0);
+});
