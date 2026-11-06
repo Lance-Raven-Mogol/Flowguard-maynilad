@@ -18,6 +18,7 @@ import { DataTable } from '../views/components/DataTable';
 import { Modal } from '../views/components/Modal';
 import { ActionButton, PanelHead, QRLabelModal } from '../views/components/panels';
 import { StockCountPanel } from '../views/inventory/StockCountPanel';
+import { batchesOf, fifoPlan, nextBatchNo, openBatches, planTotal, stockValue, type BatchSlice, type StockBatch } from '../models/stockBatches';
 import { SENIOR_DISCOUNT_PERCENT, SENIOR_DISCOUNT_RATE } from '../views/components/TermsAndConditions';
 
 const roleLabel = (role: unknown): string => ROLES.find((r) => r.value === role)?.label ?? String(role ?? '');
@@ -973,6 +974,11 @@ const newChargeDraft = (kind: ChargeLine['kind']): ChargeDraft => ({
   description: kind === 'labor' ? 'Labor' : '',
   amount: '',
 });
+/** "₱100.00 × 10 (Batch #1) + ₱120.00 × 2 (Batch #2)" — where a FIFO-priced quantity comes from. */
+function fifoHint(plan: BatchSlice[], unit: string, fallbackPrice: unknown): string {
+  if (plan.length <= 1) return `${money(plan[0]?.unit_price ?? fallbackPrice)} per ${unit}${plan[0]?.batch_no ? ` · Batch #${plan[0].batch_no}` : ''}`;
+  return `FIFO: ${plan.map((s) => `${money(s.unit_price)} × ${s.quantity}${s.batch_no ? ` (Batch #${s.batch_no})` : ' (next batch)'}`).join(' + ')}`;
+}
 const chargeDraftsFrom = (row: EntityRow): ChargeDraft[] => {
   const lines = chargeLines(row);
   if (!lines.length) {
@@ -983,13 +989,24 @@ const chargeDraftsFrom = (row: EntityRow): ChargeDraft[] => {
       : [newChargeDraft('material')];
     return [...materials, newChargeDraft('labor')];
   }
-  return lines.map((line) => ({
-    ...newChargeDraft(line.kind),
-    sku: line.material_sku,
-    quantity: String(line.quantity),
-    description: line.description,
-    amount: line.kind === 'material' ? '' : String(line.amount),
-  }));
+  // A material priced over several FIFO batches is saved as one line per
+  // batch price — edit it as one line with its full quantity again.
+  const drafts: ChargeDraft[] = [];
+  for (const line of lines) {
+    const same = line.kind === 'material' ? drafts.find((d) => d.kind === 'material' && d.sku === line.material_sku) : undefined;
+    if (same) {
+      same.quantity = String(Number(same.quantity) + Number(line.quantity));
+      continue;
+    }
+    drafts.push({
+      ...newChargeDraft(line.kind),
+      sku: line.material_sku,
+      quantity: String(line.quantity),
+      description: line.description,
+      amount: line.kind === 'material' ? '' : String(line.amount),
+    });
+  }
+  return drafts;
 };
 
 /**
@@ -1013,10 +1030,10 @@ function ChargesEditor({
   // A prefilled material without a unit price still shows, so it is not silently lost.
   const unpricedOf = (sku: string) =>
     sku && !materialOf(sku) ? stats.materials.find((m) => String(m.sku) === sku) : undefined;
+  // Materials are priced FIFO: oldest batch first, each at its own price.
+  const planOf = (d: ChargeDraft): BatchSlice[] => fifoPlan(materialOf(d.sku), Number(d.quantity) || 0);
   const lineAmount = (d: ChargeDraft) =>
-    d.kind === 'material'
-      ? Number(materialOf(d.sku)?.unit_price ?? 0) * (Number(d.quantity) || 0)
-      : Number(d.amount) || 0;
+    d.kind === 'material' ? planTotal(planOf(d)) : Number(d.amount) || 0;
   const total = drafts.reduce((sum, d) => sum + lineAmount(d), 0);
   const update = (key: string, patch: Partial<ChargeDraft>) =>
     onDrafts(drafts.map((d) => (d.key === key ? { ...d, ...patch } : d)));
@@ -1069,7 +1086,7 @@ function ChargesEditor({
                 {mat && (
                   <small className={materialOf(d.sku) ? 'charge-hint' : 'charge-hint is-warn'}>
                     {materialOf(d.sku)
-                      ? `${money(mat.unit_price)} per ${String(mat.unit ?? 'unit')}`
+                      ? fifoHint(planOf(d), String(mat.unit ?? 'unit'), mat.unit_price)
                       : 'No unit price in Inventory — this line counts as ₱0.00'}
                   </small>
                 )}
@@ -2346,7 +2363,6 @@ function MaterialReturnModal({
   onClose: () => void;
   onDone: () => Promise<void>;
 }) {
-  const { user } = useAuth();
   const { notify } = useToast();
 
   const [rows, setRows] = useState<ReturnRow[]>([]);
@@ -2473,10 +2489,8 @@ function MaterialReturnModal({
         if (item.isUsable) {
           const mat = allMaterials.find((m) => String(m.sku ?? '').trim() === item.sku);
           if (mat) {
-            const isFieldTeam = ['contractor', 'inhouse-team'].includes(user!.role);
-            await resourceService.update('materials', String(mat.id), isFieldTeam
-              ? { return_job_order_ref: jobOrderRef, return_quantity: qty }
-              : { quantity: Number(mat.quantity ?? 0) + qty });
+            // Returned stock goes back into the FIFO batch it was released from.
+            await resourceService.update('materials', String(mat.id), { return_job_order_ref: jobOrderRef, return_quantity: qty });
           } else {
             notify(`${item.sku} not found — skipped restocking.`, 'error');
           }
@@ -3300,22 +3314,36 @@ function RestockBtn({ c }: { c: RowActionCtx }) {
   const supplierOptions = useSupplierOptions();
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState('');
+  const [price, setPrice] = useState('');
+  const [reference, setReference] = useState('');
   const [supplierId, setSupplierId] = useState(String(c.row.supplier_id ?? ''));
   const [saving, setSaving] = useState(false);
   const current = Number(c.row.quantity ?? 0);
   const added = Number(amount || 0);
+  const unitPrice = Number(price || 0);
   const unit = String(c.row.unit ?? 'units');
+  const batchNo = nextBatchNo(c.row);
+  const lastBatch = batchesOf(c.row).slice(-1)[0];
 
+  const reset = () => {
+    setAmount('');
+    setPrice('');
+    setReference('');
+    setSupplierId(String(c.row.supplier_id ?? ''));
+  };
   const close = () => {
     if (saving) return;
     setOpen(false);
-    setAmount('');
-    setSupplierId(String(c.row.supplier_id ?? ''));
+    reset();
   };
 
   const save = async () => {
-    if (!Number.isFinite(added) || added <= 0) {
-      notify('Enter a restock quantity greater than zero.', 'error');
+    if (!Number.isInteger(added) || added <= 0) {
+      notify('Enter a whole-number restock quantity greater than zero.', 'error');
+      return;
+    }
+    if (!(unitPrice > 0)) {
+      notify('Enter the unit price (per piece) of this batch.', 'error');
       return;
     }
     const supplier = supplierOptions.find((option) => option.value === supplierId);
@@ -3325,16 +3353,20 @@ function RestockBtn({ c }: { c: RowActionCtx }) {
     }
     setSaving(true);
     try {
+      // Every restock is a new FIFO batch of the same item, with its own price.
       await resourceService.update('materials', c.row.id, {
         quantity: current + added,
+        restock: true,
+        restock_unit_price: unitPrice,
+        restock_reference: reference.trim(),
         supplier_id: supplier.value,
         supplier: supplier.label,
         source: 'external',
       });
       await c.reload();
-      notify(`${c.row.name ?? 'Material'} restocked by ${added} ${unit}.`);
+      notify(`${c.row.name ?? 'Material'} restocked by ${added} ${unit} as Batch #${batchNo} at ${money(unitPrice)} each.`);
       setOpen(false);
-      setAmount('');
+      reset();
     } catch (cause) {
       notify(cause instanceof ApiError ? cause.message : 'Restock failed.', 'error');
     } finally {
@@ -3376,6 +3408,34 @@ function RestockBtn({ c }: { c: RowActionCtx }) {
           />
           <small>This amount will be added to the current stock and recorded in Inventory History.</small>
         </div>
+        <div className="form-group restock-quantity-field">
+          <label htmlFor={`restock-price-${c.row.id}`}>Unit price per piece (₱) — Batch #{batchNo}</label>
+          <input
+            id={`restock-price-${c.row.id}`}
+            type="number"
+            min="0.01"
+            step="0.01"
+            inputMode="decimal"
+            placeholder={lastBatch ? `Last batch: ${Number(lastBatch.unit_price).toFixed(2)}` : 'e.g. 150.00'}
+            value={price}
+            onChange={(event) => setPrice(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') void save(); }}
+          />
+          <small>
+            This restock is saved as its own batch at this price.
+            {added > 0 && unitPrice > 0 && ` Batch value: ${money(added * unitPrice)}.`}
+            {' '}Stock goes out First In, First Out — the oldest batch is used (and priced) first.
+          </small>
+        </div>
+        <div className="form-group">
+          <label htmlFor={`restock-ref-${c.row.id}`}>Delivery / invoice reference <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(optional)</span></label>
+          <input
+            id={`restock-ref-${c.row.id}`}
+            placeholder="e.g. DR-10293"
+            value={reference}
+            onChange={(event) => setReference(event.target.value)}
+          />
+        </div>
         <div className="form-group">
           <label htmlFor={`restock-supplier-${c.row.id}`}>Supplier</label>
           <select id={`restock-supplier-${c.row.id}`} value={supplierId} onChange={(event) => setSupplierId(event.target.value)}>
@@ -3388,6 +3448,128 @@ function RestockBtn({ c }: { c: RowActionCtx }) {
     </>
   );
 }
+
+/** The FIFO batches of one material: what is left of each and at what price. */
+function BatchesModal({ material, onClose }: { material: EntityRow; onClose: () => void }) {
+  const [showUsed, setShowUsed] = useState(false);
+  const list = batchesOf(material);
+  const open = openBatches(material);
+  const used = list.filter((b) => !(Number(b.quantity_remaining) > 0));
+  const unit = String(material.unit ?? 'units');
+  const nextOut = open[0];
+  const onHand = open.reduce((sum, b) => sum + Number(b.quantity_remaining || 0), 0);
+  const prices = open.map((b) => Number(b.unit_price || 0));
+  const priceRange = prices.length > 1 && Math.min(...prices) !== Math.max(...prices)
+    ? `${money(Math.min(...prices))} – ${money(Math.max(...prices))}`
+    : null;
+  const when = (v: unknown) => {
+    const d = v ? new Date(String(v)) : null;
+    return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString('en-PH', { dateStyle: 'medium' }) : '—';
+  };
+
+  const card = (b: StockBatch, order: number | null) => {
+    const left = Number(b.quantity_remaining || 0);
+    const received = Number(b.quantity_received || 0);
+    const pct = received > 0 ? Math.min(100, Math.round((left / received) * 100)) : 0;
+    const isNext = nextOut?.id === b.id;
+    const source = [b.supplier, b.reference].filter(Boolean).join(' · ');
+    return (
+      <li key={b.id} className={`batch-card${isNext ? ' is-next' : ''}${left > 0 ? '' : ' is-used'}`}>
+        <div className="batch-card-no">
+          <span>Batch</span>
+          <strong>#{b.batch_no}</strong>
+        </div>
+        <div className="batch-card-body">
+          <div className="batch-card-top">
+            {isNext && <span className="batch-pill is-next">Next out</span>}
+            {!isNext && order !== null && <span className="batch-pill">{ordinal(order)} out</span>}
+            {left <= 0 && <span className="batch-pill is-used">Used up</span>}
+            <small>Received {when(b.received_at)}</small>
+          </div>
+          <p className="batch-card-source" title={source || undefined}>{source || 'No supplier recorded'}</p>
+          <div className="batch-meter" aria-label={`${left} of ${received} ${unit} left`}>
+            <span style={{ width: `${pct}%` }} />
+          </div>
+          <small className="batch-card-qty">
+            <b>{left}</b> of {received} {unit} left
+          </small>
+        </div>
+        <div className="batch-card-price">
+          <strong>{money(b.unit_price)}</strong>
+          <small>per {unit}</small>
+          <em>{money(left * Number(b.unit_price || 0))}</em>
+        </div>
+      </li>
+    );
+  };
+
+  return (
+    <Modal title="Stock Batches" open onClose={onClose} wide closeText="Close">
+      <div className="batch-hero">
+        <div className="batch-hero-name">
+          <span>{String(material.sku ?? '')}</span>
+          <strong>{String(material.name ?? 'Unnamed material')}</strong>
+        </div>
+        <div className="batch-stats">
+          <div><span>On hand</span><strong>{onHand} {unit}</strong></div>
+          <div><span>Stock value</span><strong>{money(stockValue(material))}</strong></div>
+          <div className="is-next">
+            <span>Next out</span>
+            <strong>{nextOut ? money(nextOut.unit_price) : '—'}</strong>
+            <small>{nextOut ? `Batch #${nextOut.batch_no}` : 'No stock'}</small>
+          </div>
+        </div>
+      </div>
+
+      {open.length > 0 && (
+        <div className="batch-flow">
+          <div className="batch-flow-head">
+            <span>First In, First Out</span>
+            <small>{priceRange ? `Prices on hand: ${priceRange}` : `${open.length} batch${open.length === 1 ? '' : 'es'} on hand`}</small>
+          </div>
+          <div className="batch-flow-bar" role="img" aria-label="Stock on hand by batch, oldest first">
+            {open.map((b, i) => (
+              <span
+                key={b.id}
+                className={`tone-${Math.min(i, 3)}`}
+                style={{ flexGrow: Number(b.quantity_remaining || 0) }}
+                title={`Batch #${b.batch_no}: ${Number(b.quantity_remaining)} ${unit} @ ${money(b.unit_price)}`}
+              >
+                #{b.batch_no}
+              </span>
+            ))}
+          </div>
+          <div className="batch-flow-axis"><span>← Goes out first</span><span>Newest</span></div>
+        </div>
+      )}
+
+      {list.length === 0 ? (
+        <div className="batch-empty">
+          <strong>No batches yet</strong>
+          <span>Restock this item to add a batch with its own price per piece.</span>
+        </div>
+      ) : (
+        <>
+          {open.length > 0 && <ul className="batch-list">{open.map((b, i) => card(b, i + 1))}</ul>}
+          {used.length > 0 && (
+            <>
+              <button type="button" className="batch-used-toggle" onClick={() => setShowUsed((v) => !v)} aria-expanded={showUsed}>
+                {showUsed ? 'Hide' : 'Show'} used-up batches ({used.length})
+              </button>
+              {showUsed && <ul className="batch-list">{used.map((b) => card(b, null))}</ul>}
+            </>
+          )}
+        </>
+      )}
+    </Modal>
+  );
+}
+
+const ordinal = (n: number): string => {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
+};
 
 /** Derive a display colour from a material's own `color` field.
  *  If the value is a valid CSS colour (e.g. "blue", "#ff0000") it is used as-is.
@@ -3414,6 +3596,18 @@ function materialStockStatus(quantity: unknown, minLevel: unknown, requestedStat
   if (stock <= 0) return 'out_of_stock';
   if (stock <= minimum) return 'low_stock';
   return 'in_stock';
+}
+
+/** "#1 × 10 @ ₱ 100.00 + #2 × 2 @ ₱ 120.00 = ₱ 1,240.00" — the FIFO batches a movement used. */
+function batchMovementText(details: Record<string, unknown>): string {
+  const slices = Array.isArray(details.batches) ? (details.batches as BatchSlice[]) : [];
+  if (slices.length) {
+    const parts = slices.map((b) => `${b.batch_no ? `#${b.batch_no}` : 'new'} × ${Number(b.quantity)} @ ${money(b.unit_price)}`);
+    const total = details.total_cost ?? (slices.length > 1 ? planTotal(slices) : undefined);
+    return `${parts.join(' + ')}${total !== undefined ? ` = ${money(total)}` : ''}`;
+  }
+  if (details.batch_no) return `Batch #${String(details.batch_no)}${details.unit_price !== undefined ? ` @ ${money(details.unit_price)}` : ''}`;
+  return '—';
 }
 
 function InventoryHistory({ filter }: ModuleProps) {
@@ -3448,7 +3642,7 @@ function InventoryHistory({ filter }: ModuleProps) {
 
   const table = useMemo<ResourceTable>(() => ({
     id: 'inventory-history',
-    columns: ['Date & Time', 'Material', 'Movement', 'Change', 'Previous', 'New Stock', 'Supplier / Reference', 'Performed By'],
+    columns: ['Date & Time', 'Material', 'Movement', 'Change', 'Previous', 'New Stock', 'Batch / Price (FIFO)', 'Supplier / Reference', 'Performed By'],
     rows: logs.map((row) => {
       const details = (row.details ?? {}) as Record<string, unknown>;
 
@@ -3470,6 +3664,7 @@ function InventoryHistory({ filter }: ModuleProps) {
             { text: String(details.material_name ?? details.material_sku ?? 'Unknown'), strong: true },
             { text: movLabel, badge: (restocked ? 'low' : 'high') as BadgeTone },
             { text: restocked ? `+${qty}${unit ? ` ${unit}` : ''}` : `${qty}${unit ? ` ${unit}` : ''}`, strong: true },
+            { text: '—' },
             { text: '—' },
             { text: '—' },
             { text: `JO: ${String(details.job_order_ref ?? '—')} · ${details.waste_ref ? `Waste ${String(details.waste_ref)}` : titleCase(status)}` },
@@ -3507,6 +3702,7 @@ function InventoryHistory({ filter }: ModuleProps) {
           { text: `${change > 0 ? '+' : ''}${formatQty(change)}`, strong: true },
           { text: formatQty(previous) },
           { text: formatQty(next) },
+          { text: batchMovementText(details) },
           { text: String(details.supplier ?? details.reference ?? details.source ?? '—') },
           { text: String(row.actor ?? titleCase(row.actor_role ?? 'System')) },
         ],
@@ -3532,6 +3728,7 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
   const [activeTab, setActiveTab] = useState<'inventory' | 'history' | 'count'>('inventory');
   const canCount = ['inventory-officer', 'general-manager'].includes(role) && !readOnly;
   const [qrTarget, setQrTarget] = useState<EntityRow | null>(null);
+  const [batchTarget, setBatchTarget] = useState<EntityRow | null>(null);
   const [purchaseTarget, setPurchaseTarget] = useState<EntityRow | null>(null);
   const { stats, reload: reloadStats } = useStats();
   // Restock warnings go to the people who can reorder.
@@ -3552,7 +3749,15 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
     { header: 'Stock', cell: (r) => `${r.quantity ?? 0} ${r.unit ?? ''}`.trim() },
     { header: 'Weight', cell: (r) => r.weight_kg ? `${r.weight_kg} kg` : '—' },
     { header: 'Size', cell: (r) => String(r.size ?? '—') },
+    // FIFO: the price of the batch that goes out next.
     { header: 'Unit Price', cell: (r) => money(r.unit_price) },
+    {
+      header: 'Batches',
+      cell: (r) => {
+        const open = openBatches(r);
+        return open.length > 1 ? `${open.length} batches` : open.length === 1 ? `Batch #${open[0].batch_no}` : '—';
+      },
+    },
     {
       header: 'Level',
       cell: (r) => {
@@ -3584,14 +3789,28 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
       hint: 'Type to choose an existing category, or enter a new one.',
     },
     { name: 'description', label: 'Description', kind: 'textarea' },
-    { name: 'quantity', label: 'Quantity', kind: 'number', default: '0' },
+    {
+      name: 'quantity',
+      label: 'Quantity',
+      kind: 'number',
+      default: '0',
+      hint: 'This first stock is saved as Batch #1.',
+      editReadOnly: true,
+      editHint: 'Use Restock to add stock as a new batch with its own price, or Stock Count to correct it.',
+    },
     { name: 'min_level', label: 'Reorder Point (Minimum Level)', kind: 'number', default: '10', hint: 'At or below this level the item is flagged Reorder and a restock warning appears.' },
     { name: 'safety_level', label: 'Safety Stock', kind: 'number', default: '1', hint: 'Units that must always stay in stock — MRFs can never take the item below this, so it never reaches 0.' },
     { name: 'unit', label: 'Unit', default: 'units' },
     { name: 'weight_kg', label: 'Weight (kg)', kind: 'number' },
     { name: 'size', label: 'Size', placeholder: 'e.g. 50mm, 4 inches' },
     { name: 'color', label: 'Color', placeholder: 'e.g. Blue, Red' },
-    { name: 'unit_price', label: 'Unit Price (₱)', kind: 'number' },
+    {
+      name: 'unit_price',
+      label: 'Unit Price per piece (₱)',
+      kind: 'number',
+      hint: 'The price of Batch #1. Each restock gets its own price.',
+      editHint: 'Corrects the price of the batch that goes out next (FIFO). Restocks get their own price.',
+    },
     {
       name: 'source',
       label: 'Source',
@@ -3647,7 +3866,7 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
         metric('m1', 'Total SKUs', String(rows.length), 'box', 'customers'),
         metric('m2', 'Critical / Safety', count(rows, (r) => r.status !== 'defective' && ['critical', 'safety'].includes(stockLevel(r).id)), 'package-x', 'profit'),
         metric('m3', 'Reorder', count(rows, (r) => r.status !== 'defective' && stockLevel(r).id === 'reorder'), 'alert-triangle', 'revenue'),
-        metric('m4', 'Inventory Value', money(rows.reduce((s, r) => s + Number(r.quantity || 0) * Number(r.unit_price || 0), 0)), 'wallet', 'invoices'),
+        metric('m4', 'Inventory Value', money(rows.reduce((s, r) => s + stockValue(r), 0)), 'wallet', 'invoices'),
       ]}
       quickFilters={(rows) => Array.from(new Set(rows.map((row) => String(row.category ?? 'Uncategorized'))))
         .sort((a, b) => a.localeCompare(b))
@@ -3661,9 +3880,14 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
       actions={
         (c) => (
           <>
-            <button className="btn-action" title="Print QR label" onClick={() => setQrTarget(c.row)}>
-              QR
-            </button>
+            <div className="btn-row">
+              <button className="btn-action" title="Print QR label" onClick={() => setQrTarget(c.row)}>
+                QR
+              </button>
+              <button className="btn-action btn-batches" title="Stock batches (FIFO)" onClick={() => setBatchTarget(c.row)}>
+                Batches
+              </button>
+            </div>
             {canWrite && (
               <div className="btn-row">
                 <RestockBtn c={c} />
@@ -3683,6 +3907,7 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
           onCreated={() => reloadStats()}
         />
       )}
+      {batchTarget && <BatchesModal material={batchTarget} onClose={() => setBatchTarget(null)} />}
       {qrTarget && (
         <QRLabelModal
           sku={String(qrTarget.sku ?? '')}
@@ -4519,6 +4744,12 @@ const requestStatusOptions = (requestType: string) =>
 function MrfItemsTable({ row, showStock = true }: { row: EntityRow; showStock?: boolean }) {
   const { stats } = useStats();
   const items = mrfItems(row);
+  // After approval each item carries what it cost, batch by batch (FIFO).
+  const costs = (Array.isArray(row.items) ? (row.items as EntityRow[]) : []).map((item) => ({
+    amount: item.amount,
+    batches: Array.isArray(item.batches) ? (item.batches as BatchSlice[]) : [],
+  }));
+  const showCost = costs.some((c) => c.amount !== undefined);
   return (
     <div className="mrf-items-table-wrap">
       <table className="mrf-items-table">
@@ -4530,6 +4761,7 @@ function MrfItemsTable({ row, showStock = true }: { row: EntityRow; showStock?: 
             <th className="num">Requested</th>
             {showStock && <th className="num" title="Stock above the safety level">Available</th>}
             {showStock && <th>Check</th>}
+            {showCost && <th className="num" title="Priced from the batches it came out of (First In, First Out)">Cost (FIFO)</th>}
           </tr>
         </thead>
         <tbody>
@@ -4554,6 +4786,14 @@ function MrfItemsTable({ row, showStock = true }: { row: EntityRow; showStock?: 
                 <td className="num">{item.quantity} {unit}</td>
                 {showStock && <td className="num">{inStock === null ? '—' : `${inStock} ${unit}`}</td>}
                 {showStock && <td><span className={`mrf-check ${check.cls}`}>{check.text}</span></td>}
+                {showCost && (
+                  <td className="num">
+                    {costs[i]?.amount !== undefined ? money(costs[i].amount) : '—'}
+                    {(costs[i]?.batches.length ?? 0) > 0 && (
+                      <small>{costs[i].batches.map((b) => `#${b.batch_no} × ${b.quantity} @ ${money(b.unit_price)}`).join(' + ')}</small>
+                    )}
+                  </td>
+                )}
               </tr>
             );
           })}

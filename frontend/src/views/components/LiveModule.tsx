@@ -36,6 +36,10 @@ export interface ModuleField {
   default?: string;
   /** Render the field as a non-editable display (value is still submitted). */
   readOnly?: boolean;
+  /** Read-only when editing an existing record (editable on create). */
+  editReadOnly?: boolean;
+  /** Helper text shown instead of `hint` when editing an existing record. */
+  editHint?: string;
   /** Helper text shown under the field (e.g. the reporter's role). */
   hint?: string;
   /** For date fields: allow selecting past dates (defaults to future-only). */
@@ -585,7 +589,10 @@ export function LiveModule({
           submitText={editing ? 'Save Changes' : 'Create'}
           submitting={submitting}
         >
-          {fields.filter((f) => !f.visibleWhen || f.visibleWhen(values)).map((f) => {
+          {fields.filter((f) => !f.visibleWhen || f.visibleWhen(values)).map((field) => {
+            const f: ModuleField = editing
+              ? { ...field, readOnly: field.readOnly || field.editReadOnly, hint: field.editHint ?? field.hint }
+              : field;
             const suggestions = f.suggestionsFromRows?.(rows) ?? [];
             return (
             <div className="form-group" key={f.name}>
