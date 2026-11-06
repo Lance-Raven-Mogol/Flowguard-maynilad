@@ -8,6 +8,8 @@ import * as repo from '../models/resourceRepo.js';
 import type { Row, DbError } from '../models/resourceRepo.js';
 import type { PublicUser, Role } from '../models/types.js';
 import { withAssetHealth } from './assetHealth.js';
+import * as batches from './materialBatches.js';
+import type { BatchAllocation } from './materialBatches.js';
 import { badRequest, conflict, forbidden, notFound, serviceUnavailable } from '../utils/httpError.js';
 
 /* ---------------------------------------------------------- Audit logging */
@@ -67,18 +69,74 @@ interface ChargeLine {
   unit: string;
   unit_price: number;
   amount: number;
+  /** Material lines: the FIFO batches this quantity is priced from. */
+  batches?: BatchAllocation[];
+}
+
+/**
+ * Price a material quantity the FIFO way: from the oldest batch first, at each
+ * batch's own price. Batches with the same price share one line; a quantity
+ * spread over differently priced batches gets one line per price. Stock not
+ * on hand yet is priced at the batch that goes out next.
+ */
+async function fifoChargeLines(material: Row, qty: number): Promise<ChargeLine[]> {
+  const stock = await batches.loadBatches(material);
+  const { allocations, shortfall } = batches.planFifo(stock, qty);
+  if (shortfall > 0) {
+    const price = batches.currentPrice(stock, material.unit_price);
+    allocations.push({ batch_id: '', batch_no: 0, quantity: shortfall, unit_price: price, amount: round2(shortfall * price) });
+  }
+  const groups: BatchAllocation[][] = [];
+  for (const a of allocations) {
+    const last = groups[groups.length - 1];
+    if (last && last[0].unit_price === a.unit_price) last.push(a);
+    else groups.push([a]);
+  }
+  const name = String(material.name ?? material.sku);
+  if (groups.some((g) => !(g[0].unit_price > 0))) {
+    throw badRequest(`"${name}" has no unit price in inventory — set it in the Material List first.`);
+  }
+  const batchLabel = (g: BatchAllocation[]) => {
+    const nos = g.map((a) => a.batch_no).filter((n) => n > 0);
+    return nos.length ? `Batch ${nos.map((n) => `#${n}`).join(', ')}` : 'next batch';
+  };
+  return groups.map((g) => {
+    const quantity = g.reduce((sum, a) => sum + a.quantity, 0);
+    return {
+      kind: 'material',
+      description: groups.length > 1 ? `${name} (${batchLabel(g)})` : name,
+      material_sku: String(material.sku),
+      quantity,
+      unit: String(material.unit ?? 'units'),
+      unit_price: g[0].unit_price,
+      amount: round2(quantity * g[0].unit_price),
+      batches: g,
+    };
+  });
 }
 
 /**
  * Validate the Technical Team's itemized charges. Material lines are priced
- * from inventory (never trusted from the client); labor and fees carry their
- * own amount. Returns the lines and the total amount due.
+ * from inventory (never trusted from the client) by FIFO batch; labor and fees
+ * carry their own amount. Returns the lines and the total amount due.
  */
 async function normalizeCharges(raw: unknown): Promise<{ charges: ChargeLine[]; total: number }> {
   if (!Array.isArray(raw) || raw.length === 0) throw badRequest('Add at least one charge (materials, labor, or other fees).');
   if (raw.length > MAX_CHARGE_LINES) throw badRequest(`A complaint can have at most ${MAX_CHARGE_LINES} charge lines.`);
-  const charges: ChargeLine[] = [];
+  // The same material on several lines is priced once for its full quantity,
+  // so the FIFO batches are not counted twice.
+  const entries: Row[] = [];
   for (const entry of raw as Row[]) {
+    const sku = String(entry.material_sku ?? '').trim();
+    const same = String(entry.kind) === 'material' && sku
+      ? entries.find((e) => e.kind === 'material' && e.material_sku === sku)
+      : undefined;
+    const qty = Number(entry.quantity);
+    if (same && Number.isInteger(qty) && qty > 0) same.quantity = Number(same.quantity) + qty;
+    else entries.push({ ...entry, material_sku: sku });
+  }
+  const charges: ChargeLine[] = [];
+  for (const entry of entries) {
     const kind = String(entry.kind ?? '');
     if (kind === 'material') {
       const sku = String(entry.material_sku ?? '').trim();
@@ -86,12 +144,7 @@ async function normalizeCharges(raw: unknown): Promise<{ charges: ChargeLine[]; 
       if (!material || material.archived) throw badRequest(`No active inventory item found for SKU "${sku}".`);
       const qty = Number(entry.quantity);
       if (!Number.isInteger(qty) || qty <= 0) throw badRequest(`Enter a whole-number quantity for "${material.name}".`);
-      const price = Number(material.unit_price ?? 0);
-      if (!(price > 0)) throw badRequest(`"${material.name}" has no unit price in inventory — set it in the Material List first.`);
-      charges.push({
-        kind: 'material', description: String(material.name ?? sku), material_sku: sku,
-        quantity: qty, unit: String(material.unit ?? 'units'), unit_price: price, amount: round2(qty * price),
-      });
+      charges.push(...(await fifoChargeLines(material, qty)));
     } else if (kind === 'labor' || kind === 'fee') {
       const description = String(entry.description ?? '').trim();
       const amount = round2(Number(entry.amount));
@@ -389,24 +442,41 @@ async function settleStockDeduction(mrfId: string, user: PublicUser): Promise<vo
   if (current.stock_deducted) return; // already settled — no double deduction
 
   const lines = await checkMrfStock(current);
-  await deductStock(lines, user, {
+  const costed = await deductStock(lines, user, {
     reference: current.ref_code,
     job_order_ref: current.job_order_ref ?? null,
     reason: 'Material request approved',
   });
-  await repo.updateRow('material_requests', mrfId, { stock_deducted: true });
+  // Record what the released materials cost, batch by batch (FIFO).
+  const items = mrfItems(current).map((item) => {
+    const cost = costed.find((c) => c.item.material_sku && c.item.material_sku === item.material_sku);
+    return cost
+      ? { ...item, unit_cost: round2(cost.amount / item.quantity), amount: cost.amount, batches: cost.allocations }
+      : item;
+  });
+  const patch: Row = { stock_deducted: true };
+  if (costed.length) {
+    patch.items = items;
+    patch.total_cost = round2(costed.reduce((sum, c) => sum + c.amount, 0));
+  }
+  await writeResilient(patch, (v) => repo.updateRow('material_requests', mrfId, v));
 }
 
-/** Take already stock-checked lines out of inventory, logging each movement. */
+/**
+ * Take already stock-checked lines out of inventory — oldest batch first
+ * (FIFO) — logging each movement with the batches it came from and its cost.
+ */
 async function deductStock(
   lines: Array<{ item: MrfItem; material: Row }>,
   user: PublicUser,
   context: { reference: unknown; job_order_ref?: unknown; incident_ref?: unknown; reason: string },
-): Promise<void> {
+): Promise<Array<{ item: MrfItem; allocations: BatchAllocation[]; amount: number }>> {
+  const costed: Array<{ item: MrfItem; allocations: BatchAllocation[]; amount: number }> = [];
   for (const { item, material } of lines) {
     const available = Number(material.quantity ?? 0);
-    const remaining = available - item.quantity;
-    const patch: Row = { quantity: remaining };
+    const out = await batches.stockOut(material, item.quantity);
+    const remaining = Number(out.patch.quantity);
+    const patch: Row = { quantity: remaining, unit_price: out.patch.unit_price };
     // Keep the stock status honest after the deduction (never override defective).
     if (material.status !== 'defective') {
       patch.status = materialStockStatus(remaining, material.min_level);
@@ -420,9 +490,13 @@ async function deductStock(
       new_quantity: remaining,
       quantity_change: -item.quantity,
       unit: material.unit,
+      batches: out.allocations,
+      total_cost: out.amount,
       ...context,
     });
+    costed.push({ item, allocations: out.allocations, amount: out.amount });
   }
+  return costed;
 }
 
 /** Site Visit Plan / required-material lines in the MRF item shape. */
@@ -509,13 +583,25 @@ async function settlePurchaseReceived(prId: string, user: PublicUser): Promise<v
     (m) => !m.archived && String(m.name ?? '').trim().toLowerCase() === name.toLowerCase(),
   );
 
+  // The purchase's price per piece; an unpriced purchase keeps the item's price.
+  const price = Number(pr.unit_price ?? 0) > 0 ? Number(pr.unit_price) : Number(existing?.unit_price ?? 0);
+
   if (existing) {
-    // Restock existing inventory item.
+    // Restock existing inventory item — the received stock is a new FIFO batch.
     const previous = Number(existing.quantity ?? 0);
-    const newQty = previous + qty;
+    const received = await batches.stockIn(existing, qty, {
+      unit_price: price,
+      supplier: pr.supplier ?? existing.supplier,
+      supplier_id: pr.supplier_id ?? existing.supplier_id,
+      source: pr.source ?? existing.source,
+      reference: pr.ref_code,
+      received_by: user.fullName,
+    });
+    const newQty = Number(received.patch.quantity);
     const minLevel = Number(existing.min_level ?? 0);
     const patch: Row = {
       quantity: newQty,
+      unit_price: received.patch.unit_price,
       status: existing.status === 'defective' ? existing.status
         : newQty <= 0 ? 'out_of_stock'
         : newQty <= minLevel ? 'low_stock'
@@ -533,6 +619,8 @@ async function settlePurchaseReceived(prId: string, user: PublicUser): Promise<v
       unit: existing.unit,
       reference: pr.ref_code,
       reason: 'Purchase request received',
+      batch_no: received.batch.batch_no,
+      unit_price: Number(received.batch.unit_price),
     });
   } else {
     // Create a new inventory item from the purchase request's specs.
@@ -563,7 +651,16 @@ async function settlePurchaseReceived(prId: string, user: PublicUser): Promise<v
       status: qty <= 0 ? 'out_of_stock' : qty <= minLevel ? 'low_stock' : 'in_stock',
       archived: false,
     };
+    await batches.assertReady();
     const created = await repo.insertRow('materials', newItem);
+    await batches.firstBatch(created, {
+      unit_price: Number(newItem.unit_price ?? 0),
+      supplier: newItem.supplier,
+      supplier_id: newItem.supplier_id,
+      source: newItem.source,
+      reference: pr.ref_code,
+      received_by: user.fullName,
+    });
     await repo.updateRow('material_requests', prId, { stock_deducted: true });
     await logAudit('materials', String(created?.id ?? ''), 'create', user.fullName, user.role, {
       movement_type: 'initial_stock',
@@ -803,6 +900,8 @@ export const resourceService = {
           : row.status,
       }));
     }
+    // Each material carries its stock batches (FIFO order) for pricing and display.
+    if (entity === 'materials') return batches.withBatches(rows);
     return entity === 'assets' ? rows.map(withAssetHealth) : rows;
   },
 
@@ -926,6 +1025,13 @@ export const resourceService = {
 
     if (entity === 'materials') {
       values.status = materialStockStatus(values.quantity, values.min_level, values.status);
+      // The first stock of a new item is its batch #1 — it needs its price per piece.
+      const quantity = Number(values.quantity ?? 0);
+      if (!Number.isInteger(quantity) || quantity < 0) throw badRequest('Quantity must be a whole number (0 or more).');
+      if (quantity > 0) {
+        if (!(Number(values.unit_price ?? 0) > 0)) throw badRequest('Enter the unit price (per piece) of this first batch.');
+        await batches.assertReady();
+      }
     }
     if (entity === 'team-schedules') {
       const member = await repo.getRowById('app_users', String(values.member_id ?? ''));
@@ -1054,6 +1160,16 @@ export const resourceService = {
 
     try {
       const row = await writeResilient(values, (v) => repo.insertRow(def.table, v), def.critical);
+      const firstBatch = entity === 'materials'
+        ? await batches.firstBatch(row, {
+            unit_price: Number(row.unit_price ?? 0),
+            supplier: row.supplier,
+            supplier_id: row.supplier_id,
+            source: row.source,
+            reference: 'Initial stock',
+            received_by: user.fullName,
+          })
+        : null;
       const auditDetails = entity === 'support-messages'
         ? {
             customer_id: values.customer_id,
@@ -1070,6 +1186,7 @@ export const resourceService = {
             previous_quantity: 0,
             new_quantity: Number(row.quantity ?? 0),
             quantity_change: Number(row.quantity ?? 0),
+            ...(firstBatch ? { batch_no: firstBatch.batch_no, unit_price: Number(firstBatch.unit_price) } : {}),
           }
         : values;
       if (entity === 'waste-disposals') {
@@ -1111,10 +1228,9 @@ export const resourceService = {
     let siteVisitStock: Array<{ item: MrfItem; material: Row }> | null = null;
     let siteVisitRef: unknown = null;
     const isCustomerPayment = entity === 'payments' && user.role === 'customer';
-    const isTeamMaterialReturn =
-      entity === 'materials' &&
-      ['contractor', 'inhouse-team'].includes(user.role) &&
-      String(body.return_job_order_ref ?? '').trim() !== '';
+    // Usable leftovers going back to stock from a completed job order.
+    const isMaterialReturn = entity === 'materials' && String(body.return_job_order_ref ?? '').trim() !== '';
+    const isTeamMaterialReturn = isMaterialReturn && ['contractor', 'inhouse-team'].includes(user.role);
     if (!canWrite(def, user.role) && !isCustomerPayment && !isTeamMaterialReturn) {
       throw forbidden('You do not have permission to update this record.');
     }
@@ -1128,18 +1244,20 @@ export const resourceService = {
       );
       if (!isReporter) throw forbidden('Only the complainant can edit this complaint.');
     }
-    if (isTeamMaterialReturn) {
-      const jobOrderRef = String(body.return_job_order_ref).trim();
-      const returnQty = Number(body.return_quantity);
-      if (!Number.isFinite(returnQty) || returnQty <= 0) throw badRequest('Return quantity must be greater than zero.');
-      const jobOrder = (await repo.findRowsBy('job_orders', 'ref_code', jobOrderRef))[0];
+    const returnJobOrderRef = String(body.return_job_order_ref ?? '').trim();
+    const returnQty = Number(body.return_quantity);
+    if (isMaterialReturn) {
+      if (!Number.isInteger(returnQty) || returnQty <= 0) throw badRequest('Return quantity must be a whole number greater than zero.');
+      const jobOrder = (await repo.findRowsBy('job_orders', 'ref_code', returnJobOrderRef))[0];
       if (!jobOrder || String(jobOrder.status) !== 'completed') {
         throw conflict('Leftover materials can only be returned for a completed job order.');
       }
       const isLeader = String(jobOrder.team_leader ?? '').trim().toLowerCase() === user.fullName.trim().toLowerCase();
-      if (!isLeader) throw forbidden('Only the assigned team leader can return leftover materials.');
+      if (isTeamMaterialReturn && !isLeader) throw forbidden('Only the assigned team leader can return leftover materials.');
       const material = await repo.getRowById('materials', id);
       if (!material) throw notFound('Material not found.');
+      // A return only changes the stock — never the item's other details.
+      for (const key of Object.keys(values)) delete values[key];
       values.quantity = Number(material.quantity ?? 0) + returnQty;
     }
     if (isCustomerPayment) {
@@ -1556,6 +1674,58 @@ export const resourceService = {
     // Read before the write — the row object may be updated in place.
     const previousQuantity = Number(currentMaterial?.quantity ?? 0);
 
+    // FIFO batches: every change to the stock goes through them, and the
+    // item's quantity and unit price are then taken from its batches.
+    let batchDetails: Row = {};
+    if (entity === 'materials' && currentMaterial) {
+      let patch: Row | null = null;
+      const nextQuantity = 'quantity' in values ? Number(values.quantity) : previousQuantity;
+      if (isMaterialReturn) {
+        const back = await batches.stockReturn(currentMaterial, returnQty, returnJobOrderRef);
+        patch = back.patch;
+        batchDetails = { batches: back.allocations };
+      } else if (nextQuantity !== previousQuantity) {
+        if (!Number.isInteger(nextQuantity) || nextQuantity < 0) throw badRequest('Stock must be a whole number (0 or more).');
+        if (body.restock === true) {
+          // A restock is a new batch with its own price per piece.
+          const added = nextQuantity - previousQuantity;
+          if (!(added > 0)) throw badRequest('Enter a restock quantity greater than zero.');
+          const price = round2(Number(body.restock_unit_price));
+          if (!(price > 0)) throw badRequest('Enter the unit price (per piece) of this restock batch.');
+          const restocked = await batches.stockIn(currentMaterial, added, {
+            unit_price: price,
+            supplier: values.supplier ?? currentMaterial.supplier,
+            supplier_id: values.supplier_id ?? currentMaterial.supplier_id,
+            source: values.source ?? currentMaterial.source,
+            reference: String(body.restock_reference ?? '').trim() || null,
+            received_by: user.fullName,
+          });
+          patch = restocked.patch;
+          batchDetails = {
+            batch_no: restocked.batch.batch_no,
+            unit_price: price,
+            batches: [{ batch_id: String(restocked.batch.id), batch_no: restocked.batch.batch_no, quantity: added, unit_price: price, amount: round2(added * price) }],
+          };
+        } else {
+          // Stock count / correction: missing stock leaves the oldest batch first.
+          const adjusted = await batches.stockAdjust(currentMaterial, nextQuantity);
+          patch = adjusted.patch;
+          batchDetails = { batches: adjusted.allocations };
+        }
+      } else if ('unit_price' in values && Number(values.unit_price) !== Number(currentMaterial.unit_price ?? 0)) {
+        // Editing the price corrects the batch that goes out next; new stock
+        // gets its own price when it is restocked.
+        const price = round2(Number(values.unit_price));
+        if (!(price >= 0)) throw badRequest('Unit price must be 0 or more.');
+        const repriced = await batches.setCurrentBatchPrice(currentMaterial, price);
+        patch = { unit_price: repriced.patch.unit_price };
+        batchDetails = { batch_no: repriced.batch?.batch_no, unit_price: price, price_change: true };
+      }
+      delete values.unit_price; // always follows the batches
+      if (patch) Object.assign(values, patch);
+      if (Object.keys(values).length === 0) throw badRequest('No valid fields to update.');
+    }
+
     if (entity === 'materials' && ('quantity' in values || 'min_level' in values)) {
       const current = currentMaterial!;
       if (!current) throw notFound('Record not found.');
@@ -1684,9 +1854,10 @@ export const resourceService = {
             quantity_change: quantityChange,
             unit: row.unit,
             supplier: row.supplier,
-            ...(isTeamMaterialReturn ? {
-              returned_from_job_order: String(body.return_job_order_ref),
-              returned_quantity: Number(body.return_quantity),
+            ...batchDetails,
+            ...(isMaterialReturn ? {
+              returned_from_job_order: returnJobOrderRef,
+              returned_quantity: returnQty,
             } : {}),
             // Physical count from the Stock Count screen: system vs. actual.
             ...(body.stock_count === true && 'quantity' in values ? {

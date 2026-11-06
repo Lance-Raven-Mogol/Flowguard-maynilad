@@ -12,6 +12,7 @@ import { DonutPanel, type LegendItem } from '../components/charts';
 import { InfoCardGrid, PanelHead, StatList } from '../components/panels';
 import { JobOrderCalendar } from '../components/JobOrderCalendar';
 import type { EntityRow } from '../../services/resourceService';
+import { stockValue } from '../../models/stockBatches';
 
 /* helpers */
 const GREEN = new Set(['resolved', 'completed', 'released', 'published', 'approved', 'in_stock', 'good']);
@@ -158,7 +159,7 @@ function CustomerOverview({ stats, customerId, fullName, serialNumber }: { stats
 
 /* ------------------------------------------------------------------ Manager */
 function ManagerOverview({ stats }: { stats: DashboardStats }) {
-  const inv = stats.materials.reduce((s, m) => s + Number(m.quantity || 0) * Number(m.unit_price || 0), 0);
+  const inv = stats.materials.reduce((s, m) => s + stockValue(m), 0);
   const pendingJobs = stats.jobOrders.filter((j) => j.status === 'pending');
   const ongoingJobs = stats.jobOrders.filter((j) => j.status === 'in_progress');
   const pendingIncidents = stats.incidents.filter((i) => i.status === 'under_verification');
@@ -224,7 +225,7 @@ function ManagerOverview({ stats }: { stats: DashboardStats }) {
 
 /* ---------------------------------------------------------------- Inventory */
 function InventoryOverview({ stats }: { stats: DashboardStats }) {
-  const inv = stats.materials.reduce((s, m) => s + Number(m.quantity || 0) * Number(m.unit_price || 0), 0);
+  const inv = stats.materials.reduce((s, m) => s + stockValue(m), 0);
   return (
     <>
       <MetricsGrid
