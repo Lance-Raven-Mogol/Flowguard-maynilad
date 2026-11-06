@@ -2322,6 +2322,87 @@ function JobOrderDetail({ row }: { row: EntityRow }) {
       ) : row.incident_ref ? (
         <p style={{ color: 'var(--muted)', fontSize: 13 }}>Linked complaint {String(row.incident_ref)} not found.</p>
       ) : null}
+
+      <JobOrderMaterialCost row={row} />
+    </>
+  );
+}
+
+interface JobMaterialCost {
+  total: number;
+  released_total: number;
+  returned_total: number;
+  billed: number | null;
+  mrf_refs: string[];
+  items: { material_sku: string; material_name: string; quantity: number; unit: string; amount: number; batches: BatchSlice[] }[];
+}
+
+/**
+ * What the materials used on this job order actually cost (FIFO): released
+ * through its MRFs, minus usable leftovers returned to stock, each priced by
+ * the batch it came out of — next to what the customer was billed for them.
+ */
+function JobOrderMaterialCost({ row }: { row: EntityRow }) {
+  const cost = row.material_cost as JobMaterialCost | undefined;
+  if (!cost) return null; // customers don't see internal costs
+  const diff = cost.billed === null ? null : Math.round((cost.billed - cost.total) * 100) / 100;
+  return (
+    <>
+      <p className="detail-section-title">Materials Cost (FIFO)</p>
+      {cost.items.length === 0 ? (
+        <p style={{ color: 'var(--muted)', fontSize: 13 }}>
+          No materials have been taken out of stock for this job order yet. The cost appears once its MRF is approved.
+        </p>
+      ) : (
+        <>
+          <div className="mrf-items-table-wrap">
+            <table className="mrf-items-table">
+              <thead>
+                <tr>
+                  <th>Material</th>
+                  <th className="num">Used</th>
+                  <th>From batches</th>
+                  <th className="num">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cost.items.map((item) => (
+                  <tr key={item.material_sku}>
+                    <td>{item.material_name}<small>{item.material_sku}</small></td>
+                    <td className="num">{item.quantity} {item.unit}</td>
+                    <td>
+                      {item.batches.length
+                        ? item.batches.map((b) => `#${b.batch_no} × ${b.quantity} @ ${money(b.unit_price)}`).join(' + ')
+                        : '—'}
+                    </td>
+                    <td className="num">{money(item.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th colSpan={3}>Actual materials cost</th>
+                  <th className="num">{money(cost.total)}</th>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <dl className="detail-list complaint-detail-grid job-cost-grid">
+            <DetailRow label="Released (MRF)">
+              {money(cost.released_total)}{cost.mrf_refs.length ? ` · ${cost.mrf_refs.join(', ')}` : ''}
+            </DetailRow>
+            <DetailRow label="Returned to stock">{cost.returned_total > 0 ? `− ${money(cost.returned_total)}` : money(0)}</DetailRow>
+            {cost.billed !== null && <DetailRow label="Billed for materials">{money(cost.billed)}</DetailRow>}
+            {diff !== null && (
+              <DetailRow label="Difference">
+                <span style={{ color: diff < 0 ? 'var(--bad)' : diff > 0 ? 'var(--good)' : undefined, fontWeight: 700 }}>
+                  {diff === 0 ? 'Matches the bill' : diff > 0 ? `${money(diff)} over cost` : `${money(-diff)} under cost`}
+                </span>
+              </DetailRow>
+            )}
+          </dl>
+        </>
+      )}
     </>
   );
 }
