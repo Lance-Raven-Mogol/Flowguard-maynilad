@@ -144,3 +144,38 @@ test('items from before batches get an opening batch at their price', async () =
   const listed = (await resourceService.list('materials', inventory)).find((m) => m.id === 'old');
   assert.equal(listed.batches.length, 2);
 });
+
+test('the job order shows what its materials actually cost; the final bill charges that', async () => {
+  seed();
+  const commercial = user('commercial-department', 'Cora Commercial');
+  const pipe = await pipeWithTwoBatches();
+  table('incidents').push({ id: 'i1', ref_code: 'INC-0001', type: 'leak', status: 'in_progress' });
+  table('job_orders')[0].incident_ref = 'INC-0001';
+  await resourceService.update('incidents', tech, 'i1', {
+    charges: [{ kind: 'material', material_sku: pipe.sku, quantity: 3 }, { kind: 'labor', description: 'Labor', amount: 500 }],
+  });
+  assert.equal(table('incidents')[0].estimated_cost, 800, 'quoted 3 × ₱100 + labor');
+
+  // The job used more than quoted: 12 released (10 × ₱100 + 2 × ₱120), then 2 usable leftovers came back.
+  await approveMrf(pipe.sku, 12);
+  table('job_orders')[0].status = 'completed';
+  await resourceService.update('materials', leader, pipe.id, { return_job_order_ref: 'JO-2026-001', return_quantity: 2 });
+
+  const jo = (await resourceService.list('job-orders', commercial))[0];
+  assert.equal(jo.material_cost.released_total, 1240);
+  assert.equal(jo.material_cost.returned_total, 240, 'the 2 returned came from batch #2');
+  assert.equal(jo.material_cost.total, 1000, '10 used, all from batch #1');
+  assert.equal(jo.material_cost.billed, 300, 'what the price breakdown charged for materials');
+  assert.deepEqual(jo.material_cost.items[0].batches.map((b) => [b.batch_no, b.quantity]), [[1, 10]]);
+  const customerView = (await resourceService.list('job-orders', user('customer', 'Cruz Customer')))[0];
+  assert.equal(customerView?.material_cost, undefined, 'internal cost is not shown to customers');
+
+  const bill = await resourceService.create('payments', commercial, {
+    customer_name: 'x', customer_email: 'x@x.com', amount: 1, job_order_ref: 'JO-2026-001',
+  });
+  assert.deepEqual(bill.charges.map((c) => [c.description, c.quantity, c.unit_price, c.amount]), [
+    ['PVC Pipe 50mm', 10, 100, 1000],
+    ['Labor', 1, 500, 500],
+  ]);
+  assert.equal(bill.amount, 1500);
+});

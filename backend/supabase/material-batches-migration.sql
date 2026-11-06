@@ -33,3 +33,7 @@ where m.quantity > 0
 
 -- RLS on (backend uses the service-role key, which bypasses it).
 alter table public.material_batches enable row level security;
+
+-- Usable leftovers returned to stock from a job order (they were not used, so
+-- they come off the job order's material cost): [{ material_sku, quantity, amount, batches }]
+alter table public.job_orders add column if not exists returned_materials jsonb not null default '[]'::jsonb;

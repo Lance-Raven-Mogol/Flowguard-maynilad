@@ -86,15 +86,20 @@ async function fifoChargeLines(material: Row, qty: number): Promise<ChargeLine[]
     const price = batches.currentPrice(stock, material.unit_price);
     allocations.push({ batch_id: '', batch_no: 0, quantity: shortfall, unit_price: price, amount: round2(shortfall * price) });
   }
+  const name = String(material.name ?? material.sku);
+  if (allocations.some((a) => !(a.unit_price > 0))) {
+    throw badRequest(`"${name}" has no unit price in inventory — set it in the Material List first.`);
+  }
+  return batchChargeLines(name, String(material.sku), String(material.unit ?? 'units'), allocations);
+}
+
+/** Charge lines for FIFO batch slices: one line per price (batches with the same price share it). */
+function batchChargeLines(name: string, sku: string, unit: string, allocations: BatchAllocation[]): ChargeLine[] {
   const groups: BatchAllocation[][] = [];
   for (const a of allocations) {
     const last = groups[groups.length - 1];
     if (last && last[0].unit_price === a.unit_price) last.push(a);
     else groups.push([a]);
-  }
-  const name = String(material.name ?? material.sku);
-  if (groups.some((g) => !(g[0].unit_price > 0))) {
-    throw badRequest(`"${name}" has no unit price in inventory — set it in the Material List first.`);
   }
   const batchLabel = (g: BatchAllocation[]) => {
     const nos = g.map((a) => a.batch_no).filter((n) => n > 0);
@@ -105,15 +110,103 @@ async function fifoChargeLines(material: Row, qty: number): Promise<ChargeLine[]
     return {
       kind: 'material',
       description: groups.length > 1 ? `${name} (${batchLabel(g)})` : name,
-      material_sku: String(material.sku),
+      material_sku: sku,
       quantity,
-      unit: String(material.unit ?? 'units'),
+      unit,
       unit_price: g[0].unit_price,
       amount: round2(quantity * g[0].unit_price),
       batches: g,
     };
   });
 }
+
+/** One material released to a job order, with what it actually cost (FIFO). */
+interface ReleasedMaterial {
+  material_sku: string;
+  material_name: string;
+  quantity: number;
+  unit: string;
+  amount: number;
+  batches: BatchAllocation[];
+}
+
+/** Add (sign 1) or take away (sign -1) batch slices, merged per batch. */
+function mergeSlices(into: BatchAllocation[], slices: BatchAllocation[], sign: 1 | -1): void {
+  for (const s of slices) {
+    const key = String(s.batch_id || `#${s.batch_no}`);
+    const same = into.find((x) => String(x.batch_id || `#${x.batch_no}`) === key);
+    const qty = sign * Number(s.quantity ?? 0);
+    if (same) {
+      same.quantity += qty;
+      same.amount = round2(same.quantity * same.unit_price);
+    } else if (qty > 0) {
+      into.push({ batch_id: s.batch_id, batch_no: Number(s.batch_no), quantity: qty, unit_price: Number(s.unit_price), amount: round2(qty * Number(s.unit_price)) });
+    }
+  }
+}
+
+/**
+ * What the materials a job order used actually cost: everything its MRFs took
+ * out of stock, minus the usable leftovers returned to stock, merged per
+ * material and priced by the FIFO batches the stock came out of.
+ * `mrfs` may hold MRFs of other job orders too.
+ */
+function releasedMaterialCost(jobOrder: Row, mrfs: Row[]): {
+  total: number; released_total: number; returned_total: number; items: ReleasedMaterial[]; mrf_refs: string[];
+} {
+  const jobOrderRef = String(jobOrder.ref_code ?? '');
+  const items: ReleasedMaterial[] = [];
+  const refs: string[] = [];
+  const itemFor = (raw: Row): ReleasedMaterial => {
+    const sku = String(raw.material_sku ?? '').trim();
+    let item = items.find((i) => i.material_sku === sku);
+    if (!item) {
+      item = { material_sku: sku, material_name: String(raw.material_name ?? sku), quantity: 0, unit: String(raw.unit ?? ''), amount: 0, batches: [] };
+      items.push(item);
+    }
+    return item;
+  };
+  let released = 0;
+  for (const mrf of mrfs) {
+    if (String(mrf.job_order_ref ?? '') !== jobOrderRef || !isMrf(mrf) || !mrf.stock_deducted || mrf.archived) continue;
+    if (String(mrf.status) === 'rejected') continue;
+    refs.push(String(mrf.ref_code ?? ''));
+    for (const raw of Array.isArray(mrf.items) ? (mrf.items as Row[]) : []) {
+      if (!String(raw.material_sku ?? '').trim() || raw.amount === undefined) continue; // custom items are bought outside inventory
+      const item = itemFor(raw);
+      item.quantity += Number(raw.quantity ?? 0);
+      item.amount = round2(item.amount + Number(raw.amount ?? 0));
+      released = round2(released + Number(raw.amount ?? 0));
+      mergeSlices(item.batches, Array.isArray(raw.batches) ? (raw.batches as BatchAllocation[]) : [], 1);
+    }
+  }
+  let returned = 0;
+  for (const ret of Array.isArray(jobOrder.returned_materials) ? (jobOrder.returned_materials as Row[]) : []) {
+    const item = items.find((i) => i.material_sku === String(ret.material_sku ?? ''));
+    if (!item) continue;
+    item.quantity -= Number(ret.quantity ?? 0);
+    item.amount = round2(item.amount - Number(ret.amount ?? 0));
+    returned = round2(returned + Number(ret.amount ?? 0));
+    mergeSlices(item.batches, Array.isArray(ret.batches) ? (ret.batches as BatchAllocation[]) : [], -1);
+  }
+  const used = items
+    .map((i) => ({ ...i, batches: i.batches.filter((b) => b.quantity > 0).sort((a, b) => a.batch_no - b.batch_no) }))
+    .filter((i) => i.quantity > 0);
+  return {
+    total: round2(used.reduce((sum, i) => sum + i.amount, 0)),
+    released_total: released,
+    returned_total: returned,
+    items: used,
+    mrf_refs: refs,
+  };
+}
+
+/** The material lines of a complaint's price breakdown. */
+const billedMaterials = (incident: Row | undefined): number | null => {
+  const lines = Array.isArray(incident?.charges) ? (incident!.charges as ChargeLine[]) : [];
+  if (!lines.length) return null;
+  return round2(lines.filter((l) => l.kind === 'material').reduce((sum, l) => sum + Number(l.amount ?? 0), 0));
+};
 
 /**
  * Validate the Technical Team's itemized charges. Material lines are priced
@@ -902,6 +995,19 @@ export const resourceService = {
     }
     // Each material carries its stock batches (FIFO order) for pricing and display.
     if (entity === 'materials') return batches.withBatches(rows);
+    // Staff see what the materials released to each job order actually cost
+    // (FIFO) next to what the customer was billed for them. Internal — not for customers.
+    if (entity === 'job-orders' && user.role !== 'customer' && rows.length) {
+      const [mrfs, incidents] = await Promise.all([
+        repo.listRows('material_requests', { archived: 'all' }),
+        repo.listRows('incidents', { archived: 'all' }),
+      ]);
+      rows = rows.map((row) => {
+        const cost = releasedMaterialCost(row, mrfs);
+        const incident = incidents.find((i) => String(i.ref_code ?? '') === String(row.incident_ref ?? '') && row.incident_ref);
+        return { ...row, material_cost: { ...cost, billed: billedMaterials(incident) } };
+      });
+    }
     return entity === 'assets' ? rows.map(withAssetHealth) : rows;
   },
 
@@ -1097,10 +1203,11 @@ export const resourceService = {
     if (entity === 'payments') {
       let incidentRef = String(values.incident_ref ?? '').trim();
       const jobOrderRef = String(values.job_order_ref ?? '').trim();
+      let completedJob: Row | undefined;
 
       if (jobOrderRef) {
         // Job-order-backed bill: full validation chain.
-        const completedJob = (await repo.findRowsBy('job_orders', 'ref_code', jobOrderRef))[0];
+        completedJob = (await repo.findRowsBy('job_orders', 'ref_code', jobOrderRef))[0];
         if (!completedJob) throw badRequest(`Job order "${jobOrderRef}" was not found.`);
         if (completedJob.status !== 'completed') throw conflict('The linked Job Order must be Completed before a final bill can be issued.');
         const linkedIncidentRef = String(completedJob.incident_ref ?? '').trim();
@@ -1126,6 +1233,24 @@ export const resourceService = {
         if (Array.isArray(incident.charges) && incident.charges.length > 0 && Number(incident.estimated_cost) > 0) {
           values.amount = Number(incident.estimated_cost);
           values.charges = incident.charges;
+          // A final bill issued after the job is done charges the materials at
+          // what was actually released, priced by the FIFO batches they came
+          // out of; labor and fees stay as priced.
+          if (completedJob) {
+            const released = releasedMaterialCost(completedJob, await repo.findRowsBy('material_requests', 'job_order_ref', jobOrderRef));
+            if (released.items.length) {
+              const lines: ChargeLine[] = [
+                ...released.items.flatMap((item) =>
+                  item.batches.length
+                    ? batchChargeLines(item.material_name, item.material_sku, item.unit, item.batches)
+                    : [{ kind: 'material' as const, description: item.material_name, material_sku: item.material_sku, quantity: item.quantity, unit: item.unit, unit_price: round2(item.amount / item.quantity), amount: item.amount }],
+                ),
+                ...(incident.charges as ChargeLine[]).filter((line) => line.kind !== 'material'),
+              ];
+              values.charges = lines;
+              values.amount = round2(lines.reduce((sum, line) => sum + Number(line.amount ?? 0), 0));
+            }
+          }
         }
         const billToId = String(incident.bill_to_customer_id ?? '').trim();
         if (billToId) {
@@ -1246,9 +1371,11 @@ export const resourceService = {
     }
     const returnJobOrderRef = String(body.return_job_order_ref ?? '').trim();
     const returnQty = Number(body.return_quantity);
+    let returnJobOrder: Row | undefined;
     if (isMaterialReturn) {
       if (!Number.isInteger(returnQty) || returnQty <= 0) throw badRequest('Return quantity must be a whole number greater than zero.');
       const jobOrder = (await repo.findRowsBy('job_orders', 'ref_code', returnJobOrderRef))[0];
+      returnJobOrder = jobOrder;
       if (!jobOrder || String(jobOrder.status) !== 'completed') {
         throw conflict('Leftover materials can only be returned for a completed job order.');
       }
@@ -1800,6 +1927,27 @@ export const resourceService = {
     try {
       const row = await writeResilient(values, (v) => repo.updateRow(def.table, id, v), def.critical);
       if (!row) throw notFound('Record not found.');
+      if (isMaterialReturn && returnJobOrder) {
+        // Keep the job order's material cost honest: returned stock was not used.
+        const slices = (Array.isArray(batchDetails.batches) ? batchDetails.batches : []) as BatchAllocation[];
+        const returned = Array.isArray(returnJobOrder.returned_materials) ? [...(returnJobOrder.returned_materials as Row[])] : [];
+        returned.push({
+          material_sku: row.sku,
+          material_name: row.name,
+          unit: row.unit,
+          quantity: returnQty,
+          amount: round2(slices.reduce((sum, b) => sum + Number(b.amount ?? 0), 0)),
+          batches: slices,
+          returned_by: user.fullName,
+          returned_at: new Date().toISOString(),
+        });
+        try {
+          await repo.updateRow('job_orders', String(returnJobOrder.id), { returned_materials: returned });
+        } catch (err) {
+          // The stock is already back; only the job order's cost summary is missing this return.
+          console.warn('[resource] could not record the return on the job order (run material-batches-migration.sql):', err);
+        }
+      }
       if (siteVisitStock?.length) {
         await deductStock(siteVisitStock, user, {
           reference: siteVisitRef,
