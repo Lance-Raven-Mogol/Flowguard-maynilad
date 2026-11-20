@@ -109,6 +109,22 @@ const jobScheduleText = (row: EntityRow): string => {
 const count = (rows: EntityRow[], pred: (r: EntityRow) => boolean) => String(rows.filter(pred).length);
 /** Today's date as YYYY-MM-DD — used as the min for scheduling date pickers. */
 const todayISO = (): string => new Date().toISOString().slice(0, 10);
+/** Today's date (YYYY-MM-DD) in the browser's local time zone. */
+const localTodayISO = (): string => new Date().toLocaleDateString('en-CA');
+
+/**
+ * Target completion of a job order, set by the Commercial Department.
+ * `overdue` is true while unfinished work is past its target date.
+ */
+function jobTarget(row: EntityRow): { date: string; text: string; overdue: boolean; dueToday: boolean } {
+  const date = String(row.target_completion_date ?? '').slice(0, 10);
+  if (!date) return { date: '', text: '—', overdue: false, dueToday: false };
+  const open = !['completed', 'cancelled'].includes(String(row.status ?? ''));
+  const today = localTodayISO();
+  const overdue = open && date < today;
+  const dueToday = open && date === today;
+  return { date, text: `${dateShort(date)}${overdue ? ' · Overdue' : dueToday ? ' · Due today' : ''}`, overdue, dueToday };
+}
 
 const metric = (id: string, label: string, value: string, icon: string, accent: Metric['accent']): Metric => ({
   id, label, value, icon, accent,
@@ -492,16 +508,20 @@ function JobOrderForm({
     incident ? `${titleCase(incident.type)} — ${String(incident.location ?? '')}`.trim().replace(/—\s*$/, '').trim() : '',
   );
   const [scope, setScope] = useState(incident ? String(incident.remarks || incident.description || '') : '');
+  const [target, setTarget] = useState('');
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     if (!title.trim()) return notify('A job title is required.', 'error');
+    if (!target) return notify('Set the target completion date: when the work must be finished.', 'error');
+    if (target < localTodayISO()) return notify('The target completion date cannot be in the past.', 'error');
     setSaving(true);
     try {
       await resourceService.create('job-orders', {
         title: title.trim(),
         incident_ref: incident ? String(incident.ref_code ?? '') : '',
         scope: scope.trim(),
+        target_completion_date: target,
         status: 'pending',
       });
       notify('Pending job order created. The Technical Team can now assign the crew.');
@@ -540,6 +560,13 @@ function JobOrderForm({
       <div className="form-group">
         <label>Scope of Work</label>
         <textarea value={scope} onChange={(e) => setScope(e.target.value)} placeholder="What needs to be done…" />
+      </div>
+      <div className="form-group">
+        <label>Target Completion Date</label>
+        <input type="date" min={localTodayISO()} value={target} onChange={(e) => setTarget(e.target.value)} required />
+        <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>
+          When the work must be finished. The Technical Team must schedule the crew on or before this date.
+        </small>
       </div>
 
       <p style={{ color: 'var(--muted)', fontSize: 13 }}>
@@ -591,6 +618,8 @@ function JobOrderAssignmentForm({
   const [startTime, setStartTime] = useState(String(row.scheduled_start_time ?? '08:00').slice(0, 5));
   const [endTime, setEndTime] = useState(String(row.scheduled_end_time ?? '12:00').slice(0, 5));
   const [saving, setSaving] = useState(false);
+  const target = jobTarget(row);
+  const targetDate = target.date;
   const memberPool = teamType === 'in-house' ? inhouseMembers : contractorMembers;
   const availableMemberPool = scheduled
     ? memberPool
@@ -646,6 +675,9 @@ function JobOrderAssignmentForm({
     if (!teamName.trim()) return notify('Enter a team name.', 'error');
     if (!leader) return notify('Select a team leader.', 'error');
     if (!scheduled) return notify('Select a scheduled date.', 'error');
+    if (targetDate && scheduled > targetDate) {
+      return notify(`This job order must be finished by ${dateShort(targetDate)}. Schedule the crew on or before that date.`, 'error');
+    }
     if (!startTime || !endTime || startTime >= endTime) return notify('Enter a valid Job Order start and end time.', 'error');
     const membersList = [leader, ...picked.filter((name) => name !== leader)];
     setSaving(true);
@@ -678,6 +710,12 @@ function JobOrderAssignmentForm({
         <label>Job Order</label>
         <input value={String(row.title ?? '')} readOnly />
       </div>
+      {targetDate && (
+        <p className={`team-availability-hint${target.overdue ? ' is-warning' : ''}`}>
+          Must be finished by <strong>{dateShort(targetDate)}</strong> (set by the Commercial Department).
+          {target.overdue && ' This target date has passed. Ask the Commercial Department to move it.'}
+        </p>
+      )}
       <div className="form-group">
         <label>Team Type</label>
         <select value={teamType} onChange={(e) => changeType(e.target.value as 'in-house' | 'contractor')}>
@@ -692,7 +730,7 @@ function JobOrderAssignmentForm({
       <div className="job-schedule-fields">
         <div className="form-group">
           <label>Scheduled Date</label>
-          <input type="date" min={todayISO()} value={scheduled} onChange={(e) => changeScheduledDate(e.target.value)} />
+          <input type="date" min={todayISO()} max={targetDate || undefined} value={scheduled} onChange={(e) => changeScheduledDate(e.target.value)} />
         </div>
         <div className="form-group">
           <label>Time Slot</label>
@@ -725,6 +763,212 @@ function JobOrderAssignmentForm({
         )}
       </div>
     </Modal>
+  );
+}
+
+/** Commercial Department sets or moves the date an unfinished job order must be done by. */
+function JobOrderTargetButton({ c }: { c: RowActionCtx }) {
+  const { notify } = useToast();
+  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState('');
+  const [saving, setSaving] = useState(false);
+  const current = jobTarget(c.row);
+  const scheduled = String(c.row.scheduled_date ?? '').slice(0, 10);
+  const minDate = scheduled && scheduled > localTodayISO() ? scheduled : localTodayISO();
+
+  if (c.archived || ['completed', 'cancelled'].includes(String(c.row.status))) return null;
+
+  const show = () => {
+    setTarget(current.date);
+    setOpen(true);
+  };
+  const save = async () => {
+    if (!target) return notify('Select the target completion date.', 'error');
+    if (target < minDate) {
+      return notify(
+        scheduled && target < scheduled
+          ? `The crew is already scheduled on ${dateShort(scheduled)}. Pick that date or later.`
+          : 'The target completion date cannot be in the past.',
+        'error',
+      );
+    }
+    setSaving(true);
+    try {
+      await resourceService.update('job-orders', String(c.row.id), { target_completion_date: target });
+      notify('Target completion date saved.');
+      await c.reload();
+      setOpen(false);
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not save the target completion date.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <button className="btn-action" onClick={show} disabled={c.busy}>
+        {current.date ? 'Target Date' : 'Set Target Date'}
+      </button>
+      {open && (
+        <Modal title={`Target Completion — ${c.row.ref_code}`} open onClose={() => setOpen(false)} onSubmit={save} submitText="Save" submitting={saving}>
+          <div className="form-group">
+            <label>Job Order</label>
+            <input value={String(c.row.title ?? '')} readOnly />
+          </div>
+          <div className="form-group">
+            <label>Target Completion Date</label>
+            <input type="date" min={minDate} value={target} onChange={(e) => setTarget(e.target.value)} required />
+            <small style={{ display: 'block', marginTop: 6, color: 'var(--muted)' }}>
+              {scheduled
+                ? `The crew is scheduled on ${dateShort(scheduled)}, so the target cannot be earlier than that.`
+                : 'The Technical Team must schedule the crew on or before this date.'}
+            </small>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+/**
+ * Team leader's last step on an ongoing job order: register the asset that was
+ * installed (linked to this job order), or state why no new asset was installed.
+ */
+function CompleteJobOrderButton({ c }: { c: RowActionCtx }) {
+  const { notify } = useToast();
+  const { stats } = useStats();
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<'asset' | 'none'>('asset');
+  const [name, setName] = useState('');
+  const [type, setType] = useState('');
+  const [location, setLocation] = useState('');
+  const [installDate, setInstallDate] = useState('');
+  const [lifespan, setLifespan] = useState('10');
+  const [condition, setCondition] = useState('good');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  if (c.archived || String(c.row.status) !== 'in_progress') return null;
+
+  const show = () => {
+    const incident = stats.incidents.find((i) => String(i.ref_code) === String(c.row.incident_ref ?? ''));
+    setMode('asset');
+    setName(String(c.row.title ?? ''));
+    setType('');
+    setLocation(String(incident?.location ?? ''));
+    setInstallDate(localTodayISO());
+    setLifespan('10');
+    setCondition('good');
+    setReason('');
+    setOpen(true);
+  };
+
+  const save = async () => {
+    let body: Record<string, unknown>;
+    if (mode === 'asset') {
+      if (!name.trim()) return notify('Enter the name of the installed asset.', 'error');
+      if (!type.trim()) return notify('Enter the asset type (e.g. Pipe, Meter, Valve).', 'error');
+      if (!location.trim()) return notify('Enter where the asset was installed.', 'error');
+      if (!installDate || installDate > localTodayISO()) return notify('Enter a valid installation date (today or earlier).', 'error');
+      const years = Number(lifespan);
+      if (!Number.isFinite(years) || years <= 0) return notify('Enter the expected lifespan in years.', 'error');
+      body = {
+        status: 'completed',
+        completion_asset: {
+          name: name.trim(),
+          type: type.trim(),
+          location: location.trim(),
+          install_date: installDate,
+          expected_lifespan_years: years,
+          condition,
+        },
+      };
+    } else {
+      if (!reason.trim()) return notify('State why no new asset was installed.', 'error');
+      body = { status: 'completed', no_asset_reason: reason.trim() };
+    }
+    setSaving(true);
+    try {
+      await resourceService.update('job-orders', String(c.row.id), body);
+      notify(mode === 'asset' ? 'Asset registered. The job order is now completed.' : 'Job order completed.');
+      await c.reload();
+      setOpen(false);
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not complete the job order.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <button className="btn-action" onClick={show} disabled={c.busy}>Complete Job</button>
+      {open && (
+        <Modal
+          title={`Complete Job Order — ${c.row.ref_code}`}
+          open
+          wide
+          onClose={() => setOpen(false)}
+          onSubmit={save}
+          submitText={mode === 'asset' ? 'Register Asset & Complete' : 'Complete Job Order'}
+          submitting={saving}
+        >
+          <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
+            Last step: register what your team installed so it is tracked in the Asset Registry.
+          </p>
+          <div className="form-group">
+            <label>What was done?</label>
+            <select value={mode} onChange={(e) => setMode(e.target.value as 'asset' | 'none')}>
+              <option value="asset">Installed a new asset (pipe, meter, valve…)</option>
+              <option value="none">No new asset installed (e.g. repair only)</option>
+            </select>
+          </div>
+          {mode === 'asset' ? (
+            <>
+              <div className="form-group">
+                <label>Asset Name</label>
+                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Service Line 25mm" />
+              </div>
+              <div className="form-group">
+                <label>Type</label>
+                <input value={type} onChange={(e) => setType(e.target.value)} placeholder="Pipe / Pump / Meter / Valve" />
+              </div>
+              <div className="form-group">
+                <label>Location</label>
+                <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Purok / Street, Barangay, Municipality" />
+              </div>
+              <div className="job-schedule-fields">
+                <div className="form-group">
+                  <label>Installation Date</label>
+                  <input type="date" max={localTodayISO()} value={installDate} onChange={(e) => setInstallDate(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>Expected Lifespan (years)</label>
+                  <input type="number" min={1} value={lifespan} onChange={(e) => setLifespan(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>Condition</label>
+                  <select value={condition} onChange={(e) => setCondition(e.target.value)}>
+                    {CONDITION.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="form-group">
+              <label>Reason</label>
+              <textarea
+                value={reason}
+                maxLength={500}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="e.g. Repair only: patched the existing main line"
+              />
+            </div>
+          )}
+        </Modal>
+      )}
+    </>
   );
 }
 
@@ -2278,7 +2522,25 @@ function JobOrderDetail({ row }: { row: EntityRow }) {
           {Array.isArray(row.team_members) ? (row.team_members as string[]).join(', ') : String(row.assigned_to ?? '')}
         </DetailRow>
         <DetailRow label="Scheduled">{jobScheduleText(row)}</DetailRow>
+        <DetailRow label="Target Completion">
+          {(() => {
+            const target = jobTarget(row);
+            if (!target.date) return '— Not set';
+            return target.overdue || target.dueToday
+              ? <span className={`status ${target.overdue ? 'overdue' : 'pending'}`}>{target.text}</span>
+              : target.text;
+          })()}
+        </DetailRow>
         <DetailRow label="Linked Complaint">{String(row.incident_ref ?? '')}</DetailRow>
+        {String(row.status) === 'completed' && (
+          <DetailRow label="Registered Asset">
+            {row.asset_tag
+              ? String(row.asset_tag)
+              : row.no_asset_reason
+              ? `None: ${String(row.no_asset_reason)}`
+              : '— Not recorded'}
+          </DetailRow>
+        )}
       </dl>
       <div className="complaint-narratives job-order-narratives">
         <section className="complaint-note-card is-job-scope">
@@ -3269,6 +3531,15 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
     { header: 'Team', cell: (r) => String(r.team_name || titleCase(r.team) || '—') },
     { header: 'Assigned To', cell: (r) => String(r.assigned_to ?? '—') },
     { header: 'Schedule', cell: (r) => jobScheduleText(r) },
+    {
+      header: 'Target',
+      cell: (r) => {
+        const target = jobTarget(r);
+        return target.overdue || target.dueToday
+          ? { text: target.text, status: target.overdue ? 'overdue' : 'pending' }
+          : target.text;
+      },
+    },
     { header: 'Status', cell: (r) => ({ text: jobStatusLabel(r.status), status: statusTone(r.status) }) },
   ];
 
@@ -3311,16 +3582,18 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
     const isLeaderOfRow = isLeaderOf(c);
     return (
       <>
-        {!c.archived && isLeaderOfRow && (
+        {/* Completing goes through "Complete Job" (asset registration), so the select only offers Cancel. */}
+        {!c.archived && isLeaderOfRow && String(c.row.status) === 'in_progress' && (
           <StatusSelect
             value={String(c.row.status)}
-            options={ASSIGNED_TEAM_STATUS}
+            options={ASSIGNED_TEAM_STATUS.filter((s) => s.value !== 'completed')}
             disabled={c.busy}
             onChange={(s) => c.update({ status: s })}
           />
         )}
         <div className="btn-row">
           {viewAction(c)}
+          {isLeaderOfRow && <CompleteJobOrderButton c={c} />}
           {isLeaderOfRow && materialsAction(c)}
         </div>
       </>
@@ -3367,6 +3640,7 @@ export function JobOrdersModule({ filter, readOnly = false, title }: ModuleProps
                 )}
                 <div className="btn-row">
                   {viewAction(c)}
+                  {isCommercial && <JobOrderTargetButton c={c} />}
                   {isGM && materialsAction(c)}
                   {!isCommercial && <EditBtn c={c} />}
                   <ArchiveBtn c={c} />
@@ -5244,6 +5518,7 @@ export function AssetsModule({ filter, title }: ModuleProps & { title?: string }
                     <DetailRow label="Asset Name">{String(c.row.name ?? '')}</DetailRow>
                     <DetailRow label="Type">{String(c.row.type ?? '—')}</DetailRow>
                     <DetailRow label="Location">{String(c.row.location ?? '—')}</DetailRow>
+                    <DetailRow label="Job Order">{String(c.row.job_order_ref || '—')}</DetailRow>
                     <DetailRow label="Installation Date">{dateShort(c.row.install_date)}</DetailRow>
                     <DetailRow label="Last Maintenance">{dateShort(c.row.last_maintenance)}</DetailRow>
                     <DetailRow label="Expected Lifespan">{`${c.row.expected_lifespan_years ?? 0} years`}</DetailRow>

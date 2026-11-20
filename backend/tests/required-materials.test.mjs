@@ -95,7 +95,7 @@ test('a site visit plan that needs more than the available stock is not saved', 
 
 test('creating the job order auto-files an MRF with the required materials, visible to its team leader', async () => {
   seed({ status: 'resolved', required_materials: [{ material_sku: 'SKU-00001', name: 'PVC Pipe 50mm', quantity: 2, unit: 'pcs' }] });
-  const jo = await resourceService.create('job-orders', commercial, { title: 'Fix leak', incident_ref: 'INC-0001' });
+  const jo = await resourceService.create('job-orders', commercial, { title: 'Fix leak', incident_ref: 'INC-0001', target_completion_date: '2099-12-31' });
   const mrfs = table('material_requests');
   assert.equal(mrfs.length, 1);
   assert.equal(mrfs[0].request_type, 'mrf');
@@ -112,6 +112,6 @@ test('creating the job order auto-files an MRF with the required materials, visi
 
 test('no MRF is filed when the complaint has no required materials', async () => {
   seed({ status: 'resolved', required_materials: [] });
-  await resourceService.create('job-orders', commercial, { title: 'Fix leak', incident_ref: 'INC-0001' });
+  await resourceService.create('job-orders', commercial, { title: 'Fix leak', incident_ref: 'INC-0001', target_completion_date: '2099-12-31' });
   assert.equal(table('material_requests').length, 0);
 });

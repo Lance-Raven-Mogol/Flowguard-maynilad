@@ -592,3 +592,17 @@ alter table public.material_batches enable row level security;
 -- Usable leftovers returned to stock from a job order (they were not used, so
 -- they come off the job order's material cost): [{ material_sku, quantity, amount, batches }]
 alter table public.job_orders add column if not exists returned_materials jsonb not null default '[]'::jsonb;
+
+-- ---------------- Job order target completion date (2026-11-19) ----------
+-- The Commercial Department sets the date a job order must be finished by
+-- ("set to works") when it creates the job order. Safe to re-run.
+alter table public.job_orders add column if not exists target_completion_date date;
+create index if not exists job_orders_target_completion_idx on public.job_orders (target_completion_date);
+
+-- ------------- Register asset on job order completion (2026-11-19) ------
+-- The assigned team leader's last step: register the installed asset (linked
+-- to the job order), or record why no new asset was installed. Safe to re-run.
+alter table public.assets     add column if not exists job_order_ref   text;
+alter table public.job_orders add column if not exists asset_tag       text;
+alter table public.job_orders add column if not exists no_asset_reason text;
+create index if not exists assets_job_order_ref_idx on public.assets (job_order_ref);

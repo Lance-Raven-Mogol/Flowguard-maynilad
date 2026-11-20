@@ -396,6 +396,23 @@ function missingColumn(err: unknown): string | null {
   return null;
 }
 
+/** Today's date (YYYY-MM-DD) in the Philippines, where the utility operates. */
+const manilaToday = (): string => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+
+/**
+ * Validates a job order's target completion date (YYYY-MM-DD). The Commercial
+ * Department sets it, and it cannot be in the past.
+ */
+function checkTargetCompletion(value: unknown): string {
+  const target = String(value ?? '').trim().slice(0, 10);
+  if (!target) throw badRequest('Set the target completion date: when the work must be finished.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(target) || Number.isNaN(Date.parse(`${target}T00:00:00Z`))) {
+    throw badRequest('Enter a valid target completion date.');
+  }
+  if (target < manilaToday()) throw badRequest('The target completion date cannot be in the past.');
+  return target;
+}
+
 /**
  * Run a write, dropping any not-yet-migrated OPTIONAL columns and retrying.
  * A missing *critical* column instead raises a clear 503 — never a silent,
@@ -1177,6 +1194,7 @@ export const resourceService = {
         // the same pending -> Technical Team assignment workflow.
         values.incident_ref = '';
       }
+      values.target_completion_date = checkTargetCompletion(values.target_completion_date);
 
       // Creation is intentionally unassigned. The Technical Team completes these
       // fields in the dedicated assignment step and starts the work order.
@@ -1352,6 +1370,8 @@ export const resourceService = {
     // Site Visit Plan materials to take out of stock once the plan is saved.
     let siteVisitStock: Array<{ item: MrfItem; material: Row }> | null = null;
     let siteVisitRef: unknown = null;
+    // Asset the team leader registers as the last step of completing a job order.
+    let completionAsset: Row | null = null;
     const isCustomerPayment = entity === 'payments' && user.role === 'customer';
     // Usable leftovers going back to stock from a completed job order.
     const isMaterialReturn = entity === 'materials' && String(body.return_job_order_ref ?? '').trim() !== '';
@@ -1467,8 +1487,19 @@ export const resourceService = {
       const currentStatus = String(currentJob.status ?? 'pending');
 
       if (user.role === 'commercial-department') {
-        const allowed = new Set(['title', 'scope', 'archived']);
+        const allowed = new Set(['title', 'scope', 'archived', 'target_completion_date']);
         for (const key of Object.keys(values)) if (!allowed.has(key)) delete values[key];
+        if ('target_completion_date' in values) {
+          if (['completed', 'cancelled'].includes(currentStatus)) {
+            throw conflict('The target completion date of a finished job order can no longer be changed.');
+          }
+          const target = checkTargetCompletion(values.target_completion_date);
+          values.target_completion_date = target;
+          const scheduled = String(currentJob.scheduled_date ?? '').slice(0, 10);
+          if (scheduled && target < scheduled) {
+            throw conflict(`The crew is already scheduled on ${scheduled}. The target completion date cannot be earlier than that.`);
+          }
+        }
       } else if (user.role === 'technical-team') {
         if (currentStatus !== 'pending') {
           throw forbidden('The Technical Team can assign only pending job orders.');
@@ -1485,6 +1516,10 @@ export const resourceService = {
         }
         const scheduledDate = String(values.scheduled_date ?? '').trim();
         if (!scheduledDate) throw badRequest('Scheduled date is required.');
+        const targetDate = String(currentJob.target_completion_date ?? '').slice(0, 10);
+        if (targetDate && scheduledDate.slice(0, 10) > targetDate) {
+          throw conflict(`This job order must be finished by ${targetDate}. Schedule the crew on or before that date.`);
+        }
         if (!['AM', 'PM'].includes(String(values.schedule_period ?? ''))) {
           throw badRequest('Select an AM or PM schedule.');
         }
@@ -1551,6 +1586,27 @@ export const resourceService = {
         const nextStatus = String(values.status ?? '');
         if (currentStatus !== 'in_progress' || !['completed', 'cancelled'].includes(nextStatus)) {
           throw forbidden('The assigned team leader can only complete or cancel an ongoing job order.');
+        }
+        if (nextStatus === 'completed') {
+          // Last step of the job: register what was installed, or say why nothing was.
+          const assetInput = body.completion_asset;
+          const noAssetReason = String(body.no_asset_reason ?? '').trim().slice(0, 500);
+          if (assetInput && typeof assetInput === 'object' && !Array.isArray(assetInput)) {
+            const assetDef = getDef('assets');
+            const asset = sanitize(assetDef, assetInput as Record<string, unknown>);
+            delete asset.asset_tag;
+            delete asset.archived;
+            if (!String(asset.name ?? '').trim()) throw badRequest('Enter the name of the installed asset.');
+            if (!asset.install_date) asset.install_date = manilaToday();
+            if (!asset.condition) asset.condition = 'good';
+            asset.job_order_ref = String(currentJob.ref_code ?? '');
+            for (const key of assetDef.autoKeys ?? []) asset[key.column] = `${key.prefix}-${randDigits(key.digits)}`;
+            completionAsset = asset;
+          } else if (noAssetReason) {
+            values.no_asset_reason = noAssetReason;
+          } else {
+            throw badRequest('Register the installed asset, or state why no new asset was installed, before completing the job order.');
+          }
         }
       }
     }
@@ -1924,9 +1980,33 @@ export const resourceService = {
       await repo.listRows('team_schedules', { archived: 'all' });
     }
 
+    let registeredAsset: Row | null = null;
+    if (completionAsset) {
+      try {
+        registeredAsset = await writeResilient(completionAsset, (v) => repo.insertRow('assets', v), getDef('assets').critical);
+      } catch (err) {
+        mapDbError(err);
+      }
+      values.asset_tag = registeredAsset!.asset_tag;
+    }
+
     try {
-      const row = await writeResilient(values, (v) => repo.updateRow(def.table, id, v), def.critical);
-      if (!row) throw notFound('Record not found.');
+      const row = await writeResilient(values, (v) => repo.updateRow(def.table, id, v), def.critical)
+        .then((updated) => {
+          if (!updated) throw notFound('Record not found.');
+          return updated;
+        })
+        .catch(async (err: unknown) => {
+          // Do not leave an asset behind for a job order that did not complete.
+          if (registeredAsset) await repo.deleteRow('assets', String(registeredAsset.id)).catch(() => undefined);
+          throw err;
+        });
+      if (registeredAsset) {
+        await logAudit('assets', String(registeredAsset.id ?? ''), 'create', user.fullName, user.role, {
+          ...registeredAsset,
+          registered_on_completion_of: row.ref_code,
+        });
+      }
       if (isMaterialReturn && returnJobOrder) {
         // Keep the job order's material cost honest: returned stock was not used.
         const slices = (Array.isArray(batchDetails.batches) ? batchDetails.batches : []) as BatchAllocation[];

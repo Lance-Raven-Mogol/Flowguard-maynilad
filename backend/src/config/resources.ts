@@ -81,11 +81,14 @@ export const RESOURCES: Record<string, ResourceDef> = {
       'team_name', 'team_leader', 'team_members',
       'estimated_cost', 'scheduled_date', 'schedule_period',
       'scheduled_start_time', 'scheduled_end_time', 'status', 'archived',
+      // Set by the Commercial Department: the date the work must be finished by.
+      'target_completion_date',
     ],
     required: ['title'],
     numeric: ['estimated_cost'],
-    nullable: ['scheduled_date', 'scheduled_start_time', 'scheduled_end_time'],
-    critical: ['schedule_period', 'scheduled_start_time', 'scheduled_end_time'],
+    nullable: ['scheduled_date', 'scheduled_start_time', 'scheduled_end_time', 'target_completion_date'],
+    // asset_tag / no_asset_reason are set server-side when the team leader completes the job.
+    critical: ['schedule_period', 'scheduled_start_time', 'scheduled_end_time', 'target_completion_date', 'asset_tag', 'no_asset_reason'],
     autoKeys: [{ column: 'ref_code', prefix: 'JO-2026', digits: 3 }],
   },
 
@@ -176,6 +179,8 @@ export const RESOURCES: Record<string, ResourceDef> = {
     required: ['name'],
     numeric: ['expected_lifespan_years'],
     nullable: ['install_date', 'last_maintenance'],
+    // job_order_ref is set server-side when an asset is registered on job order completion.
+    critical: ['job_order_ref'],
     autoKeys: [{ column: 'asset_tag', prefix: 'AST', digits: 5 }],
   },
 
