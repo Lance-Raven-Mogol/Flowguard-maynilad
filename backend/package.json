@@ -13,6 +13,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "migrate": "node scripts/migrate.mjs",
+    "seed:test": "node scripts/seed-test-users.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

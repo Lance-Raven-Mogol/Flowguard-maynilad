@@ -606,3 +606,16 @@ alter table public.assets     add column if not exists job_order_ref   text;
 alter table public.job_orders add column if not exists asset_tag       text;
 alter table public.job_orders add column if not exists no_asset_reason text;
 create index if not exists assets_job_order_ref_idx on public.assets (job_order_ref);
+
+-- ─── API role privileges ────────────────────────────────────────────────────
+-- Newer Supabase projects no longer auto-grant table access to the API roles
+-- for tables created in the SQL editor, which makes every backend query fail
+-- with "permission denied for table …". The backend only uses the
+-- service_role (secret) key, so only that role is granted. Safe to re-run.
+grant usage on schema public to service_role;
+grant all on all tables    in schema public to service_role;
+grant all on all sequences in schema public to service_role;
+grant all on all functions in schema public to service_role;
+alter default privileges in schema public grant all on tables    to service_role;
+alter default privileges in schema public grant all on sequences to service_role;
+alter default privileges in schema public grant all on functions to service_role;
