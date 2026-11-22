@@ -12,6 +12,7 @@ import { useToast } from '../controllers/ToastContext';
 import { useStats } from '../controllers/StatsContext';
 import { Icon } from '../views/components/Icon';
 import { api, ApiError } from '../services/apiClient';
+import { startVisiblePolling } from '../services/polling';
 import { resourceService, type EntityRow } from '../services/resourceService';
 import { ImageUpload, LiveModule, StatusSelect, type ModuleColumn, type ModuleField, type RowActionCtx, AutocompleteInput } from '../views/components/LiveModule';
 import { DataTable } from '../views/components/DataTable';
@@ -7143,8 +7144,9 @@ export function InquiriesModule({ filter = '' }: ModuleProps) {
 
   useEffect(() => {
     void load();
-    const timer = setInterval(() => void load(true), 3_000);
-    return () => clearInterval(timer);
+    // Support inbox is chat-like, so it polls faster than tables — but still
+    // pauses while the tab is hidden and catches up when it's visible again.
+    return startVisiblePolling(() => load(true), 15_000, { refreshOnVisible: true });
   }, []);
 
   const threads = useMemo<SupportThread[]>(() => {

@@ -14,6 +14,7 @@ import {
   type EntityRow,
 } from '../../services/resourceService';
 import { ApiError } from '../../services/apiClient';
+import { startVisiblePolling } from '../../services/polling';
 import { useToast } from '../../controllers/ToastContext';
 import { useStats } from '../../controllers/StatsContext';
 import { useAuth } from '../../controllers/AuthContext';
@@ -385,13 +386,13 @@ export function LiveModule({
     const onVisibility = () => {
       if (document.visibilityState === 'visible') void refreshSilently();
     };
-    const timer = setInterval(() => void refreshSilently(), 3_000);
+    const stopPolling = startVisiblePolling(refreshSilently);
     window.addEventListener(RESOURCE_CHANGE_EVENT, onResourceChange);
     window.addEventListener('storage', onStorage);
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
-      clearInterval(timer);
+      stopPolling();
       window.removeEventListener(RESOURCE_CHANGE_EVENT, onResourceChange);
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('focus', onFocus);

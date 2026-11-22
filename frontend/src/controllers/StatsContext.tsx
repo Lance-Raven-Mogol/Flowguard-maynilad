@@ -11,6 +11,7 @@ import {
   type EntityRow,
 } from '../services/resourceService';
 import { api } from '../services/apiClient';
+import { startVisiblePolling } from '../services/polling';
 import { useAuth } from './AuthContext';
 
 /** Minimal user shape needed for job-level promotion alerts. */
@@ -67,8 +68,6 @@ interface StatsValue {
 
 const StatsContext = createContext<StatsValue | null>(null);
 
-/** How often to silently re-fetch in the background (ms). */
-const POLL_INTERVAL = 3_000;
 
 export function StatsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -143,12 +142,10 @@ export function StatsProvider({ children }: { children: ReactNode }) {
     reload();
   }, [reload]);
 
-  // Background polling — keeps the bell and badges up to date in real time
-  // without requiring a page refresh or navigation action.
-  useEffect(() => {
-    const id = setInterval(silentReload, POLL_INTERVAL);
-    return () => clearInterval(id);
-  }, [silentReload]);
+  // Background polling — fallback for changes made from another browser or
+  // device. Paused while the tab is hidden; same-browser changes, focus and
+  // tab-visible events below refresh immediately.
+  useEffect(() => startVisiblePolling(silentReload), [silentReload]);
 
   // Refresh immediately when another FlowGuard tab creates/updates a record,
   // and whenever this dashboard becomes active again. Polling remains the

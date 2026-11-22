@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BriefcaseBusiness, CalendarDays, CalendarOff, ChevronLeft, ChevronRight, Clock3, Users } from 'lucide-react';
 import { useToast } from '../../controllers/ToastContext';
 import { api, ApiError } from '../../services/apiClient';
+import { startVisiblePolling } from '../../services/polling';
 import {
   RESOURCE_CHANGE_EVENT,
   RESOURCE_CHANGE_KEY,
@@ -292,11 +293,11 @@ export function TeamScheduleModule({ filter = '' }: TeamScheduleModuleProps) {
     };
     window.addEventListener(RESOURCE_CHANGE_EVENT, refresh);
     window.addEventListener('storage', storageRefresh);
-    const timer = window.setInterval(() => void load(true), 10000);
+    const stopPolling = startVisiblePolling(() => load(true), undefined, { refreshOnVisible: true });
     return () => {
       window.removeEventListener(RESOURCE_CHANGE_EVENT, refresh);
       window.removeEventListener('storage', storageRefresh);
-      window.clearInterval(timer);
+      stopPolling();
     };
   }, [load]);
 

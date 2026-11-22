@@ -23,11 +23,26 @@ const broadcastResourceChange = (entity: string): void => {
   }
 };
 
+/**
+ * Identical list requests that overlap (e.g. the dashboard stats and an open
+ * module both refreshing job-orders on window focus) share one network call.
+ * Each caller still gets its own array copy so nobody can mutate another's.
+ */
+const inFlightLists = new Map<string, Promise<EntityRow[]>>();
+
 export const resourceService = {
-  list: (entity: string, archived?: 'only' | 'all') =>
-    api
-      .get<{ data: EntityRow[] }>(`/resources/${entity}${archived ? `?archived=${archived}` : ''}`)
-      .then((r) => r.data),
+  list: (entity: string, archived?: 'only' | 'all'): Promise<EntityRow[]> => {
+    const path = `/resources/${entity}${archived ? `?archived=${archived}` : ''}`;
+    let pending = inFlightLists.get(path);
+    if (!pending) {
+      pending = api
+        .get<{ data: EntityRow[] }>(path)
+        .then((r) => r.data)
+        .finally(() => inFlightLists.delete(path));
+      inFlightLists.set(path, pending);
+    }
+    return pending.then((rows) => [...rows]);
+  },
   create: (entity: string, values: Record<string, unknown>) =>
     api.post<{ data: EntityRow }>(`/resources/${entity}`, values).then((r) => {
       broadcastResourceChange(entity);
