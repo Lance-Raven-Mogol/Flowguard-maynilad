@@ -29,6 +29,7 @@ const user = (role, fullName) => ({ id: `u-${role}`, role, fullName, email: `${r
 const zone = user('zone-specialist', 'Zed Zone');
 const tech = user('technical-team', 'Tom Tech');
 const leader = user('inhouse-team', 'Lea Leader');
+const commercial = user('commercial-department', 'Cora Commercial');
 
 function seed(incident = {}) {
   tables.clear();
@@ -40,9 +41,9 @@ function seed(incident = {}) {
 }
 const setMaterials = (by, list) => resourceService.update('incidents', by, 'inc1', { required_materials: list });
 
-test('zone specialist lists required materials once; names and units come from inventory', async () => {
+test('commercial encodes the required materials once; names and units come from inventory', async () => {
   seed();
-  const row = await setMaterials(zone, [
+  const row = await setMaterials(commercial, [
     { material_sku: 'SKU-00001', name: 'wrong', quantity: 2 },
     { material_sku: 'SKU-00002', quantity: 1 },
   ]);
@@ -50,22 +51,22 @@ test('zone specialist lists required materials once; names and units come from i
     { material_sku: 'SKU-00001', name: 'PVC Pipe 50mm', quantity: 2, unit: 'pcs' },
     { material_sku: 'SKU-00002', name: 'Gate Valve', quantity: 1, unit: 'pcs' },
   ]);
-  await assert.rejects(setMaterials(zone, [{ material_sku: 'SKU-00001', quantity: 1 }, { material_sku: 'SKU-00001', quantity: 2 }]), /listed twice/);
-  await assert.rejects(setMaterials(zone, [{ material_sku: 'SKU-00001', quantity: 1.5 }]), /whole-number/);
-  await assert.rejects(setMaterials(zone, [{ material_sku: 'SKU-99999', quantity: 1 }]), /No active inventory item/);
+  await assert.rejects(setMaterials(commercial, [{ material_sku: 'SKU-00001', quantity: 1 }, { material_sku: 'SKU-00001', quantity: 2 }]), /listed twice/);
+  await assert.rejects(setMaterials(commercial, [{ material_sku: 'SKU-00001', quantity: 1.5 }]), /whole-number/);
+  await assert.rejects(setMaterials(commercial, [{ material_sku: 'SKU-99999', quantity: 1 }]), /No active inventory item/);
 });
 
-test('only the zone specialist sets them, after the site plan and before pricing', async () => {
+test('only commercial sets them, after the site plan and before pricing', async () => {
   seed();
-  await assert.rejects(setMaterials(tech, []), /Zone Specialist/);
-  await assert.rejects(setMaterials(leader, []), /permission|Zone Specialist/);
+  await assert.rejects(setMaterials(zone, []), /Commercial Department/);
+  await assert.rejects(setMaterials(tech, []), /Commercial Department/);
+  await assert.rejects(setMaterials(leader, []), /permission|Commercial Department/);
   seed({ site_action: '' });
-  await assert.rejects(setMaterials(zone, []), /Site Visit Plan/);
+  await assert.rejects(setMaterials(commercial, []), /Site Visit Plan/);
   seed({ status: 'for_estimation' });
-  await assert.rejects(setMaterials(zone, []), /priced/);
+  await assert.rejects(setMaterials(commercial, []), /priced/);
 });
 
-const commercial = user('commercial-department', 'Cora Commercial');
 const sitePlan = (materials) => resourceService.update('incidents', zone, 'inc1', {
   site_action: 'Visit: Nov 5 (AM)',
   site_visit_date: '2026-11-05',

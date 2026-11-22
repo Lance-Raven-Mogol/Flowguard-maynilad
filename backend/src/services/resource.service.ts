@@ -1648,14 +1648,17 @@ export const resourceService = {
         throw badRequest('A complaint must keep at least one photo.');
       }
     }
+    // Investigation (#3): the Zone Specialist plans and makes the site visit and
+    // fills in the printed Investigation Form; the Commercial Department encodes
+    // that form (findings, required materials, billing owner) into the system.
     if (entity === 'incidents' && 'bill_to_customer_id' in values) {
-      if (user.role !== 'zone-specialist' && user.role !== 'general-manager') {
-        throw forbidden('Only the Zone Specialist can select the billing owner.');
+      if (user.role !== 'commercial-department' && user.role !== 'general-manager') {
+        throw forbidden('Only the Commercial Department can select the billing owner.');
       }
-      if (user.role === 'zone-specialist') {
+      if (user.role === 'commercial-department') {
         const currentIncident = await repo.getRowById(def.table, id);
         if (!currentIncident || !String(currentIncident.site_action ?? '').trim()) {
-          throw badRequest('Save the Site Visit Plan before selecting the billing owner.');
+          throw badRequest('The Zone Specialist must save the Site Visit Plan before the billing owner is selected.');
         }
       }
       const ownerId = String(values.bill_to_customer_id ?? '').trim();
@@ -1670,11 +1673,19 @@ export const resourceService = {
     }
     if (
       entity === 'incidents' &&
-      ('remarks' in values || 'required_materials' in values || 'site_action' in values || SITE_VISIT_FIELDS.some((f) => f in values)) &&
+      ('site_action' in values || SITE_VISIT_FIELDS.some((f) => f in values)) &&
       user.role !== 'zone-specialist' &&
       user.role !== 'general-manager'
     ) {
-      throw forbidden('Only the Zone Specialist can update the assessment and site visit plan.');
+      throw forbidden('Only the Zone Specialist can update the site visit plan.');
+    }
+    if (
+      entity === 'incidents' &&
+      ('remarks' in values || 'required_materials' in values) &&
+      user.role !== 'commercial-department' &&
+      user.role !== 'general-manager'
+    ) {
+      throw forbidden('Only the Commercial Department can encode the investigation findings and required materials.');
     }
     if (entity === 'incidents' && ('site_action' in values || SITE_VISIT_FIELDS.some((f) => f in values))) {
       const currentIncident = await repo.getRowById(def.table, id);
@@ -1732,7 +1743,7 @@ export const resourceService = {
       if (!currentIncident) throw notFound('Record not found.');
       if (user.role !== 'general-manager') {
         if (!String(currentIncident.site_action ?? '').trim()) {
-          throw badRequest('Save the Site Visit Plan before listing the required materials.');
+          throw badRequest('The Zone Specialist must save the Site Visit Plan before the required materials are listed.');
         }
         if (!['under_verification', 'in_progress'].includes(String(currentIncident.status))) {
           throw conflict('Required materials can no longer be changed once the complaint has been priced.');
@@ -1781,9 +1792,10 @@ export const resourceService = {
     // Role-based incident status transition guards.
     // The General Manager can always move to any status (management override).
     // Each role may only perform the transitions assigned to them:
-    //   zone-specialist      : under_verification → in_progress (requires urgency set)
+    //   zone-specialist      : none (plans the site visit; Commercial encodes the findings)
     //   technical-team       : in_progress → for_estimation (requires the price breakdown)
-    //   commercial-department: for_estimation → for_billing (issue bill)
+    //   commercial-department: under_verification → in_progress (findings encoded)
+    //                          for_estimation → for_billing (issue bill)
     //                          for_estimation → resolved (no charge — billable = false)
     //                          for_billing → resolved (payment confirmed)
     if (entity === 'incidents' && user.role !== 'general-manager' && 'status' in values) {
@@ -1795,22 +1807,7 @@ export const resourceService = {
       // Allow no-op (same status) for any role.
       if (from !== to) {
         if (user.role === 'zone-specialist') {
-          // Zone specialist: only allowed to move under_verification → in_progress.
-          if (!(from === 'under_verification' && to === 'in_progress')) {
-            throw forbidden('Zone Specialists can only move complaints from Under Verification to In Progress.');
-          }
-          const remarks = String(values.remarks ?? currentIncident.remarks ?? '').trim();
-          if (!remarks) {
-            throw badRequest('Add Zone Specialist remarks before moving the complaint to In Progress.');
-          }
-          if (!String(currentIncident.site_action ?? '').trim()) {
-            throw badRequest('Save the Site Visit Plan before adding remarks.');
-          }
-          const billToId = String(values.bill_to_customer_id ?? currentIncident.bill_to_customer_id ?? '').trim();
-          if (!billToId && !FREE_INCIDENT_TYPES.has(String(currentIncident.type ?? ''))) {
-            throw badRequest('Select the customer account that should receive the bill before moving the complaint to In Progress.');
-          }
-          // Urgency is set by Commercial Department, not Zone Specialist — no check needed here.
+          throw forbidden('The Commercial Department moves the complaint forward once it encodes the investigation findings.');
         } else if (user.role === 'technical-team') {
           // Technical team: only prices an Ongoing complaint (→ Priced).
           if (!(from === 'in_progress' && to === 'for_estimation')) {
@@ -1821,9 +1818,24 @@ export const resourceService = {
             throw badRequest('Add the price breakdown before submitting.');
           }
         } else if (user.role === 'commercial-department') {
-          // Commercial dept: for_estimation → for_billing, for_billing → resolved (payment confirmed),
+          // Commercial dept: under_verification → in_progress (findings encoded),
+          // for_estimation → for_billing, for_billing → resolved (payment confirmed),
           // or for_billing → declined (payment rejected, customer may resubmit).
+          if (from === 'under_verification' && to === 'in_progress') {
+            if (!String(currentIncident.site_action ?? '').trim()) {
+              throw badRequest('The Zone Specialist must save the Site Visit Plan first.');
+            }
+            const remarks = String(values.remarks ?? currentIncident.remarks ?? '').trim();
+            if (!remarks) {
+              throw badRequest('Encode the investigation findings before moving the complaint to In Progress.');
+            }
+            const billToId = String(values.bill_to_customer_id ?? currentIncident.bill_to_customer_id ?? '').trim();
+            if (!billToId && !FREE_INCIDENT_TYPES.has(String(currentIncident.type ?? ''))) {
+              throw badRequest('Select the customer account that should receive the bill before moving the complaint to In Progress.');
+            }
+          }
           const validTransitions = [
+            ['under_verification', 'in_progress'],
             ['for_estimation', 'for_billing'],
             // No charge chosen at billing — resolved without a bill.
             ...(values.billable === false ? [['for_estimation', 'resolved']] : []),

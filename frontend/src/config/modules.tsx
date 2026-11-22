@@ -18,6 +18,7 @@ import { ImageUpload, LiveModule, StatusSelect, type ModuleColumn, type ModuleFi
 import { DataTable } from '../views/components/DataTable';
 import { Modal } from '../views/components/Modal';
 import { ActionButton, PanelHead, QRLabelModal } from '../views/components/panels';
+import { printInvestigationForm } from '../views/components/print';
 import { StockCountPanel } from '../views/inventory/StockCountPanel';
 import { batchesOf, fifoPlan, nextBatchNo, openBatches, planTotal, stockValue, type BatchSlice, type StockBatch } from '../models/stockBatches';
 import { SENIOR_DISCOUNT_PERCENT, SENIOR_DISCOUNT_RATE } from '../views/components/TermsAndConditions';
@@ -1043,6 +1044,7 @@ interface BillingCustomerOption {
   fullName: string;
   email: string;
   serialNumber?: string | null;
+  barangay?: string;
 }
 
 /** Searchable customer/account-owner picker matching the app's modern comboboxes. */
@@ -1415,9 +1417,10 @@ const siteVisitMaterials = (row: EntityRow): SiteVisitMaterial[] =>
 
 /* ------------------------------------------- Required materials (entered once) */
 /**
- * The Zone Specialist lists the materials the repair needs once, on the
- * complaint. The Technical Team's price breakdown, the Job Order and the team
- * leader's MRF all start from this list, so nobody types it again.
+ * The Commercial Department encodes the materials the repair needs once, on
+ * the complaint, from the signed Investigation Form. The Technical Team's price
+ * breakdown, the Job Order and the team leader's MRF all start from this list,
+ * so nobody types it again.
  */
 const requiredMaterials = (row?: EntityRow): SiteVisitMaterial[] =>
   row && Array.isArray(row.required_materials) ? (row.required_materials as SiteVisitMaterial[]) : [];
@@ -1435,7 +1438,7 @@ function materialListProblem(list: SiteVisitMaterialDraft[]): string {
   return '';
 }
 
-/** Zone Specialist: pick the required materials from inventory, with quantities. */
+/** Commercial: encode the required materials from inventory, with quantities. */
 function RequiredMaterialsEditor({
   value,
   onChange,
@@ -1505,7 +1508,7 @@ function RequiredMaterialsEditor({
   );
 }
 
-/** Read-only list of the Zone Specialist's required materials. */
+/** Read-only list of the required materials from the investigation. */
 function RequiredMaterialsView({ row, stock = false }: { row?: EntityRow; stock?: boolean }) {
   const { stats } = useStats();
   const list = requiredMaterials(row);
@@ -1729,7 +1732,7 @@ function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRema
               <SiteVisitPlanView row={row} />
             </section>
             <section className="complaint-note-card is-remarks">
-              <span>Zone Specialist Findings</span>
+              <span>Investigation Findings</span>
               <p>{String(row.remarks ?? '') || 'No findings added yet.'}</p>
             </section>
           </>
@@ -1737,7 +1740,7 @@ function IncidentDetail({ row, hideRemarks = false }: { row: EntityRow; hideRema
       </div>
       {!hideRemarks && requiredMaterials(row).length > 0 && (
         <>
-          <p className="detail-section-title">Required Materials (from the Zone Specialist)</p>
+          <p className="detail-section-title">Required Materials (from the investigation)</p>
           <RequiredMaterialsView row={row} stock />
         </>
       )}
@@ -2051,9 +2054,36 @@ function IssueBillInline({
  * "View" action for incidents. Opens a detail modal; zone specialists can also
  * add/edit the remarks forwarded to the technical team directly inside it.
  */
+/** The complainant's customer account, used to pre-fill the Investigation Form. */
+function findComplainant(row: EntityRow, customers: BillingCustomerOption[]): BillingCustomerOption | undefined {
+  const byId = (id: unknown) => (id ? customers.find((u) => u.id === String(id)) : undefined);
+  const name = String(row.reported_by ?? '').trim().toLowerCase();
+  return byId(row.reported_by_id)
+    ?? (name ? customers.find((u) => u.fullName.trim().toLowerCase() === name) : undefined)
+    ?? byId(row.bill_to_customer_id);
+}
+
+function printIncidentInvestigationForm(row: EntityRow, customers: BillingCustomerOption[], printedBy?: string): void {
+  const customer = findComplainant(row, customers);
+  printInvestigationForm({
+    refCode: String(row.ref_code ?? ''),
+    filedOn: dateShort(row.created_at),
+    category: incidentCategory(row.type).label,
+    concern: incidentTypeLabel(row.type),
+    urgency: row.urgency ? titleCase(row.urgency) : '',
+    description: String(row.description ?? ''),
+    customerName: customer?.fullName ?? String(row.reported_by ?? ''),
+    serialNumber: customer?.serialNumber ?? String(row.bill_to_serial_number ?? ''),
+    address: String(row.location ?? ''),
+    barangay: customer?.barangay ?? '',
+    visitDate: row.site_visit_date ? `${dateShort(row.site_visit_date)} · ${String(row.site_visit_period ?? 'AM')}` : '',
+  }, printedBy);
+}
+
 function IncidentViewButton({
   c,
-  canEditRemarks,
+  canPlanSiteVisit = false,
+  canEncodeFindings = false,
   canCreateJobOrder = false,
   showCustomerBilling = false,
   canEditUrgency = false,
@@ -2061,7 +2091,10 @@ function IncidentViewButton({
   canIssueBill = false,
 }: {
   c: RowActionCtx;
-  canEditRemarks: boolean;
+  /** Zone Specialist: plans the site visit and fills in the printed Investigation Form. */
+  canPlanSiteVisit?: boolean;
+  /** Commercial Department: encodes the signed form (findings, materials, billing owner). */
+  canEncodeFindings?: boolean;
   canCreateJobOrder?: boolean;
   showCustomerBilling?: boolean;
   canEditUrgency?: boolean;
@@ -2069,6 +2102,7 @@ function IncidentViewButton({
   canIssueBill?: boolean;
 }) {
   const gmPrint = useGmPrint();
+  const { user } = useAuth();
   const { stats } = useStats();
   const { notify } = useToast();
   const [open, setOpen] = useState(false);
@@ -2083,15 +2117,21 @@ function IncidentViewButton({
   const [chargeDrafts, setChargeDrafts] = useState<ChargeDraft[]>([]);
   const freeConcern = incidentCategory(c.row.type).free === true;
   const [saving, setSaving] = useState(false);
-  const editable = canEditRemarks && !c.archived;
   const urgencyEditable = canEditUrgency && !c.archived;
   // Technical team can enter estimate only when complaint is in_progress.
   const estimateEditable = canEstimate && !c.archived && c.row.status === 'in_progress';
 
   const hasRemarks = String(c.row.remarks ?? '').trim() !== '';
   const hasSavedSitePlan = String(c.row.site_action ?? '').trim() !== '';
+  const assessing = ['under_verification', 'in_progress'].includes(String(c.row.status));
+  // Zone Specialist: the Site Visit Plan is saved once, then locked.
+  const sitePlanEditable = canPlanSiteVisit && !c.archived && !hasSavedSitePlan;
+  // Commercial: encodes the Investigation Form once the site visit is planned.
+  const findingsEditable = canEncodeFindings && !c.archived && hasSavedSitePlan;
   // Required materials stay editable until the Technical Team prices the complaint.
-  const materialsEditable = editable && hasSavedSitePlan && ['under_verification', 'in_progress'].includes(String(c.row.status));
+  const materialsEditable = findingsEditable && assessing;
+  // The form is printed once Commercial has set the urgency (that assigns it to the ZS).
+  const canPrintForm = (canPlanSiteVisit || canEncodeFindings) && !c.archived && Boolean(c.row.urgency);
   // A job order already exists for this incident — no second one may be created.
   const linkedJobOrder = stats.jobOrders.find(
     (j) => String(j.incident_ref ?? '') === String(c.row.ref_code ?? ''),
@@ -2117,15 +2157,14 @@ function IncidentViewButton({
     setUrgency(String(c.row.urgency ?? ''));
     setChargeDrafts(chargeDraftsFrom(c.row));
     setOpen(true);
-    if (editable && hasSavedSitePlan) {
+    // Customer accounts: the Bill To picker and the form's serial no. / barangay.
+    if (findingsEditable || canPrintForm) {
       setCustomersLoading(true);
       void api.get<{ data: BillingCustomerOption[] }>('/users/customers')
         .then(({ data }) => {
           setCustomers(data);
-          if (!c.row.bill_to_customer_id) {
-            const complainant = data.find((customer) =>
-              customer.fullName.trim().toLowerCase() === String(c.row.reported_by ?? '').trim().toLowerCase(),
-            );
+          if (findingsEditable && !c.row.bill_to_customer_id) {
+            const complainant = findComplainant(c.row, data);
             if (complainant) setBillToCustomerId(complainant.id);
           }
         })
@@ -2139,53 +2178,54 @@ function IncidentViewButton({
     try {
       const patch: Record<string, unknown> = {};
 
-      if (editable) {
-        if (!hasSavedSitePlan) {
-          const problem = siteVisitProblem(siteVisit);
-          if (problem) {
-            notify(problem, 'error');
-            setSaving(false);
-            return;
-          }
-          // First step: persist and permanently lock the site plan. Remarks,
-          // billing owner and status are handled only after this save.
-          patch.site_action = siteVisitSummary(siteVisit, stats.materials);
-          patch.site_visit_date = siteVisit.date;
-          patch.site_visit_period = siteVisit.period;
-          patch.site_visit_companions = siteVisit.companions;
-          patch.site_visit_materials = siteVisit.materials.map((m) => ({ material_sku: m.sku, quantity: Number(m.quantity) }));
-          patch.site_visit_notes = siteVisit.notes.trim();
-        } else {
-          // Free concerns (water quality / supply) don't need a billing owner.
-          if (!billToCustomerId && !freeConcern) {
-            notify('Select the customer account that should receive the bill.', 'error');
-            setSaving(false);
-            return;
-          }
-          if (materialsEditable) {
-            const problem = materialListProblem(reqMaterials);
-            if (problem) {
-              notify(problem, 'error');
-              setSaving(false);
-              return;
-            }
-            patch.required_materials = reqMaterials.map((m) => ({ material_sku: m.sku, quantity: Number(m.quantity) }));
-          }
-          patch.remarks = remarks.trim();
-          if (billToCustomerId) patch.bill_to_customer_id = billToCustomerId;
-          // Zone specialist: a newly saved non-empty remark advances status.
-          const remarksChanged = remarks.trim() !== String(c.row.remarks ?? '').trim();
-          if (c.row.status === 'under_verification' && remarks.trim() && remarksChanged) {
-            patch.status = 'in_progress';
-          }
+      // Zone Specialist: persist and permanently lock the Site Visit Plan.
+      if (sitePlanEditable) {
+        const problem = siteVisitProblem(siteVisit);
+        if (problem) {
+          notify(problem, 'error');
+          setSaving(false);
+          return;
         }
-      } else if (urgencyEditable) {
+        patch.site_action = siteVisitSummary(siteVisit, stats.materials);
+        patch.site_visit_date = siteVisit.date;
+        patch.site_visit_period = siteVisit.period;
+        patch.site_visit_companions = siteVisit.companions;
+        patch.site_visit_materials = siteVisit.materials.map((m) => ({ material_sku: m.sku, quantity: Number(m.quantity) }));
+        patch.site_visit_notes = siteVisit.notes.trim();
+      }
+
+      if (urgencyEditable) {
         if (!URGENCY.includes(urgency)) {
           notify('Please select an urgency.', 'error');
           setSaving(false);
           return;
         }
         patch.urgency = urgency;
+      }
+
+      // Commercial: encode the signed Investigation Form.
+      if (findingsEditable) {
+        // Free concerns (water quality / supply) don't need a billing owner.
+        if (assessing && !billToCustomerId && !freeConcern) {
+          notify('Select the customer account that should receive the bill.', 'error');
+          setSaving(false);
+          return;
+        }
+        if (materialsEditable) {
+          const problem = materialListProblem(reqMaterials);
+          if (problem) {
+            notify(problem, 'error');
+            setSaving(false);
+            return;
+          }
+          patch.required_materials = reqMaterials.map((m) => ({ material_sku: m.sku, quantity: Number(m.quantity) }));
+        }
+        patch.remarks = remarks.trim();
+        if (billToCustomerId) patch.bill_to_customer_id = billToCustomerId;
+        // Encoding the findings hands the complaint to the Technical Team for costing.
+        if (c.row.status === 'under_verification' && remarks.trim()) {
+          patch.status = 'in_progress';
+        }
       }
 
       // Technical team: price with breakdown → Priced.
@@ -2222,7 +2262,14 @@ function IncidentViewButton({
   };
 
   // Show Save button if there are editable fields.
-  const hasEdits = editable || urgencyEditable || estimateEditable;
+  const hasEdits = sitePlanEditable || findingsEditable || urgencyEditable || estimateEditable;
+  const submitText = estimateEditable
+    ? 'Submit Price'
+    : sitePlanEditable
+      ? 'Save Site Visit Plan'
+      : findingsEditable && c.row.status === 'under_verification'
+        ? 'Save Findings'
+        : 'Save Changes';
 
   return (
     <>
@@ -2237,10 +2284,35 @@ function IncidentViewButton({
           wide
           onClose={() => setOpen(false)}
           onSubmit={hasEdits ? save : undefined}
-          submitText={estimateEditable ? 'Submit Price' : editable && !hasSavedSitePlan ? 'Save Site Visit Plan' : 'Save Changes'}
+          submitText={submitText}
           submitting={saving}
         >
-          <IncidentDetail row={c.row} hideRemarks={editable} />
+          <IncidentDetail row={c.row} hideRemarks={sitePlanEditable || findingsEditable} />
+          {canPrintForm && (
+            <div className="investigation-form-print" style={{ marginTop: 18 }}>
+              <ActionButton
+                label="Print Investigation Form"
+                icon="printer"
+                variant="secondary"
+                onClick={() => printIncidentInvestigationForm(c.row, customers, user?.fullName)}
+              />
+              <p style={{ marginTop: 8, color: 'var(--muted)', fontSize: 13 }}>
+                {canPlanSiteVisit
+                  ? 'Bring this to the complainant: write the findings and required materials on it, have the registered customer sign, then return it to the Commercial Department.'
+                  : 'For the Zone Specialist to fill in on site. Encode the signed form below once it comes back.'}
+              </p>
+            </div>
+          )}
+          {canPlanSiteVisit && !c.archived && hasSavedSitePlan && !hasRemarks && (
+            <p style={{ marginTop: 8, color: 'var(--muted)', fontSize: 13 }}>
+              Site Visit Plan saved. The Commercial Department will encode the findings from the signed Investigation Form.
+            </p>
+          )}
+          {canEncodeFindings && !c.archived && !hasSavedSitePlan && (
+            <p style={{ marginTop: 14, color: 'var(--muted)', fontSize: 13 }}>
+              The findings can be encoded once the Zone Specialist saves the Site Visit Plan.
+            </p>
+          )}
           {showCustomerBilling && linkedJobOrder && (
             <>
               <p className="detail-section-title job-order-section-title">Job Order Details</p>
@@ -2285,47 +2357,45 @@ function IncidentViewButton({
               </select>
             </div>
           )}
-          {editable && (
+          {sitePlanEditable && (
+            <div className="form-group" style={{ marginTop: 18, marginBottom: 0 }}>
+              <label>Site Visit Plan</label>
+              <SiteVisitPlanEditor value={siteVisit} onChange={setSiteVisit} />
+            </div>
+          )}
+          {findingsEditable && (
             <>
               <div className="form-group" style={{ marginTop: 18, marginBottom: 0 }}>
-                <label>Site Visit Plan</label>
-                {hasSavedSitePlan ? (
-                  <div className="locked-site-plan"><SiteVisitPlanView row={c.row} /></div>
-                ) : (
-                  <SiteVisitPlanEditor value={siteVisit} onChange={setSiteVisit} />
-                )}
+                <label>Site Visit Plan <span className="address-optional">(by the Zone Specialist)</span></label>
+                <div className="locked-site-plan"><SiteVisitPlanView row={c.row} /></div>
               </div>
-              {hasSavedSitePlan && (
-                <>
-                  <div className="form-group bill-to-reveal" style={{ marginTop: 18, marginBottom: 0 }}>
-                    <label>Findings</label>
-                    <textarea
-                      value={remarks}
-                      onChange={(e) => setRemarks(e.target.value)}
-                      placeholder="What did you verify on site? e.g. Leak on the customer's 1/2-inch line beside the meter"
-                    />
-                  </div>
-                  <div className="form-group bill-to-reveal" style={{ marginTop: 18, marginBottom: 0 }}>
-                    <label>
-                      Required Materials <span className="address-optional">(carried to the Technical Team, Job Order and MRF)</span>
-                    </label>
-                    {materialsEditable ? (
-                      <RequiredMaterialsEditor value={reqMaterials} onChange={setReqMaterials} siteVisit={siteVisitMaterials(c.row)} />
-                    ) : (
-                      <div className="locked-site-plan"><RequiredMaterialsView row={c.row} /></div>
-                    )}
-                  </div>
-                  <div className="form-group bill-to-reveal" style={{ marginTop: 18, marginBottom: 0 }}>
-                    <label>Bill To{freeConcern && <span className="address-optional"> (optional — this concern is normally free)</span>}</label>
-                    <BillToCustomerSelect
-                      customers={customers}
-                      value={billToCustomerId}
-                      loading={customersLoading}
-                      onChange={setBillToCustomerId}
-                    />
-                  </div>
-                </>
-              )}
+                <div className="form-group bill-to-reveal" style={{ marginTop: 18, marginBottom: 0 }}>
+                  <label>Findings <span className="address-optional">(from the signed Investigation Form)</span></label>
+                  <textarea
+                    value={remarks}
+                    onChange={(e) => setRemarks(e.target.value)}
+                    placeholder="Copy what the Zone Specialist wrote on the form, e.g. Leak on the customer's 1/2-inch line beside the meter"
+                  />
+                </div>
+                <div className="form-group bill-to-reveal" style={{ marginTop: 18, marginBottom: 0 }}>
+                  <label>
+                    Required Materials <span className="address-optional">(carried to the Technical Team, Job Order and MRF)</span>
+                  </label>
+                  {materialsEditable ? (
+                    <RequiredMaterialsEditor value={reqMaterials} onChange={setReqMaterials} siteVisit={siteVisitMaterials(c.row)} />
+                  ) : (
+                    <div className="locked-site-plan"><RequiredMaterialsView row={c.row} /></div>
+                  )}
+                </div>
+                <div className="form-group bill-to-reveal" style={{ marginTop: 18, marginBottom: 0 }}>
+                  <label>Bill To{freeConcern && <span className="address-optional"> (optional — this concern is normally free)</span>}</label>
+                  <BillToCustomerSelect
+                    customers={customers}
+                    value={billToCustomerId}
+                    loading={customersLoading}
+                    onChange={setBillToCustomerId}
+                  />
+                </div>
             </>
           )}
           {/* Technical Team: itemized charges — only while the complaint is Ongoing */}
@@ -2357,7 +2427,7 @@ function IncidentViewButton({
               <ActionButton label="Create Job Order" icon="clipboard-list" onClick={() => setShowJobForm(true)} />
             </div>
           )}
-          {canCreateJobOrder && !canDispatch && !editable && (
+          {canCreateJobOrder && !canDispatch && !findingsEditable && (
             <p style={{ marginTop: 16, color: 'var(--muted)', fontSize: 13 }}>
               {hasJobOrder
                 ? 'A job order has already been created for this complaint.'
@@ -2433,7 +2503,8 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
             {(manage || role === 'customer') && (
               <IncidentViewButton
                 c={c}
-                canEditRemarks={role === 'zone-specialist'}
+                canPlanSiteVisit={role === 'zone-specialist'}
+                canEncodeFindings={role === 'commercial-department'}
                 canCreateJobOrder={['general-manager', 'commercial-department'].includes(role)}
                 canEditUrgency={canManageUrgency}
                 showCustomerBilling={role === 'customer'}
@@ -2574,11 +2645,11 @@ function JobOrderDetail({ row }: { row: EntityRow }) {
               <SiteVisitPlanView row={incident} />
             </section>
             <section className="complaint-note-card is-remarks">
-              <span>Zone Specialist Findings</span>
+              <span>Investigation Findings</span>
               <p>{String(incident.remarks ?? '') || 'No findings added yet.'}</p>
             </section>
           </div>
-          <p className="detail-section-title">Required Materials (from the Zone Specialist)</p>
+          <p className="detail-section-title">Required Materials (from the investigation)</p>
           <RequiredMaterialsView row={incident} stock />
           <ImageGallery images={incident.images} />
         </>

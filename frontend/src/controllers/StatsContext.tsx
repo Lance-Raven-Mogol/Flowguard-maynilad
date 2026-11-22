@@ -335,7 +335,10 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
       key: sitePlanBadgeId(i),
       view: 'incidents',
       icon: 'clipboard-list',
-      title: `Site visit plan added for ${i.ref_code}`,
+      // Commercial encodes the signed Investigation Form once the visit is planned.
+      title: i.status === 'under_verification' && !String(i.remarks ?? '').trim()
+        ? `Encode the investigation findings for ${i.ref_code}`
+        : `Site visit plan added for ${i.ref_code}`,
       detail: `${String(i.reported_by ?? 'Customer')} · ${String(i.site_action).slice(0, 80)}`,
       tone: 'info',
     }));

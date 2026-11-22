@@ -52,7 +52,8 @@ export const RESOURCES: Record<string, ResourceDef> = {
       // Technical Team charges: [{ kind, description, material_sku, quantity, unit, unit_price, amount }]
       // and whether the customer pays at all (false = covered by the utility).
       'charges', 'billable',
-      // Zone Specialist's required materials, entered once and carried to the
+      // Required materials from the Investigation Form (encoded by the Commercial
+      // Department), entered once and carried to the
       // Technical Team (charges), the Job Order and the MRF: [{ material_sku, name, quantity, unit }]
       'required_materials',
     ],
