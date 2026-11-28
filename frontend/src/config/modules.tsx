@@ -1045,7 +1045,13 @@ interface BillingCustomerOption {
   email: string;
   serialNumber?: string | null;
   barangay?: string;
+  /** CAN: only registered customers (with one) can be the Bill To. */
+  accountNumber?: string | null;
 }
+
+/** Registered Maynilad customers: the only ones who can be billed. */
+const registeredCustomers = (customers: BillingCustomerOption[]): BillingCustomerOption[] =>
+  customers.filter((customer) => String(customer.accountNumber ?? '').trim() !== '');
 
 /** Searchable customer/account-owner picker matching the app's modern comboboxes. */
 function BillToCustomerSelect({
@@ -1067,7 +1073,7 @@ function BillToCustomerSelect({
     const normalized = query.trim().toLowerCase();
     if (!normalized) return customers;
     return customers.filter((customer) =>
-      `${customer.fullName} ${customer.serialNumber ?? ''}`.toLowerCase().includes(normalized),
+      `${customer.fullName} ${customer.serialNumber ?? ''} ${customer.accountNumber ?? ''}`.toLowerCase().includes(normalized),
     );
   }, [customers, query]);
 
@@ -1096,7 +1102,7 @@ function BillToCustomerSelect({
           aria-expanded={open}
           aria-controls="bill-to-customer-options"
           value={open ? query : selected?.fullName ?? ''}
-          placeholder={loading ? 'Loading customers…' : 'Search customer or serial number'}
+          placeholder={loading ? 'Loading customers…' : 'Search registered customer or CAN'}
           disabled={loading}
           onFocus={showOptions}
           onChange={(event) => {
@@ -1111,7 +1117,7 @@ function BillToCustomerSelect({
             }
           }}
         />
-        {selected?.serialNumber && <span className="combobox-chip">{selected.serialNumber}</span>}
+        {selected?.accountNumber && <span className="combobox-chip">CAN {selected.accountNumber}</span>}
         <button
           type="button"
           className="combobox-caret"
@@ -1124,8 +1130,10 @@ function BillToCustomerSelect({
       </div>
       {open && (
         <ul id="bill-to-customer-options" className="combobox-list" role="listbox">
-          {filtered.length === 0 ? (
-            <li className="combobox-empty">No matching customer.</li>
+          {customers.length === 0 ? (
+            <li className="combobox-empty">No registered customers yet. The Commercial Department generates the CAN in Customer Accounts.</li>
+          ) : filtered.length === 0 ? (
+            <li className="combobox-empty">No matching registered customer.</li>
           ) : filtered.map((customer) => {
             const isSelected = customer.id === value;
             return (
@@ -1141,7 +1149,7 @@ function BillToCustomerSelect({
                   setQuery('');
                 }}
               >
-                <span className="combobox-sku">{customer.serialNumber || 'NO SERIAL'}</span>
+                <span className="combobox-sku">{customer.accountNumber ? `CAN ${customer.accountNumber}` : customer.serialNumber || 'NO SERIAL'}</span>
                 <span className="combobox-name">{customer.fullName}</span>
                 {isSelected && <span className="combobox-selected-mark">✓</span>}
               </li>
@@ -1261,6 +1269,117 @@ const chargeDraftsFrom = (row: EntityRow): ChargeDraft[] => {
  * and other fees, totalled live. This total is the price itself — the
  * Commercial Department bills it or waives it (no charge).
  */
+/**
+ * Inventory-only material picker: type the code (SKU) or the name and the
+ * matching items show up, codes that start with what was typed first.
+ * Only an existing inventory item can be picked (no free text).
+ */
+function InventoryPicker({
+  materials,
+  sku,
+  onChange,
+  describe,
+}: {
+  materials: EntityRow[];
+  sku: string;
+  onChange: (sku: string) => void;
+  /** Extra detail on each option, e.g. the price or the stock on hand. */
+  describe: (material: EntityRow) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [highlight, setHighlight] = useState(-1);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const selected = materials.find((m) => String(m.sku) === sku);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return materials.slice(0, 50);
+    const code = (m: EntityRow) => String(m.sku ?? '').toLowerCase();
+    return materials
+      .filter((m) => `${m.sku ?? ''} ${m.name ?? ''} ${m.category ?? ''}`.toLowerCase().includes(q))
+      .sort((a, b) => Number(code(b).startsWith(q)) - Number(code(a).startsWith(q)))
+      .slice(0, 50);
+  }, [materials, query]);
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  const close = () => { setOpen(false); setQuery(''); setHighlight(-1); };
+  const pick = (m: EntityRow) => { onChange(String(m.sku ?? '')); close(); };
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setOpen(true);
+      setHighlight((h) => Math.min(h + 1, filtered.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlight((h) => Math.max(h - 1, 0));
+    } else if (e.key === 'Enter' && open) {
+      e.preventDefault();
+      const target = filtered[highlight >= 0 ? highlight : 0];
+      if (target) pick(target);
+    } else if (e.key === 'Escape') {
+      close();
+    }
+  };
+
+  return (
+    <div className="combobox inventory-picker" ref={wrapRef}>
+      <div className={`combobox-control${selected ? ' is-linked' : ''}`}>
+        <input
+          role="combobox"
+          aria-expanded={open}
+          aria-label="Material"
+          value={open ? query : String(selected?.name ?? '')}
+          placeholder="Type the code (SKU) or name…"
+          onFocus={() => { setQuery(''); setOpen(true); }}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); setHighlight(-1); }}
+          onKeyDown={onKeyDown}
+        />
+        {selected && <span className="combobox-chip">{String(selected.sku ?? '')}</span>}
+        <button
+          type="button"
+          className="combobox-caret"
+          tabIndex={-1}
+          aria-label="Toggle inventory list"
+          onClick={() => (open ? close() : setOpen(true))}
+        >
+          ▾
+        </button>
+      </div>
+      {open && (
+        <ul className="combobox-list" role="listbox">
+          {filtered.length === 0 ? (
+            <li className="combobox-empty">No inventory item matches “{query.trim()}”.</li>
+          ) : filtered.map((m, i) => (
+            <li
+              key={String(m.id)}
+              role="option"
+              aria-selected={String(m.sku) === sku}
+              className={`combobox-option${i === highlight ? ' is-active' : ''}${String(m.sku) === sku ? ' is-selected' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); pick(m); }}
+              onMouseEnter={() => setHighlight(i)}
+            >
+              <span className="combobox-sku">{String(m.sku ?? '')}</span>
+              <span className="combobox-name">{String(m.name ?? '')}</span>
+              <span className="combobox-stock">{describe(m)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function ChargesEditor({
   drafts,
   onDrafts,
@@ -1272,6 +1391,8 @@ function ChargesEditor({
   prefilled?: boolean;
 }) {
   const { stats } = useStats();
+  // Read-only FIFO batches of a material, so the estimate can be checked.
+  const [batchTarget, setBatchTarget] = useState<EntityRow | null>(null);
   const priced = stats.materials.filter((m) => !m.archived && Number(m.unit_price ?? 0) > 0);
   const materialOf = (sku: string) => priced.find((m) => String(m.sku) === sku);
   // A prefilled material without a unit price still shows, so it is not silently lost.
@@ -1286,6 +1407,7 @@ function ChargesEditor({
     onDrafts(drafts.map((d) => (d.key === key ? { ...d, ...patch } : d)));
   return (
     <div className="charges-editor">
+      {batchTarget && <BatchesModal material={batchTarget} onClose={() => setBatchTarget(null)} />}
       <p className="detail-section-title">Price Breakdown</p>
       {prefilled && (
         <p className="required-materials-note">
@@ -1311,17 +1433,14 @@ function ChargesEditor({
               <div className="charge-item">
                 <span className={`charge-pill is-${d.kind}`}>{CHARGE_KIND_LABEL[d.kind]}</span>
                 {d.kind === 'material' ? (
-                  <select value={d.sku} onChange={(e) => update(d.key, { sku: e.target.value })} aria-label="Material">
-                    <option value="">Select material…</option>
-                    {unpricedOf(d.sku) && (
-                      <option value={d.sku}>{`${String(unpricedOf(d.sku)?.name)} — no unit price set`}</option>
-                    )}
-                    {priced.map((m) => (
-                      <option key={String(m.id)} value={String(m.sku)}>
-                        {`${String(m.name)} — ${money(m.unit_price)} / ${String(m.unit ?? 'unit')}`}
-                      </option>
-                    ))}
-                  </select>
+                  <InventoryPicker
+                    materials={unpricedOf(d.sku) ? [unpricedOf(d.sku)!, ...priced] : priced}
+                    sku={d.sku}
+                    onChange={(next) => update(d.key, { sku: next })}
+                    describe={(m) => Number(m.unit_price ?? 0) > 0
+                      ? `${money(m.unit_price)} / ${String(m.unit ?? 'unit')}`
+                      : 'no unit price'}
+                  />
                 ) : (
                   <input
                     value={d.description}
@@ -1335,6 +1454,10 @@ function ChargesEditor({
                     {materialOf(d.sku)
                       ? fifoHint(planOf(d), String(mat.unit ?? 'unit'), mat.unit_price)
                       : 'No unit price in Inventory — this line counts as ₱0.00'}
+                    {' '}
+                    <button type="button" className="charge-batches-link" onClick={() => setBatchTarget(mat)}>
+                      View batches
+                    </button>
                   </small>
                 )}
               </div>
@@ -1462,14 +1585,12 @@ function RequiredMaterialsEditor({
         const picked = inventory.find((x) => String(x.sku) === m.sku);
         return (
           <div className="site-visit-material-row" key={m.key}>
-            <select value={m.sku} onChange={(e) => update(m.key, { sku: e.target.value })} aria-label="Material">
-              <option value="">Select material…</option>
-              {inventory.map((x) => (
-                <option key={String(x.id)} value={String(x.sku)}>
-                  {`${String(x.name)} — ${Number(x.quantity ?? 0)} ${String(x.unit ?? 'units')} in stock`}
-                </option>
-              ))}
-            </select>
+            <InventoryPicker
+              materials={inventory}
+              sku={m.sku}
+              onChange={(next) => update(m.key, { sku: next })}
+              describe={(x) => `${Number(x.quantity ?? 0)} ${String(x.unit ?? 'units')} in stock`}
+            />
             <input
               type="number"
               min={1}
@@ -2204,7 +2325,7 @@ function IncidentViewButton({
         .then(({ data }) => {
           setCustomers(data);
           if (findingsEditable && !c.row.bill_to_customer_id) {
-            const complainant = findComplainant(c.row, data);
+            const complainant = findComplainant(c.row, registeredCustomers(data));
             if (complainant) setBillToCustomerId(complainant.id);
           }
         })
@@ -2487,7 +2608,7 @@ function IncidentViewButton({
                 <div className="form-group bill-to-reveal" style={{ marginTop: 18, marginBottom: 0 }}>
                   <label>Bill To{freeConcern && <span className="address-optional"> (optional — this concern is normally free)</span>}</label>
                   <BillToCustomerSelect
-                    customers={customers}
+                    customers={registeredCustomers(customers)}
                     value={billToCustomerId}
                     loading={customersLoading}
                     onChange={setBillToCustomerId}
@@ -4385,13 +4506,13 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
 
   return (
     <>
-      <div className="inventory-tabs" role="tablist" aria-label="Inventory views">
+      {!readOnly && <div className="inventory-tabs" role="tablist" aria-label="Inventory views">
         <button type="button" role="tab" aria-selected={activeTab === 'inventory'} className={activeTab === 'inventory' ? 'active' : ''} onClick={() => setActiveTab('inventory')}>Current Inventory</button>
         <button type="button" role="tab" aria-selected={activeTab === 'history'} className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>Inventory History</button>
         {canCount && (
           <button type="button" role="tab" aria-selected={activeTab === 'count'} className={activeTab === 'count' ? 'active' : ''} onClick={() => setActiveTab('count')}>Stock Count (Scan)</button>
         )}
-      </div>
+      </div>}
       {activeTab === 'inventory' && showRestock && restockItems.length > 0 && (
         <RestockBanner items={restockItems} onPurchase={setPurchaseTarget} />
       )}

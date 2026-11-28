@@ -40,6 +40,10 @@ export interface User {
   isSenior?: boolean;
   seniorIdNumber?: string | null;
   termsAcceptedAt?: string | null;
+  /** CAN (Customer Account Number): set once the customer is a registered Maynilad customer. */
+  accountNumber?: string | null;
+  /** A customer without a CAN by this time is deactivated. */
+  registrationDeadline?: string | null;
 }
 
 export type StatusTone = 'paid' | 'pending' | 'overdue';

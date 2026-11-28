@@ -89,3 +89,23 @@ test('reactivating gives the customer a fresh 2-month window', async () => {
   assert.ok(Date.parse(restored.registrationDeadline) > Date.now() + 50 * DAY);
   assert.equal((await login(u)).otpRequired, false);
 });
+
+test('the Commercial Department generates a CAN: a registered customer is not deactivated', async () => {
+  const commercial = { id: 'cd', role: 'commercial-department', fullName: 'Cora Commercial', email: 'cd@x.com', createdAt: '' };
+  const zone = { id: 'zs', role: 'zone-specialist', fullName: 'Zed Zone', email: 'zs@x.com', createdAt: '' };
+  const u = await signUp();
+  await assert.rejects(authService.generateCan(u.id, zone), /Only the Commercial Department/);
+  const updated = await authService.generateCan(u.id, commercial);
+  assert.match(updated.accountNumber, /^[1-9]\d{7}$/);
+  await assert.rejects(authService.generateCan(u.id, commercial), /already has CAN/);
+  // Past the deadline, but registered: still active.
+  await userRepo.update(u.id, { registrationDeadline: past() });
+  assert.equal((await login(u)).otpRequired, false);
+  await authService.deactivateExpiredCustomers();
+  assert.equal((await userRepo.findById(u.id)).isArchived ?? false, false);
+  // A deactivated account must be reactivated before it gets a CAN.
+  const other = await signUp();
+  await userRepo.update(other.id, { registrationDeadline: past() });
+  await authService.deactivateExpiredCustomers();
+  await assert.rejects(authService.generateCan(other.id, commercial), /deactivated/);
+});

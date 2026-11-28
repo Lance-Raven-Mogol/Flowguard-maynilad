@@ -36,7 +36,10 @@ const tech = user('technical-team', 'Tom Tech');
 function seed(incident = {}) {
   tables.clear();
   table('materials').push({ id: 'm1', sku: 'SKU-00001', name: 'PVC Pipe 50mm', unit: 'pcs', quantity: 20, unit_price: 150, status: 'in_stock' });
-  table('app_users').push({ id: 'c1', role: 'customer', full_name: 'Carla Customer', serial_number: 'CUST-00001', is_archived: false });
+  table('app_users').push(
+    { id: 'c1', role: 'customer', full_name: 'Carla Customer', serial_number: 'CUST-00001', account_number: '51234567', is_archived: false },
+    { id: 'c2', role: 'customer', full_name: 'Una Unregistered', serial_number: 'CUST-00002', account_number: null, is_archived: false },
+  );
   table('incidents').push({
     id: 'inc1', ref_code: 'INC-0001', type: 'leak', status: 'under_verification', urgency: 'high',
     site_action: 'Visit: Nov 5 (AM)', remarks: '', ...incident,
@@ -152,4 +155,12 @@ test('findings encoded before the review step (no status) can still be reviewed'
   seed({ remarks: 'Leak beside the meter', bill_to_customer_id: 'c1' });
   await update(commercial, { findings_status: 'approved' });
   assert.equal(incident().status, 'in_progress');
+});
+
+test('only a registered customer (with a CAN) can be the billing owner', async () => {
+  seed();
+  await assert.rejects(update(zone, { remarks: 'Leak', bill_to_customer_id: 'c2' }), /registered customer \(with a CAN\)/);
+  assert.equal(incident().bill_to_customer_id, undefined);
+  await update(zone, { remarks: 'Leak', bill_to_customer_id: 'c1' });
+  assert.equal(incident().bill_to_customer_name, 'Carla Customer');
 });

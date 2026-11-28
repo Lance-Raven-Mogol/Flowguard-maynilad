@@ -93,6 +93,18 @@ export const userRepo = {
     return data ? fromRow(data) : undefined;
   },
 
+  /** The customer holding this CAN (Customer Account Number), if any. */
+  async findByAccountNumber(accountNumber: string): Promise<User | undefined> {
+    if (!supabase) return store.findUserByAccountNumber(accountNumber);
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select('*')
+      .eq('account_number', accountNumber)
+      .maybeSingle<UserRow>();
+    if (error) throw new Error(`Supabase findByAccountNumber failed: ${error.message}`);
+    return data ? fromRow(data) : undefined;
+  },
+
   async findById(id: string): Promise<User | undefined> {
     if (!supabase) return store.findUserById(id);
 
@@ -141,7 +153,7 @@ export const userRepo = {
 
   async update(
     id: string,
-    fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string; startDate?: string; isArchived?: boolean; barangay?: string; otpSecret?: string; otpEnabled?: boolean; jobLevel?: string | null; serialNumber?: string | null; isSenior?: boolean; seniorIdNumber?: string | null; registrationDeadline?: string | null },
+    fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string; startDate?: string; isArchived?: boolean; barangay?: string; otpSecret?: string; otpEnabled?: boolean; jobLevel?: string | null; serialNumber?: string | null; isSenior?: boolean; seniorIdNumber?: string | null; registrationDeadline?: string | null; accountNumber?: string | null },
   ): Promise<User | undefined> {
     if (!supabase) return store.updateUser(id, fields);
 
@@ -161,6 +173,7 @@ export const userRepo = {
     if (fields.isSenior !== undefined) row.is_senior = fields.isSenior;
     if (fields.seniorIdNumber !== undefined) row.senior_id_number = fields.seniorIdNumber;
     if (fields.registrationDeadline !== undefined) row.registration_deadline = fields.registrationDeadline;
+    if (fields.accountNumber !== undefined) row.account_number = fields.accountNumber;
 
     const { data, error } = await supabase
       .from(TABLE)

@@ -11,6 +11,7 @@ import { DashboardOverview } from '../views/dashboard/DashboardOverview';
 import { AccountSettings } from '../views/dashboard/AccountSettings';
 import { TeamScheduleModule } from '../views/technical/TeamScheduleModule';
 import { TransactionHistory } from '../views/billing/TransactionHistory';
+import { CustomerAccountsModule } from '../views/commercial/CustomerAccountsModule';
 import {
   AdvisoriesModule,
   AssetsModule,
@@ -248,6 +249,11 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
         render: ({ filter }) => <RequestsModule filter={filter} title="My Requests" />,
       },
       {
+        // FIFO stock (read-only): which batch goes out next and at what price, for estimating.
+        id: 'stock', label: 'Stock (FIFO)', icon: 'layers', group: 'main',
+        render: ({ filter }) => <MaterialsModule filter={filter} readOnly title="Stock & FIFO Batches" />,
+      },
+      {
         id: 'advisories', label: 'Advisories', icon: 'megaphone', group: 'main',
         render: ({ filter }) => <AdvisoriesModule filter={filter} />,
       },
@@ -360,6 +366,10 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
       {
         id: 'joborders', label: 'Job Orders', icon: 'clipboard-list', group: 'main',
         render: ({ filter }) => <JobOrdersModule filter={filter} title="Job Order Management" />,
+      },
+      {
+        id: 'customers', label: 'Customer Accounts', icon: 'user-check', group: 'main',
+        render: ({ filter }) => <CustomerAccountsModule filter={filter} />,
       },
       {
         id: 'inquiries', label: 'Customer Inquiries', icon: 'messages-square', group: 'main',

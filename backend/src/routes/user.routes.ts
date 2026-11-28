@@ -158,6 +158,16 @@ userRoutes.patch(
   }),
 );
 
+// Commercial Department: generate a customer's CAN (makes them a registered customer).
+userRoutes.post(
+  '/:id/can',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const user = await authService.generateCan(req.params.id, req.user);
+    res.json({ data: user });
+  }),
+);
+
 // Restore an archived user.
 userRoutes.patch(
   '/:id/restore',

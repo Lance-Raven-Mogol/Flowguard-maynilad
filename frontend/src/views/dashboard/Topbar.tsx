@@ -38,6 +38,8 @@ export function Topbar({ menuOpen, onToggleMenu, onLogout, config, filter, onFil
   const prefix = now.getHours() < 12 ? 'Good morning' : now.getHours() < 18 ? 'Good afternoon' : 'Good evening';
   const today = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const roleLabel = ROLES.find((r) => r.value === user!.role)?.label ?? user!.role;
+  // A registered customer is greeted by their CAN (Customer Account Number).
+  const can = user!.role === 'customer' ? String(user!.accountNumber ?? '').trim() : '';
   const avatarUrl = avatarFor(user!);
   const unreadItems = items.filter((item) => item.unread);
   const readItems = items.filter((item) => !item.unread);
@@ -107,7 +109,8 @@ export function Topbar({ menuOpen, onToggleMenu, onLogout, config, filter, onFil
       </button>
       <div className="topbar-greet">
         <h1 className="greeting">
-          <span className="greeting-pre">{prefix},</span> {user!.fullName}
+          <span className="greeting-pre">{prefix},</span>{' '}
+          {can ? <span title={user!.fullName}>{can}</span> : user!.fullName}
         </h1>
         <p className="topbar-sub">{today}</p>
       </div>

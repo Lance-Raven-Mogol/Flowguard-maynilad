@@ -12,7 +12,7 @@ import { mailer, type OtpPurpose } from './mailer.service.js';
 import { renameIncidentReporter, insertRow as auditInsert } from '../models/resourceRepo.js';
 import { uploadAvatar, supabase as supabaseClient } from '../models/supabase.js';
 import { ROLES, type PublicUser, type Role, type User } from '../models/types.js';
-import { badRequest, conflict, notFound, unauthorized } from '../utils/httpError.js';
+import { badRequest, conflict, forbidden, notFound, unauthorized } from '../utils/httpError.js';
 
 /* ---------------------------------------------------------- Audit */
 function fmtRole(r?: string): string {
@@ -30,6 +30,7 @@ async function audit(action: string, actor: string | undefined, actorRole: strin
       case 'role_change': desc = `Manager changed "${name}"'s role from ${fmtRole(details.from as string)} to ${fmtRole(details.to as string)}`; break;
       case 'resign': desc = `Manager resigned the account "${name}"`; break;
       case 'reactivate': desc = `Manager reactivated the account "${name}"`; break;
+      case 'can_generated': desc = `CAN ${String(details.account_number ?? '')} generated for "${name}": now a registered customer`; break;
       case 'auto_deactivate': desc = `Account "${name}" was deactivated: not a registered customer within ${REGISTRATION_WINDOW_MONTHS} months`; break;
       case 'profile_update': desc = `Updated profile information`; break;
       case 'password_change': desc = `Changed password`; break;
@@ -80,6 +81,18 @@ async function auditAutoDeactivate(u: User): Promise<void> {
   await audit('auto_deactivate', 'System', 'system', u.id, u.email, {
     target_name: u.fullName, target_role: u.role, reason: 'registration_window', registration_deadline: u.registrationDeadline,
   });
+}
+
+/** Digits in a generated CAN (Customer Account Number). */
+const CAN_DIGITS = 8;
+
+/** A new, unused CAN: 8 digits, never starting with 0. */
+async function generateAccountNumber(): Promise<string> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const candidate = String(randomInt(10 ** (CAN_DIGITS - 1), 10 ** CAN_DIGITS));
+    if (!(await userRepo.findByAccountNumber(candidate))) return candidate;
+  }
+  throw conflict('Could not generate a unique CAN. Please try again.');
 }
 
 /** Deactivates the account now if its registration window has run out. */
@@ -429,6 +442,28 @@ export const authService = {
   /** For every authenticated request: the account, deactivated if its window ran out. */
   async ensureActive(u: User): Promise<User> {
     return deactivateIfExpired(u);
+  },
+
+  /**
+   * The Commercial Department gives a customer their CAN (Customer Account
+   * Number): they become a registered Maynilad customer, can be billed (Bill
+   * To) and are no longer deactivated by the registration window.
+   */
+  async generateCan(userId: string, actorUser?: PublicUser): Promise<PublicUser> {
+    if (!actorUser || !['commercial-department', 'general-manager'].includes(actorUser.role)) {
+      throw forbidden('Only the Commercial Department can generate a CAN.');
+    }
+    const user = await userRepo.findById(userId);
+    if (!user || user.role !== 'customer') throw notFound('Customer account not found.');
+    if (user.isArchived) throw conflict('This account is deactivated. The General Manager must reactivate it first.');
+    if (isRegisteredCustomer(user)) throw conflict(`This customer already has CAN ${user.accountNumber}.`);
+    const accountNumber = await generateAccountNumber();
+    const updated = await userRepo.update(userId, { accountNumber });
+    if (!updated) throw notFound('Customer account not found.');
+    await audit('can_generated', actorUser.fullName, actorUser.role, userId, updated.email, {
+      target_name: updated.fullName, account_number: accountNumber,
+    });
+    return toPublicUser(updated);
   },
 
   async archiveUser(userId: string, actorUser?: PublicUser, reason?: string): Promise<void> {

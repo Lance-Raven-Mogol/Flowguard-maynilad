@@ -1739,6 +1739,10 @@ export const resourceService = {
       if (!owner || owner.role !== 'customer' || owner.is_archived) {
         throw badRequest('Select an active customer account as the billing owner.');
       }
+      // Only registered Maynilad customers (with a CAN) can be billed.
+      if (!String(owner.account_number ?? '').trim()) {
+        throw badRequest('Only a registered customer (with a CAN) can be the billing owner. The Commercial Department generates the CAN.');
+      }
       values.bill_to_customer_id = owner.id;
       values.bill_to_customer_name = owner.full_name;
       values.bill_to_serial_number = owner.serial_number ?? '';

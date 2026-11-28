@@ -2701,6 +2701,16 @@ td strong {
 }
 .complaint-note-card.is-disapproved > span { color: #c0304f; }
 .findings-review-note.is-approved { color: #1f8a4c; font-weight: 600; }
+.charge-batches-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--blue);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
 .complaint-note-card.is-site-action { background: #f6fbff; border-color: #cde5f7; }
 .complaint-note-card.is-site-action > span { color: #087ca7; }
 
@@ -6777,7 +6787,8 @@ input:checked + .slider:before {
 .locked-site-plan .site-visit-view, .complaint-note-card .site-visit-view { margin: 0; white-space: normal; }
 @media (max-width: 640px) {
   .site-visit-material-row { grid-template-columns: minmax(0, 1fr) 70px 32px; }
-  .site-visit-material-row > select { grid-column: 1 / -1; }
+  .site-visit-material-row > select,
+  .site-visit-material-row > .inventory-picker { grid-column: 1 / -1; }
   .site-visit-unit { display: none; }
 }
 
