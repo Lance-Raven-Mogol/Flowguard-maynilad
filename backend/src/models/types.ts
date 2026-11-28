@@ -45,6 +45,10 @@ export interface User {
   seniorIdNumber?: string | null;
   /** When the customer agreed to the Terms and Conditions at signup. */
   termsAcceptedAt?: string | null;
+  /** CAN (Customer Account Number): set once the customer is a registered Maynilad customer. */
+  accountNumber?: string | null;
+  /** A customer without a CAN by this time is deactivated (Terms and Conditions). */
+  registrationDeadline?: string | null;
 }
 
 /** Safe projection of a user for API responses. */
@@ -66,6 +70,10 @@ export interface PublicUser {
   seniorIdNumber?: string | null;
   /** When the customer agreed to the Terms and Conditions at signup. */
   termsAcceptedAt?: string | null;
+  /** CAN (Customer Account Number): set once the customer is a registered Maynilad customer. */
+  accountNumber?: string | null;
+  /** A customer without a CAN by this time is deactivated (Terms and Conditions). */
+  registrationDeadline?: string | null;
 }
 
 /** Visual status pill variants reused across every table. */

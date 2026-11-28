@@ -2694,6 +2694,13 @@ td strong {
 }
 
 .complaint-note-card.is-remarks > span { color: var(--blue); }
+.complaint-note-card.is-disapproved {
+  border-color: #f5c6d2;
+  background: #fff5f7;
+  box-shadow: inset 3px 0 0 #d43d63;
+}
+.complaint-note-card.is-disapproved > span { color: #c0304f; }
+.findings-review-note.is-approved { color: #1f8a4c; font-weight: 600; }
 .complaint-note-card.is-site-action { background: #f6fbff; border-color: #cde5f7; }
 .complaint-note-card.is-site-action > span { color: #087ca7; }
 

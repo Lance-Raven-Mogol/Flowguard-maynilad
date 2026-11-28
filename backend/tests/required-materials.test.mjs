@@ -37,13 +37,13 @@ function seed(incident = {}) {
     { id: 'm1', sku: 'SKU-00001', name: 'PVC Pipe 50mm', unit: 'pcs', quantity: 20, unit_price: 150, status: 'in_stock' },
     { id: 'm2', sku: 'SKU-00002', name: 'Gate Valve', unit: 'pcs', quantity: 3, unit_price: 800, status: 'in_stock' },
   );
-  table('incidents').push({ id: 'inc1', ref_code: 'INC-0001', status: 'in_progress', site_action: 'Visit: Nov 3 (AM)', ...incident });
+  table('incidents').push({ id: 'inc1', ref_code: 'INC-0001', status: 'under_verification', site_action: 'Visit: Nov 3 (AM)', ...incident });
 }
 const setMaterials = (by, list) => resourceService.update('incidents', by, 'inc1', { required_materials: list });
 
-test('commercial encodes the required materials once; names and units come from inventory', async () => {
+test('the zone specialist encodes the required materials once; names and units come from inventory', async () => {
   seed();
-  const row = await setMaterials(commercial, [
+  const row = await setMaterials(zone, [
     { material_sku: 'SKU-00001', name: 'wrong', quantity: 2 },
     { material_sku: 'SKU-00002', quantity: 1 },
   ]);
@@ -51,20 +51,20 @@ test('commercial encodes the required materials once; names and units come from 
     { material_sku: 'SKU-00001', name: 'PVC Pipe 50mm', quantity: 2, unit: 'pcs' },
     { material_sku: 'SKU-00002', name: 'Gate Valve', quantity: 1, unit: 'pcs' },
   ]);
-  await assert.rejects(setMaterials(commercial, [{ material_sku: 'SKU-00001', quantity: 1 }, { material_sku: 'SKU-00001', quantity: 2 }]), /listed twice/);
-  await assert.rejects(setMaterials(commercial, [{ material_sku: 'SKU-00001', quantity: 1.5 }]), /whole-number/);
-  await assert.rejects(setMaterials(commercial, [{ material_sku: 'SKU-99999', quantity: 1 }]), /No active inventory item/);
+  await assert.rejects(setMaterials(zone, [{ material_sku: 'SKU-00001', quantity: 1 }, { material_sku: 'SKU-00001', quantity: 2 }]), /listed twice/);
+  await assert.rejects(setMaterials(zone, [{ material_sku: 'SKU-00001', quantity: 1.5 }]), /whole-number/);
+  await assert.rejects(setMaterials(zone, [{ material_sku: 'SKU-99999', quantity: 1 }]), /No active inventory item/);
 });
 
-test('only commercial sets them, after the site plan and before pricing', async () => {
+test('only the zone specialist sets them, after the site plan and until Commercial approves', async () => {
   seed();
-  await assert.rejects(setMaterials(zone, []), /Commercial Department/);
-  await assert.rejects(setMaterials(tech, []), /Commercial Department/);
-  await assert.rejects(setMaterials(leader, []), /permission|Commercial Department/);
+  await assert.rejects(setMaterials(commercial, []), /Zone Specialist/);
+  await assert.rejects(setMaterials(tech, []), /Zone Specialist/);
+  await assert.rejects(setMaterials(leader, []), /permission|Zone Specialist/);
   seed({ site_action: '' });
-  await assert.rejects(setMaterials(commercial, []), /Site Visit Plan/);
-  seed({ status: 'for_estimation' });
-  await assert.rejects(setMaterials(commercial, []), /priced/);
+  await assert.rejects(setMaterials(zone, []), /Site Visit Plan/);
+  seed({ status: 'in_progress' });
+  await assert.rejects(setMaterials(zone, []), /approved/);
 });
 
 const sitePlan = (materials) => resourceService.update('incidents', zone, 'inc1', {

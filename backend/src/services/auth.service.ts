@@ -30,6 +30,7 @@ async function audit(action: string, actor: string | undefined, actorRole: strin
       case 'role_change': desc = `Manager changed "${name}"'s role from ${fmtRole(details.from as string)} to ${fmtRole(details.to as string)}`; break;
       case 'resign': desc = `Manager resigned the account "${name}"`; break;
       case 'reactivate': desc = `Manager reactivated the account "${name}"`; break;
+      case 'auto_deactivate': desc = `Account "${name}" was deactivated: not a registered customer within ${REGISTRATION_WINDOW_MONTHS} months`; break;
       case 'profile_update': desc = `Updated profile information`; break;
       case 'password_change': desc = `Changed password`; break;
       case 'otp_enabled': desc = `Enabled two-factor authentication`; break;
@@ -41,6 +42,53 @@ async function audit(action: string, actor: string | undefined, actorRole: strin
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/* ------------------------------------------- Registration window */
+/**
+ * A customer account must become a registered Maynilad customer (get a CAN)
+ * within this many months of sign-up, or it is deactivated (Terms and
+ * Conditions). Deactivated means archived, never deleted: the General Manager
+ * can reactivate it.
+ */
+export const REGISTRATION_WINDOW_MONTHS = 2;
+
+/** The registration deadline for an account starting at `from`. */
+export function registrationDeadlineFrom(from: Date = new Date()): string {
+  const deadline = new Date(from.getTime());
+  deadline.setMonth(deadline.getMonth() + REGISTRATION_WINDOW_MONTHS);
+  return deadline.toISOString();
+}
+
+export const isRegisteredCustomer = (u: Pick<User, 'accountNumber'>): boolean =>
+  String(u.accountNumber ?? '').trim() !== '';
+
+/** Whether this customer's registration deadline has passed without a CAN. */
+export function registrationExpired(u: User, now = Date.now()): boolean {
+  if (u.role !== 'customer' || isRegisteredCustomer(u) || !u.registrationDeadline) return false;
+  const deadline = Date.parse(u.registrationDeadline);
+  return Number.isFinite(deadline) && deadline <= now;
+}
+
+/** The sign-in error for a deactivated account. */
+export function deactivatedMessage(u: User): string {
+  return registrationExpired(u)
+    ? `This account was deactivated because it did not become a registered Maynilad customer within ${REGISTRATION_WINDOW_MONTHS} months of sign-up. Please contact Maynilad to reactivate it.`
+    : 'This account has been deactivated.';
+}
+
+async function auditAutoDeactivate(u: User): Promise<void> {
+  await audit('auto_deactivate', 'System', 'system', u.id, u.email, {
+    target_name: u.fullName, target_role: u.role, reason: 'registration_window', registration_deadline: u.registrationDeadline,
+  });
+}
+
+/** Deactivates the account now if its registration window has run out. */
+async function deactivateIfExpired(u: User): Promise<User> {
+  if (u.isArchived || !registrationExpired(u)) return u;
+  await userRepo.archive(u.id);
+  await auditAutoDeactivate(u);
+  return { ...u, isArchived: true };
+}
 
 /** Generate a unique CUST-##### serial number for a new customer account. */
 async function generateCustomerSerial(): Promise<string> {
@@ -121,7 +169,7 @@ const pending = new Map<string, {
 }>();
 
 /** Bump when the Terms and Conditions text changes (stored in the audit log). */
-const TERMS_VERSION = '2026-11-03';
+const TERMS_VERSION = '2026-11-28';
 
 /** Senior Citizen ID: optional; trimmed and capped so it fits a single line. */
 function seniorFields(input: { isSenior?: unknown; seniorIdNumber?: unknown }): { isSenior: boolean; seniorIdNumber: string | null } {
@@ -243,6 +291,7 @@ export const authService = {
       isSenior: p.isSenior,
       seniorIdNumber: p.seniorIdNumber,
       termsAcceptedAt: p.termsAcceptedAt,
+      registrationDeadline: registrationDeadlineFrom(),
     });
     await audit('register', p.fullName, 'customer', user.id, p.email, {
       email: p.email, role: 'customer', barangay: p.barangay, is_senior: p.isSenior,
@@ -273,8 +322,10 @@ export const authService = {
       throw err;
     }
     pendingLogins.delete(email);
-    const user = await userRepo.findById(p.userId);
-    if (!user || user.isArchived) throw unauthorized('Account no longer exists.');
+    const found = await userRepo.findById(p.userId);
+    if (!found) throw unauthorized('Account no longer exists.');
+    const user = await deactivateIfExpired(found);
+    if (user.isArchived) throw unauthorized(deactivatedMessage(user));
     return { token: signToken(user), user: toPublicUser(user) };
   },
 
@@ -297,7 +348,7 @@ export const authService = {
     if (input.acceptTerms !== true) throw badRequest('Please read and accept the Terms and Conditions.');
     if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
     const termsAcceptedAt = new Date().toISOString();
-    const user = await userRepo.create({ fullName, email, role: 'customer', passwordHash: bcrypt.hashSync(password, 10), serialNumber: await generateCustomerSerial(), termsAcceptedAt });
+    const user = await userRepo.create({ fullName, email, role: 'customer', passwordHash: bcrypt.hashSync(password, 10), serialNumber: await generateCustomerSerial(), termsAcceptedAt, registrationDeadline: registrationDeadlineFrom() });
     await audit('register', fullName, 'customer', user.id, email, { email, role: 'customer', terms_version: TERMS_VERSION, terms_accepted_at: termsAcceptedAt });
     return { token: signToken(user), user: toPublicUser(user) };
   },
@@ -306,9 +357,10 @@ export const authService = {
     const email = input.email?.trim().toLowerCase();
     const password = input.password ?? '';
     if (!email || !password) throw badRequest('Email and password are required.');
-    const user = await userRepo.findByEmail(email);
-    if (!user || !bcrypt.compareSync(password, user.passwordHash)) throw unauthorized('Invalid email or password.');
-    if (user.isArchived) throw unauthorized('This account has been deactivated.');
+    const found = await userRepo.findByEmail(email);
+    if (!found || !bcrypt.compareSync(password, found.passwordHash)) throw unauthorized('Invalid email or password.');
+    const user = await deactivateIfExpired(found);
+    if (user.isArchived) throw unauthorized(deactivatedMessage(user));
 
     if (user.otpEnabled) {
       // Password is correct — email a sign-in code; verifyLoginOtp issues the session.
@@ -335,7 +387,7 @@ export const authService = {
     if (password.length < 6) throw badRequest('Password must be at least 6 characters.');
     if (!ROLES.includes(role)) throw badRequest('A valid role is required.');
     if (await userRepo.findByEmail(email)) throw conflict('An account with this email already exists.');
-    const user = await userRepo.create({ fullName, email, role, passwordHash: bcrypt.hashSync(password, 10), startDate: input.startDate, barangay: input.barangay, jobLevel: input.jobLevel ?? null, serialNumber: role === 'customer' ? await generateCustomerSerial() : null });
+    const user = await userRepo.create({ fullName, email, role, passwordHash: bcrypt.hashSync(password, 10), startDate: input.startDate, barangay: input.barangay, jobLevel: input.jobLevel ?? null, serialNumber: role === 'customer' ? await generateCustomerSerial() : null, registrationDeadline: role === 'customer' ? registrationDeadlineFrom() : null });
     await audit('admin_create_user', undefined, 'general-manager', user.id, email, { fullName, email, role });
     return toPublicUser(user);
   },
@@ -364,6 +416,21 @@ export const authService = {
     return toPublicUser(updated);
   },
 
+  /**
+   * Deactivates every customer account whose registration window ran out
+   * without a CAN. Runs on boot and on a timer (server.ts).
+   */
+  async deactivateExpiredCustomers(): Promise<number> {
+    const deactivated = await userRepo.deactivateOverdueCustomers(new Date().toISOString());
+    for (const u of deactivated) await auditAutoDeactivate(u);
+    return deactivated.length;
+  },
+
+  /** For every authenticated request: the account, deactivated if its window ran out. */
+  async ensureActive(u: User): Promise<User> {
+    return deactivateIfExpired(u);
+  },
+
   async archiveUser(userId: string, actorUser?: PublicUser, reason?: string): Promise<void> {
     const user = await userRepo.findById(userId);
     if (!user) throw notFound('User not found.');
@@ -374,6 +441,9 @@ export const authService = {
   async restoreUser(userId: string, actorUser?: PublicUser): Promise<void> {
     const user = await userRepo.findById(userId);
     if (!user) throw notFound('User not found.');
+    // A customer reactivated after the registration window gets a fresh one,
+    // or the next check would deactivate the account again.
+    if (registrationExpired(user)) await userRepo.update(userId, { registrationDeadline: registrationDeadlineFrom() });
     await userRepo.restore(userId);
     await audit('reactivate', actorUser?.fullName, 'general-manager', userId, user.email, { target_name: user.fullName, target_role: user.role });
   },

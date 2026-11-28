@@ -3,6 +3,7 @@ import { createApp } from './app.js';
 import { env, isSupabaseConfigured } from './config/env.js';
 import { userRepo } from './models/userRepo.js';
 import { autoMigrate } from './models/autoMigrate.js';
+import { authService } from './services/auth.service.js';
 
 // ---------------------------------------------------------------------------
 // Keep-alive ping — prevents Render free-tier from spinning down after 15 min
@@ -30,6 +31,22 @@ function startKeepAlivePing(): void {
       console.warn('[keep-alive] ping error:', err instanceof Error ? err.message : err);
     }
   }, PING_INTERVAL_MS);
+}
+
+// ---------------------------------------------------------------------------
+// Registration window: customer accounts that are not registered Maynilad
+// customers (no CAN) 2 months after sign-up are deactivated, never deleted.
+// Checked on boot, every 6 hours, and again at sign-in and on every request.
+// ---------------------------------------------------------------------------
+const EXPIRY_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+async function sweepExpiredCustomers(): Promise<void> {
+  try {
+    const count = await authService.deactivateExpiredCustomers();
+    if (count) console.log(`[accounts] Deactivated ${count} customer account(s) past the registration window.`);
+  } catch (err) {
+    console.warn('[accounts] Registration window check failed:', err instanceof Error ? err.message : err);
+  }
 }
 
 const app = createApp();
@@ -63,4 +80,7 @@ app.listen(env.port, async () => {
       );
     }
   }
+
+  await sweepExpiredCustomers();
+  setInterval(() => void sweepExpiredCustomers(), EXPIRY_SWEEP_INTERVAL_MS);
 });

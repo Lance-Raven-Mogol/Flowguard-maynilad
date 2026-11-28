@@ -2080,10 +2080,39 @@ function printIncidentInvestigationForm(row: EntityRow, customers: BillingCustom
   }, printedBy);
 }
 
+/** Where the Commercial Department's review of the findings stands. */
+function FindingsReviewNote({ row, state }: { row: EntityRow; state: string }) {
+  const by = String(row.findings_reviewed_by ?? '').trim();
+  const on = row.findings_reviewed_at ? dateShort(row.findings_reviewed_at) : '';
+  const reviewer = [by, on].filter(Boolean).join(' · ');
+  if (state === 'approved') {
+    return (
+      <p className="findings-review-note is-approved" style={{ marginTop: 14, fontSize: 13 }}>
+        <Icon name="check-circle" size={14} style={{ marginRight: 6, verticalAlign: '-2px' }} />
+        Findings approved by the Commercial Department{reviewer ? ` (${reviewer})` : ''}.
+      </p>
+    );
+  }
+  if (state === 'disapproved') {
+    return (
+      <section className="complaint-note-card is-disapproved" style={{ marginTop: 14 }}>
+        <span>Findings Disapproved{reviewer ? ` · ${reviewer}` : ''}</span>
+        <p>{String(row.findings_reason ?? '') || 'No reason given.'}</p>
+      </section>
+    );
+  }
+  return (
+    <p className="findings-review-note" style={{ marginTop: 14, color: 'var(--muted)', fontSize: 13 }}>
+      Findings are waiting for the Commercial Department's review.
+    </p>
+  );
+}
+
 function IncidentViewButton({
   c,
   canPlanSiteVisit = false,
   canEncodeFindings = false,
+  canReviewFindings = false,
   canCreateJobOrder = false,
   showCustomerBilling = false,
   canEditUrgency = false,
@@ -2091,10 +2120,12 @@ function IncidentViewButton({
   canIssueBill = false,
 }: {
   c: RowActionCtx;
-  /** Zone Specialist: plans the site visit and fills in the printed Investigation Form. */
+  /** Zone Specialist: plans the site visit, then encodes the findings, materials and billing owner. */
   canPlanSiteVisit?: boolean;
-  /** Commercial Department: encodes the signed form (findings, materials, billing owner). */
+  /** Zone Specialist: encodes the investigation findings (sent to Commercial for review). */
   canEncodeFindings?: boolean;
+  /** Commercial Department: double-checks the findings, then approves or disapproves them. */
+  canReviewFindings?: boolean;
   canCreateJobOrder?: boolean;
   showCustomerBilling?: boolean;
   canEditUrgency?: boolean;
@@ -2117,21 +2148,28 @@ function IncidentViewButton({
   const [chargeDrafts, setChargeDrafts] = useState<ChargeDraft[]>([]);
   const freeConcern = incidentCategory(c.row.type).free === true;
   const [saving, setSaving] = useState(false);
+  const [disapproving, setDisapproving] = useState(false);
+  const [disapproveReason, setDisapproveReason] = useState('');
   const urgencyEditable = canEditUrgency && !c.archived;
   // Technical team can enter estimate only when complaint is in_progress.
   const estimateEditable = canEstimate && !c.archived && c.row.status === 'in_progress';
 
   const hasRemarks = String(c.row.remarks ?? '').trim() !== '';
   const hasSavedSitePlan = String(c.row.site_action ?? '').trim() !== '';
-  const assessing = ['under_verification', 'in_progress'].includes(String(c.row.status));
+  const underVerification = c.row.status === 'under_verification';
+  // Commercial's review of the findings. Findings saved before the review step
+  // existed have no status yet and count as waiting for review.
+  const findingsReview = String(c.row.findings_status ?? '') || (hasRemarks ? 'pending' : '');
   // Zone Specialist: the Site Visit Plan is saved once, then locked.
   const sitePlanEditable = canPlanSiteVisit && !c.archived && !hasSavedSitePlan;
-  // Commercial: encodes the Investigation Form once the site visit is planned.
-  const findingsEditable = canEncodeFindings && !c.archived && hasSavedSitePlan;
-  // Required materials stay editable until the Technical Team prices the complaint.
-  const materialsEditable = findingsEditable && assessing;
+  // Zone Specialist: encodes the findings after the site visit, and can correct
+  // them until the Commercial Department approves them.
+  const findingsEditable = canEncodeFindings && !c.archived && hasSavedSitePlan && underVerification;
+  const materialsEditable = findingsEditable;
+  // Commercial: approves or disapproves findings that are waiting for review.
+  const reviewable = canReviewFindings && !c.archived && underVerification && hasRemarks && findingsReview === 'pending';
   // The form is printed once Commercial has set the urgency (that assigns it to the ZS).
-  const canPrintForm = (canPlanSiteVisit || canEncodeFindings) && !c.archived && Boolean(c.row.urgency);
+  const canPrintForm = (canPlanSiteVisit || canReviewFindings) && !c.archived && Boolean(c.row.urgency);
   // A job order already exists for this incident — no second one may be created.
   const linkedJobOrder = stats.jobOrders.find(
     (j) => String(j.incident_ref ?? '') === String(c.row.ref_code ?? ''),
@@ -2156,6 +2194,8 @@ function IncidentViewButton({
     setBillToCustomerId(String(c.row.bill_to_customer_id ?? ''));
     setUrgency(String(c.row.urgency ?? ''));
     setChargeDrafts(chargeDraftsFrom(c.row));
+    setDisapproving(false);
+    setDisapproveReason('');
     setOpen(true);
     // Customer accounts: the Bill To picker and the form's serial no. / barangay.
     if (findingsEditable || canPrintForm) {
@@ -2203,10 +2243,15 @@ function IncidentViewButton({
         patch.urgency = urgency;
       }
 
-      // Commercial: encode the signed Investigation Form.
+      // Zone Specialist: encode the findings; saving sends them to Commercial for review.
       if (findingsEditable) {
+        if (!remarks.trim()) {
+          notify('Enter the investigation findings.', 'error');
+          setSaving(false);
+          return;
+        }
         // Free concerns (water quality / supply) don't need a billing owner.
-        if (assessing && !billToCustomerId && !freeConcern) {
+        if (!billToCustomerId && !freeConcern) {
           notify('Select the customer account that should receive the bill.', 'error');
           setSaving(false);
           return;
@@ -2222,10 +2267,6 @@ function IncidentViewButton({
         }
         patch.remarks = remarks.trim();
         if (billToCustomerId) patch.bill_to_customer_id = billToCustomerId;
-        // Encoding the findings hands the complaint to the Technical Team for costing.
-        if (c.row.status === 'under_verification' && remarks.trim()) {
-          patch.status = 'in_progress';
-        }
       }
 
       // Technical team: price with breakdown → Priced.
@@ -2261,14 +2302,31 @@ function IncidentViewButton({
     }
   };
 
+  // Commercial: Approve (-> In Progress) or Disapprove with a reason (-> back to the ZS).
+  const review = async (decision: 'approved' | 'disapproved') => {
+    if (decision === 'disapproved' && !disapproveReason.trim()) {
+      notify('Give the reason for disapproval so the Zone Specialist knows what to fix.', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      await c.update(decision === 'approved'
+        ? { findings_status: 'approved' }
+        : { findings_status: 'disapproved', findings_reason: disapproveReason.trim() });
+      setOpen(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Show Save button if there are editable fields.
   const hasEdits = sitePlanEditable || findingsEditable || urgencyEditable || estimateEditable;
   const submitText = estimateEditable
     ? 'Submit Price'
     : sitePlanEditable
       ? 'Save Site Visit Plan'
-      : findingsEditable && c.row.status === 'under_verification'
-        ? 'Save Findings'
+      : findingsEditable
+        ? findingsReview === 'disapproved' ? 'Resubmit Findings' : hasRemarks ? 'Update Findings' : 'Submit Findings'
         : 'Save Changes';
 
   return (
@@ -2298,20 +2356,59 @@ function IncidentViewButton({
               />
               <p style={{ marginTop: 8, color: 'var(--muted)', fontSize: 13 }}>
                 {canPlanSiteVisit
-                  ? 'Bring this to the complainant: write the findings and required materials on it, have the registered customer sign, then return it to the Commercial Department.'
-                  : 'For the Zone Specialist to fill in on site. Encode the signed form below once it comes back.'}
+                  ? 'Bring this to the complainant: write the findings and required materials on it and have the registered customer sign. Then encode the findings below.'
+                  : 'Filled in and signed on site. Use it to double-check the findings the Zone Specialist encoded.'}
               </p>
             </div>
           )}
-          {canPlanSiteVisit && !c.archived && hasSavedSitePlan && !hasRemarks && (
-            <p style={{ marginTop: 8, color: 'var(--muted)', fontSize: 13 }}>
-              Site Visit Plan saved. The Commercial Department will encode the findings from the signed Investigation Form.
+          {!showCustomerBilling && hasRemarks && findingsReview && (
+            <FindingsReviewNote row={c.row} state={findingsReview} />
+          )}
+          {canReviewFindings && !c.archived && underVerification && !hasRemarks && (
+            <p style={{ marginTop: 14, color: 'var(--muted)', fontSize: 13 }}>
+              {hasSavedSitePlan
+                ? 'Waiting for the Zone Specialist to encode the investigation findings.'
+                : 'Waiting for the Zone Specialist to plan the site visit.'}
             </p>
           )}
-          {canEncodeFindings && !c.archived && !hasSavedSitePlan && (
-            <p style={{ marginTop: 14, color: 'var(--muted)', fontSize: 13 }}>
-              The findings can be encoded once the Zone Specialist saves the Site Visit Plan.
-            </p>
+          {reviewable && (
+            <div className="findings-review" style={{ marginTop: 18 }}>
+              <p className="detail-section-title">Review the Findings</p>
+              <p style={{ marginTop: 0, color: 'var(--muted)', fontSize: 13 }}>
+                Check that the Zone Specialist's findings, required materials and billing owner are complete.
+              </p>
+              {disapproving ? (
+                <>
+                  <div className="form-group" style={{ marginTop: 12, marginBottom: 12 }}>
+                    <label>Reason for Disapproval</label>
+                    <textarea
+                      value={disapproveReason}
+                      onChange={(e) => setDisapproveReason(e.target.value)}
+                      placeholder="What is missing or wrong? e.g. No meter reading; the gate valve is not in the required materials"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="btn-row">
+                    <button className="btn-danger" disabled={saving} onClick={() => void review('disapproved')}>
+                      <Icon name="x-circle" size={16} style={{ marginRight: 8 }} />
+                      Send Back to Zone Specialist
+                    </button>
+                    <button className="btn-secondary" disabled={saving} onClick={() => setDisapproving(false)}>Cancel</button>
+                  </div>
+                </>
+              ) : (
+                <div className="btn-row" style={{ marginTop: 12 }}>
+                  <button className="btn-primary" disabled={saving} onClick={() => void review('approved')}>
+                    <Icon name="check-circle" size={16} style={{ marginRight: 8 }} />
+                    Approve
+                  </button>
+                  <button className="btn-danger" disabled={saving} onClick={() => setDisapproving(true)}>
+                    <Icon name="x-circle" size={16} style={{ marginRight: 8 }} />
+                    Disapprove
+                  </button>
+                </div>
+              )}
+            </div>
           )}
           {showCustomerBilling && linkedJobOrder && (
             <>
@@ -2366,15 +2463,15 @@ function IncidentViewButton({
           {findingsEditable && (
             <>
               <div className="form-group" style={{ marginTop: 18, marginBottom: 0 }}>
-                <label>Site Visit Plan <span className="address-optional">(by the Zone Specialist)</span></label>
+                <label>Site Visit Plan</label>
                 <div className="locked-site-plan"><SiteVisitPlanView row={c.row} /></div>
               </div>
                 <div className="form-group bill-to-reveal" style={{ marginTop: 18, marginBottom: 0 }}>
-                  <label>Findings <span className="address-optional">(from the signed Investigation Form)</span></label>
+                  <label>Findings <span className="address-optional">(reviewed by the Commercial Department)</span></label>
                   <textarea
                     value={remarks}
                     onChange={(e) => setRemarks(e.target.value)}
-                    placeholder="Copy what the Zone Specialist wrote on the form, e.g. Leak on the customer's 1/2-inch line beside the meter"
+                    placeholder="What did you verify on site? e.g. Leak on the customer's 1/2-inch line beside the meter"
                   />
                 </div>
                 <div className="form-group bill-to-reveal" style={{ marginTop: 18, marginBottom: 0 }}>
@@ -2427,7 +2524,7 @@ function IncidentViewButton({
               <ActionButton label="Create Job Order" icon="clipboard-list" onClick={() => setShowJobForm(true)} />
             </div>
           )}
-          {canCreateJobOrder && !canDispatch && !findingsEditable && (
+          {canCreateJobOrder && !canDispatch && !reviewable && (
             <p style={{ marginTop: 16, color: 'var(--muted)', fontSize: 13 }}>
               {hasJobOrder
                 ? 'A job order has already been created for this complaint.'
@@ -2504,7 +2601,8 @@ export function IncidentsModule({ filter, mine = false, title }: ModuleProps & {
               <IncidentViewButton
                 c={c}
                 canPlanSiteVisit={role === 'zone-specialist'}
-                canEncodeFindings={role === 'commercial-department'}
+                canEncodeFindings={role === 'zone-specialist'}
+                canReviewFindings={role === 'commercial-department'}
                 canCreateJobOrder={['general-manager', 'commercial-department'].includes(role)}
                 canEditUrgency={canManageUrgency}
                 showCustomerBilling={role === 'customer'}

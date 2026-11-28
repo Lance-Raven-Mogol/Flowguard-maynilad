@@ -281,6 +281,8 @@ async function applySeniorDiscount(values: Row): Promise<void> {
 }
 
 const SITE_VISIT_FIELDS = ['site_visit_date', 'site_visit_period', 'site_visit_companions', 'site_visit_materials', 'site_visit_notes'];
+/** What the Zone Specialist encodes after the site visit, for Commercial to approve. */
+const FINDINGS_FIELDS = ['remarks', 'required_materials', 'bill_to_customer_id'];
 const MAX_SITE_VISIT_ITEMS = 30;
 
 /**
@@ -1648,19 +1650,73 @@ export const resourceService = {
         throw badRequest('A complaint must keep at least one photo.');
       }
     }
-    // Investigation (#3): the Zone Specialist plans and makes the site visit and
-    // fills in the printed Investigation Form; the Commercial Department encodes
-    // that form (findings, required materials, billing owner) into the system.
-    if (entity === 'incidents' && 'bill_to_customer_id' in values) {
+    // Investigation: the Zone Specialist plans the site visit, then encodes the
+    // findings, required materials and billing owner. The Commercial Department
+    // only double-checks them: Approve (→ In Progress) or Disapprove with a
+    // reason, which sends them back to the Zone Specialist to correct.
+    if (entity === 'incidents' && ('findings_status' in values || 'findings_reason' in values)) {
       if (user.role !== 'commercial-department' && user.role !== 'general-manager') {
-        throw forbidden('Only the Commercial Department can select the billing owner.');
+        throw forbidden('Only the Commercial Department can approve or disapprove the investigation findings.');
       }
-      if (user.role === 'commercial-department') {
-        const currentIncident = await repo.getRowById(def.table, id);
-        if (!currentIncident || !String(currentIncident.site_action ?? '').trim()) {
-          throw badRequest('The Zone Specialist must save the Site Visit Plan before the billing owner is selected.');
+      const decision = String(values.findings_status ?? '');
+      if (!['approved', 'disapproved'].includes(decision)) throw badRequest('Choose Approve or Disapprove.');
+      const currentIncident = await repo.getRowById(def.table, id);
+      if (!currentIncident) throw notFound('Record not found.');
+      if (String(currentIncident.status) !== 'under_verification') {
+        throw conflict('These findings have already been reviewed.');
+      }
+      if (!String(currentIncident.remarks ?? '').trim()) {
+        throw badRequest('The Zone Specialist has not encoded the findings yet.');
+      }
+      // Rows encoded before the review step existed have no status: treat as pending.
+      const reviewState = String(currentIncident.findings_status ?? '') || 'pending';
+      if (reviewState !== 'pending') {
+        throw conflict(reviewState === 'disapproved'
+          ? 'Waiting for the Zone Specialist to correct the findings.'
+          : 'These findings have already been reviewed.');
+      }
+      values.findings_reviewed_at = new Date().toISOString();
+      values.findings_reviewed_by = user.fullName;
+      if (decision === 'disapproved') {
+        const reason = String(values.findings_reason ?? '').trim();
+        if (!reason) throw badRequest('Give the reason for disapproval so the Zone Specialist knows what to fix.');
+        values.findings_reason = reason.slice(0, 1000);
+        delete values.status;
+      } else {
+        const billToId = String(currentIncident.bill_to_customer_id ?? '').trim();
+        if (!billToId && !FREE_INCIDENT_TYPES.has(String(currentIncident.type ?? ''))) {
+          throw badRequest('The Zone Specialist must select the customer account that should receive the bill.');
         }
+        values.findings_reason = null;
+        // Approved findings hand the complaint to the Technical Team for costing.
+        values.status = 'in_progress';
       }
+    }
+    if (entity === 'incidents' && FINDINGS_FIELDS.some((f) => f in values)) {
+      if (user.role !== 'zone-specialist' && user.role !== 'general-manager') {
+        throw forbidden('Only the Zone Specialist can encode the investigation findings, required materials and billing owner.');
+      }
+      if (user.role === 'zone-specialist') {
+        const currentIncident = await repo.getRowById(def.table, id);
+        if (!currentIncident) throw notFound('Record not found.');
+        if (!String(currentIncident.site_action ?? '').trim()) {
+          throw badRequest('Save the Site Visit Plan before encoding the findings.');
+        }
+        if (String(currentIncident.status) !== 'under_verification') {
+          throw conflict('The findings can no longer be changed once the Commercial Department has approved them.');
+        }
+        if ('remarks' in values && !String(values.remarks ?? '').trim()) {
+          throw badRequest('Enter the investigation findings.');
+        }
+        // (Re)submitting sends the findings to the Commercial Department for review.
+        values.findings_status = 'pending';
+        values.findings_reason = null;
+        values.findings_submitted_at = new Date().toISOString();
+        values.findings_reviewed_at = null;
+        values.findings_reviewed_by = null;
+      }
+    }
+    if (entity === 'incidents' && 'bill_to_customer_id' in values) {
       const ownerId = String(values.bill_to_customer_id ?? '').trim();
       if (!ownerId) throw badRequest('Select the customer account that should receive the bill.');
       const owner = await repo.getRowById('app_users', ownerId);
@@ -1678,14 +1734,6 @@ export const resourceService = {
       user.role !== 'general-manager'
     ) {
       throw forbidden('Only the Zone Specialist can update the site visit plan.');
-    }
-    if (
-      entity === 'incidents' &&
-      ('remarks' in values || 'required_materials' in values) &&
-      user.role !== 'commercial-department' &&
-      user.role !== 'general-manager'
-    ) {
-      throw forbidden('Only the Commercial Department can encode the investigation findings and required materials.');
     }
     if (entity === 'incidents' && ('site_action' in values || SITE_VISIT_FIELDS.some((f) => f in values))) {
       const currentIncident = await repo.getRowById(def.table, id);
@@ -1736,19 +1784,9 @@ export const resourceService = {
       }
     }
 
-    // Required materials: set after the Site Visit Plan, and only until the
-    // Technical Team prices the complaint (the price is built from them).
+    // Required materials: names and units come from inventory. When and by whom
+    // they may be set is checked in the investigation findings guard above.
     if (entity === 'incidents' && 'required_materials' in values) {
-      const currentIncident = await repo.getRowById(def.table, id);
-      if (!currentIncident) throw notFound('Record not found.');
-      if (user.role !== 'general-manager') {
-        if (!String(currentIncident.site_action ?? '').trim()) {
-          throw badRequest('The Zone Specialist must save the Site Visit Plan before the required materials are listed.');
-        }
-        if (!['under_verification', 'in_progress'].includes(String(currentIncident.status))) {
-          throw conflict('Required materials can no longer be changed once the complaint has been priced.');
-        }
-      }
       values.required_materials = await normalizeRequiredMaterials(values.required_materials);
     }
 
@@ -1792,9 +1830,9 @@ export const resourceService = {
     // Role-based incident status transition guards.
     // The General Manager can always move to any status (management override).
     // Each role may only perform the transitions assigned to them:
-    //   zone-specialist      : none (plans the site visit; Commercial encodes the findings)
+    //   zone-specialist      : none (encodes the findings; Commercial approves them)
     //   technical-team       : in_progress → for_estimation (requires the price breakdown)
-    //   commercial-department: under_verification → in_progress (findings encoded)
+    //   commercial-department: under_verification → in_progress (findings approved)
     //                          for_estimation → for_billing (issue bill)
     //                          for_estimation → resolved (no charge — billable = false)
     //                          for_billing → resolved (payment confirmed)
@@ -1807,7 +1845,7 @@ export const resourceService = {
       // Allow no-op (same status) for any role.
       if (from !== to) {
         if (user.role === 'zone-specialist') {
-          throw forbidden('The Commercial Department moves the complaint forward once it encodes the investigation findings.');
+          throw forbidden('The Commercial Department moves the complaint forward once it approves the investigation findings.');
         } else if (user.role === 'technical-team') {
           // Technical team: only prices an Ongoing complaint (→ Priced).
           if (!(from === 'in_progress' && to === 'for_estimation')) {
@@ -1818,21 +1856,11 @@ export const resourceService = {
             throw badRequest('Add the price breakdown before submitting.');
           }
         } else if (user.role === 'commercial-department') {
-          // Commercial dept: under_verification → in_progress (findings encoded),
+          // Commercial dept: under_verification → in_progress (findings approved),
           // for_estimation → for_billing, for_billing → resolved (payment confirmed),
           // or for_billing → declined (payment rejected, customer may resubmit).
-          if (from === 'under_verification' && to === 'in_progress') {
-            if (!String(currentIncident.site_action ?? '').trim()) {
-              throw badRequest('The Zone Specialist must save the Site Visit Plan first.');
-            }
-            const remarks = String(values.remarks ?? currentIncident.remarks ?? '').trim();
-            if (!remarks) {
-              throw badRequest('Encode the investigation findings before moving the complaint to In Progress.');
-            }
-            const billToId = String(values.bill_to_customer_id ?? currentIncident.bill_to_customer_id ?? '').trim();
-            if (!billToId && !FREE_INCIDENT_TYPES.has(String(currentIncident.type ?? ''))) {
-              throw badRequest('Select the customer account that should receive the bill before moving the complaint to In Progress.');
-            }
+          if (from === 'under_verification' && to === 'in_progress' && values.findings_status !== 'approved') {
+            throw badRequest("Approve the Zone Specialist's investigation findings to move the complaint to In Progress.");
           }
           const validTransitions = [
             ['under_verification', 'in_progress'],
@@ -1852,7 +1880,7 @@ export const resourceService = {
           // All other write roles (customer, zone-specialist already handled above)
           // cannot change incident status at all except their own assigned transitions.
           if (from === 'under_verification' && to !== 'under_verification') {
-            throw forbidden('Only the Zone Specialist can move a complaint from Under Verification.');
+            throw forbidden('Only the Commercial Department can move a complaint from Under Verification.');
           }
         }
       }

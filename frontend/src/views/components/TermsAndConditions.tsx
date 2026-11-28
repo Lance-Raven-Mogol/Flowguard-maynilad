@@ -3,12 +3,14 @@ import { Modal } from './Modal';
 /** Senior citizen discount on a customer's bill — must match the backend rate. */
 export const SENIOR_DISCOUNT_RATE = 0.2;
 export const SENIOR_DISCOUNT_PERCENT = Math.round(SENIOR_DISCOUNT_RATE * 100);
+/** Months a customer account has to become a registered customer — must match the backend. */
+export const REGISTRATION_WINDOW_MONTHS = 2;
 
 /** The FlowGuard customer Terms and Conditions (shown at signup). */
 export function TermsContent() {
   return (
     <div className="terms-content">
-      <p className="terms-updated">Last updated: November 3, 2026</p>
+      <p className="terms-updated">Last updated: November 28, 2026</p>
       <p>
         By creating a FlowGuard account you agree to these terms. Please read them before
         filing a complaint or requesting a service.
@@ -63,13 +65,26 @@ export function TermsContent() {
         <li>Keep your password private. You are responsible for activity on your account.</li>
       </ul>
 
-      <h4>6. Privacy</h4>
+      <h4>6. Account validity</h4>
+      <ul>
+        <li>
+          Your account must become a <strong>registered Maynilad customer</strong> (with a Customer
+          Account Number, or CAN) <strong>within {REGISTRATION_WINDOW_MONTHS} months</strong> of
+          sign-up.
+        </li>
+        <li>
+          If it does not, the account is <strong>deactivated</strong> and you can no longer sign in.
+          It is not deleted: contact Maynilad to have it reactivated.
+        </li>
+      </ul>
+
+      <h4>7. Privacy</h4>
       <p>
         Your personal information is used only to handle your complaints, service requests and
         bills, in line with the Data Privacy Act of 2012 (RA 10173).
       </p>
 
-      <h4>7. Changes to these terms</h4>
+      <h4>8. Changes to these terms</h4>
       <p>We may update these terms. Changes take effect once posted in FlowGuard.</p>
     </div>
   );

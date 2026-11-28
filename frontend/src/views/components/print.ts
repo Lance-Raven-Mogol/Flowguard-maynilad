@@ -119,7 +119,8 @@ export interface InvestigationFormData {
 /**
  * Investigation Form (#3): the Zone Specialist takes it to the complainant,
  * writes the findings and required materials by hand and has the registered
- * customer sign it. The Commercial Department then encodes it into FlowGuard.
+ * customer sign it, then encodes it into FlowGuard. The Commercial Department
+ * checks the encoded findings against the signed form and approves them.
  */
 export function printInvestigationForm(data: InvestigationFormData, printedBy?: string): void {
   const value = (text: string) => (text.trim() ? escapeHtml(text) : '<span class="io-blank">&nbsp;</span>');
@@ -164,7 +165,7 @@ ${lines(6)}
   ${sign('Zone Specialist — printed name & signature / date')}
 </div>
 <div class="io-signs">
-  ${sign('Encoded by (Commercial Department) — name & signature / date')}
+  ${sign('Checked / approved by (Commercial Department) — name & signature / date')}
   <div></div>
 </div>`;
 
@@ -173,7 +174,7 @@ ${lines(6)}
     body,
     printedBy,
     false,
-    'Return the signed form to the Commercial Department for encoding.',
+    'Encode the findings in FlowGuard, then give the signed form to the Commercial Department for checking.',
   );
 }
 

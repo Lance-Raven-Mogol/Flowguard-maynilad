@@ -1,8 +1,9 @@
 // Run with: node --experimental-test-module-mocks --test tests/investigation-findings.test.mjs
 //
-// #3: the Zone Specialist plans the site visit and fills in the printed
-// Investigation Form; the Commercial Department encodes its findings, required
-// materials and billing owner, which moves the complaint to In Progress.
+// The Zone Specialist plans the site visit, then encodes the findings, required
+// materials and billing owner. The Commercial Department double-checks them:
+// Approve moves the complaint to In Progress; Disapprove (with a reason) sends
+// the findings back to the Zone Specialist to correct.
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 
@@ -43,60 +44,112 @@ function seed(incident = {}) {
 }
 const incident = () => table('incidents')[0];
 const update = (by, values) => resourceService.update('incidents', by, 'inc1', values);
+const encode = () => update(zone, {
+  remarks: 'Leak on the 1/2-inch line before the meter',
+  required_materials: [{ material_sku: 'SKU-00001', quantity: 2 }],
+  bill_to_customer_id: 'c1',
+});
 
-test('the zone specialist still plans the site visit', async () => {
+test('the zone specialist plans the site visit; nobody else can', async () => {
   seed({ site_action: '' });
   await update(zone, {
     site_action: 'Visit: Nov 5 (AM)', site_visit_date: '2026-11-05', site_visit_period: 'AM',
     site_visit_companions: [], site_visit_materials: [], site_visit_notes: '',
   });
   assert.equal(incident().site_action, 'Visit: Nov 5 (AM)');
-  // …but nobody else can.
   seed({ site_action: '' });
   await assert.rejects(update(commercial, { site_action: 'Visit: Nov 5 (AM)' }), /Only the Zone Specialist/);
 });
 
-test('the zone specialist can no longer type findings, pick the billing owner or move the status', async () => {
+test('the zone specialist encodes the findings, which wait for Commercial', async () => {
   seed();
-  await assert.rejects(update(zone, { remarks: 'Leak beside the meter' }), /Commercial Department/);
-  await assert.rejects(update(zone, { bill_to_customer_id: 'c1' }), /Commercial Department/);
-  await assert.rejects(update(zone, { status: 'in_progress' }), /Commercial Department/);
-  assert.equal(incident().status, 'under_verification');
-  assert.equal(incident().remarks, '');
-});
-
-test('commercial encodes the investigation form and moves the complaint to In Progress', async () => {
-  seed();
-  await update(commercial, {
-    remarks: 'Leak on the 1/2-inch line before the meter',
-    required_materials: [{ material_sku: 'SKU-00001', quantity: 2 }],
-    bill_to_customer_id: 'c1',
-    status: 'in_progress',
-  });
+  await encode();
   const row = incident();
-  assert.equal(row.status, 'in_progress');
+  assert.equal(row.status, 'under_verification');
+  assert.equal(row.findings_status, 'pending');
   assert.equal(row.remarks, 'Leak on the 1/2-inch line before the meter');
   assert.deepEqual(row.required_materials, [{ material_sku: 'SKU-00001', name: 'PVC Pipe 50mm', quantity: 2, unit: 'pcs' }]);
   assert.equal(row.bill_to_customer_name, 'Carla Customer');
   assert.equal(row.bill_to_serial_number, 'CUST-00001');
+  assert.ok(row.findings_submitted_at);
 });
 
-test('commercial cannot encode before the site visit plan, or skip findings / billing owner', async () => {
+test('the zone specialist cannot encode before the site plan, or move the status', async () => {
   seed({ site_action: '' });
-  await assert.rejects(update(commercial, { bill_to_customer_id: 'c1' }), /Site Visit Plan/);
-  await assert.rejects(update(commercial, { remarks: 'x', status: 'in_progress' }), /Site Visit Plan/);
+  await assert.rejects(update(zone, { remarks: 'Leak' }), /Site Visit Plan/);
+  await assert.rejects(update(zone, { bill_to_customer_id: 'c1' }), /Site Visit Plan/);
   seed();
-  await assert.rejects(update(commercial, { bill_to_customer_id: 'c1', status: 'in_progress' }), /findings/);
-  await assert.rejects(update(commercial, { remarks: 'Leak', status: 'in_progress' }), /bill/);
+  await assert.rejects(update(zone, { remarks: '   ' }), /Enter the investigation findings/);
+  await assert.rejects(update(zone, { status: 'in_progress' }), /Commercial Department/);
+  // Nor can the ZS approve their own findings.
+  await encode();
+  await assert.rejects(update(zone, { findings_status: 'approved' }), /Only the Commercial Department/);
   assert.equal(incident().status, 'under_verification');
-  // Water quality / supply concerns are free, so they need no billing owner.
-  seed({ type: 'no-water' });
-  await update(commercial, { remarks: 'Valve closed upstream', status: 'in_progress' });
+});
+
+test('commercial and other roles can no longer type the findings', async () => {
+  seed();
+  for (const by of [commercial, tech]) {
+    await assert.rejects(update(by, { remarks: 'x' }), /Only the Zone Specialist/);
+    await assert.rejects(update(by, { bill_to_customer_id: 'c1' }), /Only the Zone Specialist/);
+    await assert.rejects(update(by, { required_materials: [] }), /Only the Zone Specialist/);
+  }
+  assert.equal(incident().remarks, '');
+});
+
+test('commercial approves: the complaint moves to In Progress', async () => {
+  seed();
+  await encode();
+  await update(commercial, { findings_status: 'approved' });
+  const row = incident();
+  assert.equal(row.status, 'in_progress');
+  assert.equal(row.findings_status, 'approved');
+  assert.equal(row.findings_reviewed_by, 'Cora Commercial');
+  assert.equal(row.findings_reason, null);
+  // Approved findings are locked for the ZS, and cannot be reviewed twice.
+  await assert.rejects(encode(), /approved/);
+  await assert.rejects(update(commercial, { findings_status: 'disapproved', findings_reason: 'x' }), /already been reviewed/);
+});
+
+test('commercial disapproves with a reason: back to the zone specialist', async () => {
+  seed();
+  await encode();
+  await assert.rejects(update(commercial, { findings_status: 'disapproved' }), /reason/);
+  await assert.rejects(update(commercial, { findings_status: 'disapproved', findings_reason: '  ' }), /reason/);
+  await update(commercial, { findings_status: 'disapproved', findings_reason: 'No photo of the meter; materials incomplete', status: 'in_progress' });
+  let row = incident();
+  assert.equal(row.status, 'under_verification');
+  assert.equal(row.findings_status, 'disapproved');
+  assert.equal(row.findings_reason, 'No photo of the meter; materials incomplete');
+  // Nothing more to review until the ZS corrects it.
+  await assert.rejects(update(commercial, { findings_status: 'approved' }), /Zone Specialist to correct/);
+
+  // The ZS corrects and resubmits: pending again, reason cleared.
+  await encode();
+  row = incident();
+  assert.equal(row.findings_status, 'pending');
+  assert.equal(row.findings_reason, null);
+  await update(commercial, { findings_status: 'approved' });
   assert.equal(incident().status, 'in_progress');
 });
 
-test('other roles cannot encode findings', async () => {
+test('commercial cannot skip the review, or approve what is not there', async () => {
   seed();
-  await assert.rejects(update(tech, { remarks: 'x' }), /Commercial Department/);
-  await assert.rejects(update(tech, { bill_to_customer_id: 'c1' }), /Commercial Department/);
+  await assert.rejects(update(commercial, { findings_status: 'approved' }), /not encoded the findings/);
+  await assert.rejects(update(commercial, { status: 'in_progress' }), /Approve/);
+  await assert.rejects(update(commercial, { findings_status: 'maybe' }), /Approve or Disapprove/);
+  // Findings with no billing owner cannot be approved for a billable concern…
+  seed({ remarks: 'Leak', findings_status: 'pending' });
+  await assert.rejects(update(commercial, { findings_status: 'approved' }), /bill/);
+  assert.equal(incident().status, 'under_verification');
+  // …but water quality / supply concerns are free, so they need none.
+  seed({ type: 'no-water', remarks: 'Valve closed upstream', findings_status: 'pending' });
+  await update(commercial, { findings_status: 'approved' });
+  assert.equal(incident().status, 'in_progress');
+});
+
+test('findings encoded before the review step (no status) can still be reviewed', async () => {
+  seed({ remarks: 'Leak beside the meter', bill_to_customer_id: 'c1' });
+  await update(commercial, { findings_status: 'approved' });
+  assert.equal(incident().status, 'in_progress');
 });

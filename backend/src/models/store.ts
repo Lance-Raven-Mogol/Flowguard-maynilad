@@ -33,7 +33,7 @@ class Store {
     return this.users.find((u) => u.id === id);
   }
 
-  createUser(data: { fullName: string; email: string; role: Role; passwordHash: string; barangay?: string; isSenior?: boolean; seniorIdNumber?: string | null; termsAcceptedAt?: string | null }): User {
+  createUser(data: { fullName: string; email: string; role: Role; passwordHash: string; barangay?: string; isSenior?: boolean; seniorIdNumber?: string | null; termsAcceptedAt?: string | null; registrationDeadline?: string | null }): User {
     const user: User = {
       id: randomUUID(),
       fullName: data.fullName,
@@ -46,12 +46,13 @@ class Store {
       isSenior: data.isSenior ?? false,
       seniorIdNumber: data.seniorIdNumber ?? null,
       termsAcceptedAt: data.termsAcceptedAt ?? null,
+      registrationDeadline: data.registrationDeadline ?? null,
     };
     this.users.push(user);
     return user;
   }
 
-  updateUser(id: string, fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string; otpSecret?: string; otpEnabled?: boolean; barangay?: string; isSenior?: boolean; seniorIdNumber?: string | null }): User | undefined {
+  updateUser(id: string, fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string; otpSecret?: string; otpEnabled?: boolean; barangay?: string; isSenior?: boolean; seniorIdNumber?: string | null; isArchived?: boolean; registrationDeadline?: string | null }): User | undefined {
     const user = this.users.find((u) => u.id === id);
     if (!user) return undefined;
     if (fields.fullName !== undefined) user.fullName = fields.fullName;
@@ -64,7 +65,19 @@ class Store {
     if (fields.barangay !== undefined) user.barangay = fields.barangay;
     if (fields.isSenior !== undefined) user.isSenior = fields.isSenior;
     if (fields.seniorIdNumber !== undefined) user.seniorIdNumber = fields.seniorIdNumber;
+    if (fields.isArchived !== undefined) user.isArchived = fields.isArchived;
+    if (fields.registrationDeadline !== undefined) user.registrationDeadline = fields.registrationDeadline;
     return user;
+  }
+
+  /** Same rule as userRepo.deactivateOverdueCustomers, for the in-memory store. */
+  deactivateOverdueCustomers(nowIso: string): User[] {
+    const now = Date.parse(nowIso);
+    const overdue = this.users.filter((u) =>
+      u.role === 'customer' && !u.isArchived && !u.accountNumber &&
+      Boolean(u.registrationDeadline) && Date.parse(u.registrationDeadline!) <= now);
+    for (const u of overdue) u.isArchived = true;
+    return overdue;
   }
 }
 

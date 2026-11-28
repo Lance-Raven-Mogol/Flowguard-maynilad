@@ -12,8 +12,8 @@ import { SEED_USERS } from './seed.js';
 import type { PublicUser, Role, User } from './types.js';
 
 const TABLE = 'app_users';
-/** Columns added by terms-senior-migration.sql (2026-11-03). */
-const OPTIONAL_COLUMNS = ['is_senior', 'senior_id_number', 'terms_accepted_at'];
+/** Columns added by terms-senior-migration.sql (2026-11-03) and account-expiry-migration.sql (2026-11-28). */
+const OPTIONAL_COLUMNS = ['is_senior', 'senior_id_number', 'terms_accepted_at', 'registration_deadline'];
 
 /** DB row shape (snake_case) → domain `User` (camelCase). */
 interface UserRow {
@@ -34,6 +34,8 @@ interface UserRow {
   is_senior?: boolean | null;
   senior_id_number?: string | null;
   terms_accepted_at?: string | null;
+  account_number?: string | null;
+  registration_deadline?: string | null;
 }
 
 function fromRow(row: UserRow): User {
@@ -55,6 +57,8 @@ function fromRow(row: UserRow): User {
     isSenior: row.is_senior ?? false,
     seniorIdNumber: row.senior_id_number ?? null,
     termsAcceptedAt: row.terms_accepted_at ?? null,
+    accountNumber: row.account_number ?? null,
+    registrationDeadline: row.registration_deadline ?? null,
   };
 }
 
@@ -72,6 +76,7 @@ export interface NewUser {
   isSenior?: boolean;
   seniorIdNumber?: string | null;
   termsAcceptedAt?: string | null;
+  registrationDeadline?: string | null;
 }
 
 export const userRepo = {
@@ -113,6 +118,7 @@ export const userRepo = {
       ...(input.barangay ? { barangay: input.barangay } : {}),
       ...(input.isSenior ? { is_senior: true, senior_id_number: input.seniorIdNumber ?? null } : {}),
       ...(input.termsAcceptedAt ? { terms_accepted_at: input.termsAcceptedAt } : {}),
+      ...(input.registrationDeadline ? { registration_deadline: input.registrationDeadline } : {}),
       ...(input.otpSecret ? { otp_secret: input.otpSecret } : {}),
       ...(input.jobLevel != null ? { job_level: input.jobLevel } : {}),
       ...(input.serialNumber != null ? { serial_number: input.serialNumber } : {}),
@@ -135,7 +141,7 @@ export const userRepo = {
 
   async update(
     id: string,
-    fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string; startDate?: string; isArchived?: boolean; barangay?: string; otpSecret?: string; otpEnabled?: boolean; jobLevel?: string | null; serialNumber?: string | null; isSenior?: boolean; seniorIdNumber?: string | null },
+    fields: { fullName?: string; email?: string; passwordHash?: string; role?: Role; avatarUrl?: string; startDate?: string; isArchived?: boolean; barangay?: string; otpSecret?: string; otpEnabled?: boolean; jobLevel?: string | null; serialNumber?: string | null; isSenior?: boolean; seniorIdNumber?: string | null; registrationDeadline?: string | null },
   ): Promise<User | undefined> {
     if (!supabase) return store.updateUser(id, fields);
 
@@ -154,6 +160,7 @@ export const userRepo = {
     if (fields.serialNumber !== undefined) row.serial_number = fields.serialNumber;
     if (fields.isSenior !== undefined) row.is_senior = fields.isSenior;
     if (fields.seniorIdNumber !== undefined) row.senior_id_number = fields.seniorIdNumber;
+    if (fields.registrationDeadline !== undefined) row.registration_deadline = fields.registrationDeadline;
 
     const { data, error } = await supabase
       .from(TABLE)
@@ -191,21 +198,42 @@ export const userRepo = {
       serialNumber: (r.serial_number as string | null) ?? null,
       isSenior: (r.is_senior as boolean | null) ?? false,
       seniorIdNumber: (r.senior_id_number as string | null) ?? null,
+      accountNumber: (r.account_number as string | null) ?? null,
+      registrationDeadline: (r.registration_deadline as string | null) ?? null,
     }));
   },
 
   /** Archive (soft-delete) a user instead of hard deleting. */
   async archive(id: string): Promise<void> {
-    if (!supabase) return;
+    if (!supabase) { store.updateUser(id, { isArchived: true }); return; }
     const { error } = await supabase.from(TABLE).update({ is_archived: true }).eq('id', id);
     if (error) throw new Error(`Supabase archive user failed: ${error.message}`);
   },
 
   /** Restore an archived user. */
   async restore(id: string): Promise<void> {
-    if (!supabase) return;
+    if (!supabase) { store.updateUser(id, { isArchived: false }); return; }
     const { error } = await supabase.from(TABLE).update({ is_archived: false }).eq('id', id);
     if (error) throw new Error(`Supabase restore user failed: ${error.message}`);
+  },
+
+  /**
+   * Deactivate (archive, never delete) every customer account that is still
+   * not a registered customer (no CAN) once its registration deadline has
+   * passed. Returns the accounts that were deactivated.
+   */
+  async deactivateOverdueCustomers(nowIso: string): Promise<User[]> {
+    if (!supabase) return store.deactivateOverdueCustomers(nowIso);
+    const { data, error } = await supabase
+      .from(TABLE)
+      .update({ is_archived: true })
+      .eq('role', 'customer')
+      .eq('is_archived', false)
+      .is('account_number', null)
+      .lte('registration_deadline', nowIso)
+      .select('*');
+    if (error) throw new Error(`Supabase deactivate overdue customers failed: ${error.message}`);
+    return (data ?? []).map((r) => fromRow(r as UserRow));
   },
 
   /**

@@ -236,6 +236,15 @@ const planVersion = (incident: EntityRow): string => {
 };
 
 const sitePlanBadgeId = (incident: EntityRow): string => `site-plan:${incident.id}:${planVersion(incident)}`;
+/** Findings the Zone Specialist sent to the Commercial Department for review. */
+const findingsToReview = (incidents: EntityRow[]): EntityRow[] => incidents.filter((i) =>
+  i.status === 'under_verification' && String(i.remarks ?? '').trim() !== '' &&
+  (String(i.findings_status ?? '') || 'pending') === 'pending');
+/** Findings the Commercial Department sent back to the Zone Specialist. */
+const findingsDisapproved = (incidents: EntityRow[]): EntityRow[] => incidents.filter((i) =>
+  i.status === 'under_verification' && i.findings_status === 'disapproved');
+const findingsBadgeId = (incident: EntityRow): string =>
+  `findings:${incident.id}:${String(incident.findings_status ?? 'pending')}:${String(incident.findings_reviewed_at ?? incident.findings_submitted_at ?? '')}`;
 const billingBadgeId = (bill: EntityRow): string => `billing:${bill.id}:${String(bill.status ?? 'unpaid')}`;
 const wasteBadgeId = (w: EntityRow): string => `waste:${w.id}:${String(w.status ?? '')}`;
 const paymentStatusLabel = (status: unknown): string =>
@@ -335,12 +344,17 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
       key: sitePlanBadgeId(i),
       view: 'incidents',
       icon: 'clipboard-list',
-      // Commercial encodes the signed Investigation Form once the visit is planned.
-      title: i.status === 'under_verification' && !String(i.remarks ?? '').trim()
-        ? `Encode the investigation findings for ${i.ref_code}`
-        : `Site visit plan added for ${i.ref_code}`,
+      title: `Site visit plan added for ${i.ref_code}`,
       detail: `${String(i.reported_by ?? 'Customer')} · ${String(i.site_action).slice(0, 80)}`,
       tone: 'info',
+    }));
+    findingsToReview(stats.incidents).forEach((i) => alerts.push({
+      key: findingsBadgeId(i),
+      view: 'incidents',
+      icon: 'clipboard-check',
+      title: `Review the investigation findings for ${i.ref_code}`,
+      detail: `${String(i.reported_by ?? 'Customer')} · ${String(i.remarks).slice(0, 80)}`,
+      tone: 'warn',
     }));
     stats.payments
       .filter((bill) => ['for_verification', 'overdue', 'late'].includes(String(bill.status ?? '')))
@@ -392,6 +406,17 @@ export function buildAlerts(stats: DashboardStats, role: string, fullName: strin
   // Per-incident alerts for staff roles — each new complaint gets its own key
   // so the bell lights up immediately when a new one arrives, even if the user
   // has already seen previous incidents.
+  if (role === 'zone-specialist') {
+    findingsDisapproved(stats.incidents).forEach((i) => alerts.push({
+      key: findingsBadgeId(i),
+      view: incView,
+      icon: 'circle-x',
+      title: `Findings for ${i.ref_code} were disapproved`,
+      detail: String(i.findings_reason ?? 'Correct and resubmit the findings').slice(0, 100),
+      tone: 'danger',
+    }));
+  }
+
   if (['zone-specialist', 'technical-team', 'general-manager'].includes(role)) {
     openIncidents.forEach((i) =>
       alerts.push({
@@ -492,7 +517,7 @@ export function buildBadgeItems(stats: DashboardStats, role: string, fullName: s
       };
       }
     case 'zone-specialist':
-      return { investigations: open };
+      return { investigations: [...open, ...findingsDisapproved(stats.incidents).map(findingsBadgeId)] };
     case 'technical-team':
       return { joborders: activeJobs };
     case 'inventory-officer':
@@ -500,7 +525,7 @@ export function buildBadgeItems(stats: DashboardStats, role: string, fullName: s
     case 'general-manager':
       return { incidents: open, requests: [...mrfsToApprove, ...pendingSupplies, ...pendingPurchases], advisories: draftAdv, payments: overduePayments, inventory: [...outOfStock, ...lowStock], users: unlevedUsers, waste: wasteToVerify };
     case 'commercial-department':
-      return { incidents: sitePlanItems, billing: billingReviewItems };
+      return { incidents: [...sitePlanItems, ...findingsToReview(stats.incidents).map(findingsBadgeId)], billing: billingReviewItems };
     default:
       return {};
   }

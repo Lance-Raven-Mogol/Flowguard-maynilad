@@ -607,6 +607,30 @@ alter table public.job_orders add column if not exists asset_tag       text;
 alter table public.job_orders add column if not exists no_asset_reason text;
 create index if not exists assets_job_order_ref_idx on public.assets (job_order_ref);
 
+-- ------------- Commercial review of the investigation findings (2026-11-28) --
+-- The Zone Specialist encodes the findings; the Commercial Department approves
+-- them (complaint -> In Progress) or disapproves them with a reason, which
+-- sends them back to the Zone Specialist. Safe to re-run.
+alter table public.incidents add column if not exists findings_status text
+  check (findings_status in ('pending','approved','disapproved'));
+alter table public.incidents add column if not exists findings_reason       text;
+alter table public.incidents add column if not exists findings_submitted_at timestamptz;
+alter table public.incidents add column if not exists findings_reviewed_at  timestamptz;
+alter table public.incidents add column if not exists findings_reviewed_by  text;
+
+-- ------------- Customer registration window: 2 months (2026-11-28) --------
+-- A customer account that has not become a registered Maynilad customer
+-- (no CAN / account number) by its registration deadline is deactivated
+-- (is_archived = true), never deleted. Accounts that existed before this was
+-- added get 2 months from the first run. Safe to re-run.
+alter table public.app_users add column if not exists account_number        text;
+alter table public.app_users add column if not exists registration_deadline timestamptz;
+create unique index if not exists app_users_account_number_idx
+  on public.app_users (account_number) where account_number is not null;
+update public.app_users
+   set registration_deadline = now() + interval '2 months'
+ where role = 'customer' and registration_deadline is null and coalesce(account_number, '') = '';
+
 -- ─── API role privileges ────────────────────────────────────────────────────
 -- Newer Supabase projects no longer auto-grant table access to the API roles
 -- for tables created in the SQL editor, which makes every backend query fail
