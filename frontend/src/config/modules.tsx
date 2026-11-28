@@ -3841,6 +3841,7 @@ function RestockBtn({ c }: { c: RowActionCtx }) {
   const [amount, setAmount] = useState('');
   const [price, setPrice] = useState('');
   const [reference, setReference] = useState('');
+  const [poNumber, setPoNumber] = useState('');
   const [supplierId, setSupplierId] = useState(String(c.row.supplier_id ?? ''));
   const [saving, setSaving] = useState(false);
   const current = Number(c.row.quantity ?? 0);
@@ -3854,6 +3855,7 @@ function RestockBtn({ c }: { c: RowActionCtx }) {
     setAmount('');
     setPrice('');
     setReference('');
+    setPoNumber('');
     setSupplierId(String(c.row.supplier_id ?? ''));
   };
   const close = () => {
@@ -3871,6 +3873,10 @@ function RestockBtn({ c }: { c: RowActionCtx }) {
       notify('Enter the unit price (per piece) of this batch.', 'error');
       return;
     }
+    if (!poNumber.trim()) {
+      notify('Enter the Purchase Order (PO) Number of this restock.', 'error');
+      return;
+    }
     const supplier = supplierOptions.find((option) => option.value === supplierId);
     if (!supplier) {
       notify('Select the supplier this stock came from.', 'error');
@@ -3884,12 +3890,13 @@ function RestockBtn({ c }: { c: RowActionCtx }) {
         restock: true,
         restock_unit_price: unitPrice,
         restock_reference: reference.trim(),
+        restock_po_number: poNumber.trim(),
         supplier_id: supplier.value,
         supplier: supplier.label,
         source: 'external',
       });
       await c.reload();
-      notify(`${c.row.name ?? 'Material'} restocked by ${added} ${unit} as Batch #${batchNo} at ${money(unitPrice)} each.`);
+      notify(`${c.row.name ?? 'Material'} restocked by ${added} ${unit} as Batch #${batchNo} at ${money(unitPrice)} each (PO ${poNumber.trim()}).`);
       setOpen(false);
       reset();
     } catch (cause) {
@@ -3953,6 +3960,18 @@ function RestockBtn({ c }: { c: RowActionCtx }) {
           </small>
         </div>
         <div className="form-group">
+          <label htmlFor={`restock-po-${c.row.id}`}>PO Number (Purchase Order)</label>
+          <input
+            id={`restock-po-${c.row.id}`}
+            placeholder="e.g. PO-2026-0001"
+            value={poNumber}
+            maxLength={60}
+            onChange={(event) => setPoNumber(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') void save(); }}
+          />
+          <small>Required. Shows where this batch came from in Stock Batches and Inventory History.</small>
+        </div>
+        <div className="form-group">
           <label htmlFor={`restock-ref-${c.row.id}`}>Delivery / invoice reference <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(optional)</span></label>
           <input
             id={`restock-ref-${c.row.id}`}
@@ -3997,7 +4016,7 @@ function BatchesModal({ material, onClose }: { material: EntityRow; onClose: () 
     const received = Number(b.quantity_received || 0);
     const pct = received > 0 ? Math.min(100, Math.round((left / received) * 100)) : 0;
     const isNext = nextOut?.id === b.id;
-    const source = [b.supplier, b.reference].filter(Boolean).join(' · ');
+    const source = [b.po_number ? `PO ${b.po_number}` : '', b.supplier, b.reference].filter(Boolean).join(' · ');
     return (
       <li key={b.id} className={`batch-card${isNext ? ' is-next' : ''}${left > 0 ? '' : ' is-used'}`}>
         <div className="batch-card-no">
@@ -4167,7 +4186,7 @@ function InventoryHistory({ filter }: ModuleProps) {
 
   const table = useMemo<ResourceTable>(() => ({
     id: 'inventory-history',
-    columns: ['Date & Time', 'Material', 'Movement', 'Change', 'Previous', 'New Stock', 'Batch / Price (FIFO)', 'Supplier / Reference', 'Performed By'],
+    columns: ['Date & Time', 'Material', 'Movement', 'Change', 'Previous', 'New Stock', 'Batch / Price (FIFO)', 'PO Number', 'Supplier / Reference', 'Performed By'],
     rows: logs.map((row) => {
       const details = (row.details ?? {}) as Record<string, unknown>;
 
@@ -4189,6 +4208,7 @@ function InventoryHistory({ filter }: ModuleProps) {
             { text: String(details.material_name ?? details.material_sku ?? 'Unknown'), strong: true },
             { text: movLabel, badge: (restocked ? 'low' : 'high') as BadgeTone },
             { text: restocked ? `+${qty}${unit ? ` ${unit}` : ''}` : `${qty}${unit ? ` ${unit}` : ''}`, strong: true },
+            { text: '—' },
             { text: '—' },
             { text: '—' },
             { text: '—' },
@@ -4228,6 +4248,7 @@ function InventoryHistory({ filter }: ModuleProps) {
           { text: formatQty(previous) },
           { text: formatQty(next) },
           { text: batchMovementText(details) },
+          { text: String(details.po_number ?? '').trim() || '—', strong: Boolean(details.po_number) },
           { text: String(details.supplier ?? details.reference ?? details.source ?? '—') },
           { text: String(row.actor ?? titleCase(row.actor_role ?? 'System')) },
         ],
@@ -4322,6 +4343,15 @@ export function MaterialsModule({ filter, readOnly = false, title }: ModuleProps
       hint: 'This first stock is saved as Batch #1.',
       editReadOnly: true,
       editHint: 'Use Restock to add stock as a new batch with its own price, or Stock Count to correct it.',
+    },
+    {
+      name: 'po_number',
+      label: 'PO Number (Purchase Order)',
+      placeholder: 'e.g. PO-2026-0001',
+      required: true,
+      createOnly: true,
+      visibleWhen: (values) => Number(values.quantity ?? 0) > 0,
+      hint: 'The Purchase Order this initial stock (Batch #1) was bought under.',
     },
     { name: 'min_level', label: 'Reorder Point (Minimum Level)', kind: 'number', default: '10', hint: 'At or below this level the item is flagged Reorder and a restock warning appears.' },
     { name: 'safety_level', label: 'Safety Stock', kind: 'number', default: '1', hint: 'Units that must always stay in stock — MRFs can never take the item below this, so it never reaches 0.' },

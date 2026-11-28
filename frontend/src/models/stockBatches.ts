@@ -15,6 +15,8 @@ export interface StockBatch {
   supplier?: string | null;
   source?: string | null;
   reference?: string | null;
+  /** Purchase Order (PO) Number this batch was bought under. */
+  po_number?: string | null;
   received_by?: string | null;
   received_at?: string | null;
 }

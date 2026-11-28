@@ -280,6 +280,17 @@ async function applySeniorDiscount(values: Row): Promise<void> {
   values.amount = round2(base - discount);
 }
 
+/**
+ * Purchase Order (PO) Number of stock coming in by hand (a restock, or the
+ * initial stock of a new item), so every batch can be traced to its purchase.
+ */
+function requirePoNumber(value: unknown, what: string): string {
+  const po = String(value ?? '').trim().replace(/\s+/g, ' ');
+  if (!po) throw badRequest(`Enter the Purchase Order (PO) Number of ${what}.`);
+  if (po.length > 60) throw badRequest('The PO Number is too long (60 characters at most).');
+  return po;
+}
+
 const SITE_VISIT_FIELDS = ['site_visit_date', 'site_visit_period', 'site_visit_companions', 'site_visit_materials', 'site_visit_notes'];
 /** What the Zone Specialist encodes after the site visit, for Commercial to approve. */
 const FINDINGS_FIELDS = ['remarks', 'required_materials', 'bill_to_customer_id'];
@@ -1148,6 +1159,8 @@ export const resourceService = {
       if (!values[key.column]) values[key.column] = `${key.prefix}-${randDigits(key.digits)}`;
     }
 
+    // PO Number of a new item's initial stock (batch #1).
+    let initialPoNumber: string | null = null;
     if (entity === 'materials') {
       values.status = materialStockStatus(values.quantity, values.min_level, values.status);
       // The first stock of a new item is its batch #1 — it needs its price per piece.
@@ -1155,6 +1168,7 @@ export const resourceService = {
       if (!Number.isInteger(quantity) || quantity < 0) throw badRequest('Quantity must be a whole number (0 or more).');
       if (quantity > 0) {
         if (!(Number(values.unit_price ?? 0) > 0)) throw badRequest('Enter the unit price (per piece) of this first batch.');
+        initialPoNumber = requirePoNumber(body.po_number, 'the initial stock');
         await batches.assertReady();
       }
     }
@@ -1312,6 +1326,7 @@ export const resourceService = {
             supplier_id: row.supplier_id,
             source: row.source,
             reference: 'Initial stock',
+            po_number: initialPoNumber,
             received_by: user.fullName,
           })
         : null;
@@ -1332,6 +1347,7 @@ export const resourceService = {
             new_quantity: Number(row.quantity ?? 0),
             quantity_change: Number(row.quantity ?? 0),
             ...(firstBatch ? { batch_no: firstBatch.batch_no, unit_price: Number(firstBatch.unit_price) } : {}),
+            ...(initialPoNumber ? { po_number: initialPoNumber } : {}),
           }
         : values;
       if (entity === 'waste-disposals') {
@@ -1915,18 +1931,21 @@ export const resourceService = {
           if (!(added > 0)) throw badRequest('Enter a restock quantity greater than zero.');
           const price = round2(Number(body.restock_unit_price));
           if (!(price > 0)) throw badRequest('Enter the unit price (per piece) of this restock batch.');
+          const poNumber = requirePoNumber(body.restock_po_number, 'this restock');
           const restocked = await batches.stockIn(currentMaterial, added, {
             unit_price: price,
             supplier: values.supplier ?? currentMaterial.supplier,
             supplier_id: values.supplier_id ?? currentMaterial.supplier_id,
             source: values.source ?? currentMaterial.source,
             reference: String(body.restock_reference ?? '').trim() || null,
+            po_number: poNumber,
             received_by: user.fullName,
           });
           patch = restocked.patch;
           batchDetails = {
             batch_no: restocked.batch.batch_no,
             unit_price: price,
+            po_number: poNumber,
             batches: [{ batch_id: String(restocked.batch.id), batch_no: restocked.batch.batch_no, quantity: added, unit_price: price, amount: round2(added * price) }],
           };
         } else {

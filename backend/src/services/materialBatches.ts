@@ -31,6 +31,8 @@ export interface BatchInfo {
   supplier_id?: unknown;
   source?: unknown;
   reference?: unknown;
+  /** Purchase Order (PO) Number the stock was bought under (restocks and initial stock). */
+  po_number?: unknown;
   received_by?: unknown;
 }
 
@@ -41,6 +43,12 @@ const remainingOf = (b: Row) => num(b.quantity_remaining);
 /** The table is missing until material-batches-migration.sql is applied — say so clearly. */
 function rethrow(err: unknown): never {
   const e = err as DbError;
+  if (/po_number/.test(String(e?.message ?? ''))) {
+    throw serviceUnavailable(
+      'The database is missing the material_batches.po_number column (Purchase Order Number). ' +
+        'Run backend/supabase/po-number-migration.sql in Supabase and try again.',
+    );
+  }
   if (['42P01', 'PGRST205'].includes(String(e?.code)) || /material_batches/.test(String(e?.message ?? ''))) {
     throw serviceUnavailable(
       'The database is missing the material_batches table (FIFO stock batches). ' +
@@ -90,6 +98,9 @@ async function insertBatch(material: Row, batchNo: number, qty: number, info: Ba
       supplier_id: info.supplier_id || null,
       source: info.source ?? null,
       reference: info.reference ?? null,
+      // Only sent when there is one, so stock movements without a PO keep
+      // working before po-number-migration.sql is applied.
+      ...(info.po_number ? { po_number: info.po_number } : {}),
       received_by: info.received_by ?? null,
       received_at: receivedAt ?? new Date().toISOString(),
     });

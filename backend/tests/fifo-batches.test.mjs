@@ -42,9 +42,9 @@ function seed() {
 /** New item with 10 pcs @ ₱100, then a restock of 5 pcs @ ₱120. */
 async function pipeWithTwoBatches() {
   const pipe = await resourceService.create('materials', inventory, {
-    name: 'PVC Pipe 50mm', unit: 'pcs', quantity: 10, unit_price: 100, min_level: 2, safety_level: 0,
+    name: 'PVC Pipe 50mm', unit: 'pcs', quantity: 10, unit_price: 100, min_level: 2, safety_level: 0, po_number: 'PO-1001',
   });
-  await resourceService.update('materials', inventory, pipe.id, { quantity: 15, restock: true, restock_unit_price: 120 });
+  await resourceService.update('materials', inventory, pipe.id, { quantity: 15, restock: true, restock_unit_price: 120, restock_po_number: 'PO-1002' });
   return table('materials').find((m) => m.id === pipe.id);
 }
 
@@ -63,14 +63,14 @@ test('adding an item makes batch #1; a restock needs its own price and makes a n
     resourceService.create('materials', inventory, { name: 'Valve', quantity: 5 }),
     /unit price \(per piece\) of this first batch/,
   );
-  const pipe = await resourceService.create('materials', inventory, { name: 'PVC Pipe 50mm', unit: 'pcs', quantity: 10, unit_price: 100 });
+  const pipe = await resourceService.create('materials', inventory, { name: 'PVC Pipe 50mm', unit: 'pcs', quantity: 10, unit_price: 100, po_number: 'PO-1001' });
   assert.deepEqual(remaining(pipe.id), [[1, 10, 100]]);
 
   await assert.rejects(
     resourceService.update('materials', inventory, pipe.id, { quantity: 15, restock: true }),
     /unit price \(per piece\) of this restock batch/,
   );
-  await resourceService.update('materials', inventory, pipe.id, { quantity: 15, restock: true, restock_unit_price: 120 });
+  await resourceService.update('materials', inventory, pipe.id, { quantity: 15, restock: true, restock_unit_price: 120, restock_po_number: 'PO-1002' });
   assert.deepEqual(remaining(pipe.id), [[1, 10, 100], [2, 5, 120]], 'same product, new batch');
   const row = table('materials').find((m) => m.id === pipe.id);
   assert.equal(row.quantity, 15);
@@ -139,7 +139,7 @@ test('a stock count shortage leaves the oldest batch first; editing the price fi
 test('items from before batches get an opening batch at their price', async () => {
   seed();
   table('materials').push({ id: 'old', sku: 'SKU-00009', name: 'Gate Valve', unit: 'pcs', quantity: 6, unit_price: 80, min_level: 1, safety_level: 0, status: 'in_stock' });
-  await resourceService.update('materials', inventory, 'old', { quantity: 10, restock: true, restock_unit_price: 90 });
+  await resourceService.update('materials', inventory, 'old', { quantity: 10, restock: true, restock_unit_price: 90, restock_po_number: 'PO-1003' });
   assert.deepEqual(remaining('old'), [[1, 6, 80], [2, 4, 90]]);
   const listed = (await resourceService.list('materials', inventory)).find((m) => m.id === 'old');
   assert.equal(listed.batches.length, 2);
@@ -178,4 +178,35 @@ test('the job order shows what its materials actually cost; the final bill charg
     ['Labor', 1, 500, 500],
   ]);
   assert.equal(bill.amount, 1500);
+});
+
+test('a PO Number is required for the initial stock and for every restock, and is kept on its batch', async () => {
+  seed();
+  await assert.rejects(
+    resourceService.create('materials', inventory, { name: 'Valve', unit: 'pcs', quantity: 5, unit_price: 50 }),
+    /Purchase Order \(PO\) Number of the initial stock/,
+  );
+  assert.equal(table('materials').length, 0, 'nothing is saved without the PO Number');
+  // An item added with no stock has no batch, so it needs no PO Number yet.
+  await resourceService.create('materials', inventory, { name: 'Elbow', unit: 'pcs', quantity: 0 });
+
+  const valve = await resourceService.create('materials', inventory, { name: 'Valve', unit: 'pcs', quantity: 5, unit_price: 50, po_number: '  PO-2026-0007 ' });
+  const batchesOf = () => table('material_batches').filter((b) => b.material_id === valve.id);
+  assert.equal(batchesOf()[0].po_number, 'PO-2026-0007');
+  const created = table('audit_logs').filter((l) => l.entity === 'materials' && l.action === 'create').at(-1);
+  assert.equal(created.details.po_number, 'PO-2026-0007');
+
+  await assert.rejects(
+    resourceService.update('materials', inventory, valve.id, { quantity: 8, restock: true, restock_unit_price: 55 }),
+    /Purchase Order \(PO\) Number of this restock/,
+  );
+  await assert.rejects(
+    resourceService.update('materials', inventory, valve.id, { quantity: 8, restock: true, restock_unit_price: 55, restock_po_number: '   ' }),
+    /PO\) Number/,
+  );
+  assert.equal(batchesOf().length, 1, 'no batch without a PO Number');
+  await resourceService.update('materials', inventory, valve.id, { quantity: 8, restock: true, restock_unit_price: 55, restock_po_number: 'PO-2026-0011' });
+  assert.deepEqual(batchesOf().map((b) => [b.batch_no, b.po_number]), [[1, 'PO-2026-0007'], [2, 'PO-2026-0011']]);
+  const restock = table('audit_logs').filter((l) => l.entity === 'materials').at(-1);
+  assert.equal(restock.details.po_number, 'PO-2026-0011');
 });

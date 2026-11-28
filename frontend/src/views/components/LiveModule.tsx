@@ -39,6 +39,8 @@ export interface ModuleField {
   readOnly?: boolean;
   /** Read-only when editing an existing record (editable on create). */
   editReadOnly?: boolean;
+  /** Shown only when creating a record (hidden when editing). */
+  createOnly?: boolean;
   /** Helper text shown instead of `hint` when editing an existing record. */
   editHint?: string;
   /** Helper text shown under the field (e.g. the reporter's role). */
@@ -590,7 +592,7 @@ export function LiveModule({
           submitText={editing ? 'Save Changes' : 'Create'}
           submitting={submitting}
         >
-          {fields.filter((f) => !f.visibleWhen || f.visibleWhen(values)).map((field) => {
+          {fields.filter((f) => (!f.visibleWhen || f.visibleWhen(values)) && !(editing && f.createOnly)).map((field) => {
             const f: ModuleField = editing
               ? { ...field, readOnly: field.readOnly || field.editReadOnly, hint: field.editHint ?? field.hint }
               : field;

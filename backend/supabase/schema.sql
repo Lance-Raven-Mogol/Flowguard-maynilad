@@ -607,6 +607,12 @@ alter table public.job_orders add column if not exists asset_tag       text;
 alter table public.job_orders add column if not exists no_asset_reason text;
 create index if not exists assets_job_order_ref_idx on public.assets (job_order_ref);
 
+-- ------------- Purchase Order Number on stock batches (2026-11-28) -------
+-- Every restock done by hand, and the initial stock of a new item, records
+-- the PO Number it was bought under. Older batches stay blank. Safe to re-run.
+alter table public.material_batches add column if not exists po_number text;
+create index if not exists material_batches_po_number_idx on public.material_batches (po_number);
+
 -- ------------- Commercial review of the investigation findings (2026-11-28) --
 -- The Zone Specialist encodes the findings; the Commercial Department approves
 -- them (complaint -> In Progress) or disapproves them with a reason, which
